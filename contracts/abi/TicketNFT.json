@@ -1,0 +1,114 @@
+[
+  {
+    "type": "function",
+    "name": "mint",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      { "name": "to", "type": "address" },
+      { "name": "eventId", "type": "uint256" },
+      { "name": "ticketTypeId", "type": "uint256" },
+      { "name": "seatInfo", "type": "bytes" }
+    ],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "markAsUsed",
+    "stateMutability": "nonpayable",
+    "inputs": [ { "name": "tokenId", "type": "uint256" } ],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "cancelEvent",
+    "stateMutability": "nonpayable",
+    "inputs": [ { "name": "eventId", "type": "uint256" } ],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "setMinter",
+    "stateMutability": "nonpayable",
+    "inputs": [ { "name": "newMinter", "type": "address" } ],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "ticketData",
+    "stateMutability": "view",
+    "inputs": [ { "name": "tokenId", "type": "uint256" } ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "components": [
+          { "name": "eventId", "type": "uint256" },
+          { "name": "ticketTypeId", "type": "uint256" },
+          { "name": "originalPrice", "type": "uint64" },
+          { "name": "isUsed", "type": "bool" },
+          { "name": "refundClaimed", "type": "bool" }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "function",
+    "name": "eventCancelled",
+    "stateMutability": "view",
+    "inputs": [ { "name": "eventId", "type": "uint256" } ],
+    "outputs": [ { "name": "", "type": "bool" } ]
+  },
+  {
+    "type": "function",
+    "name": "mintedPerEvent",
+    "stateMutability": "view",
+    "inputs": [ { "name": "eventId", "type": "uint256" } ],
+    "outputs": [ { "name": "", "type": "uint32" } ]
+  },
+  {
+    "type": "event",
+    "name": "TicketMinted",
+    "inputs": [
+      { "name": "tokenId", "type": "uint256", "indexed": true },
+      { "name": "eventId", "type": "uint256", "indexed": true },
+      { "name": "owner", "type": "address", "indexed": true }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "TicketUsed",
+    "inputs": [
+      { "name": "tokenId", "type": "uint256", "indexed": true },
+      { "name": "usedAt", "type": "uint256", "indexed": false }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "EventCancelled",
+    "inputs": [
+      { "name": "eventId", "type": "uint256", "indexed": true },
+      { "name": "cancelledAt", "type": "uint256", "indexed": false }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "TicketRefunded",
+    "inputs": [
+      { "name": "tokenId", "type": "uint256", "indexed": true },
+      { "name": "amount", "type": "uint256", "indexed": false }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MinterUpdated",
+    "inputs": [
+      { "name": "previousMinter", "type": "address", "indexed": true },
+      { "name": "newMinter", "type": "address", "indexed": true }
+    ],
+    "anonymous": false
+  }
+]

@@ -1,0 +1,127 @@
+[
+  {
+    "type": "function",
+    "name": "listForSale",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      { "name": "tokenId", "type": "uint256" },
+      { "name": "price", "type": "uint256" },
+      { "name": "expiresAt", "type": "uint64" }
+    ],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "cancelListing",
+    "stateMutability": "nonpayable",
+    "inputs": [ { "name": "tokenId", "type": "uint256" } ],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "completeSale",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      { "name": "tokenId", "type": "uint256" },
+      { "name": "buyer", "type": "address" },
+      { "name": "escrowData", "type": "bytes" }
+    ],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "setMaxMarkupBps",
+    "stateMutability": "nonpayable",
+    "inputs": [ { "name": "newMaxMarkupBps", "type": "uint16" } ],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "setEscrowHook",
+    "stateMutability": "nonpayable",
+    "inputs": [ { "name": "newHook", "type": "address" } ],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "listing",
+    "stateMutability": "view",
+    "inputs": [ { "name": "tokenId", "type": "uint256" } ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "components": [
+          { "name": "seller", "type": "address" },
+          { "name": "price", "type": "uint256" },
+          { "name": "active", "type": "bool" },
+          { "name": "expiresAt", "type": "uint64" }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "function",
+    "name": "maxMarkupBps",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [ { "name": "", "type": "uint16" } ]
+  },
+  {
+    "type": "function",
+    "name": "escrowHook",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [ { "name": "", "type": "address" } ]
+  },
+  {
+    "type": "event",
+    "name": "Listed",
+    "inputs": [
+      { "name": "tokenId", "type": "uint256", "indexed": true },
+      { "name": "seller", "type": "address", "indexed": true },
+      { "name": "price", "type": "uint256", "indexed": false },
+      { "name": "expiresAt", "type": "uint64", "indexed": false }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ListingCancelled",
+    "inputs": [
+      { "name": "tokenId", "type": "uint256", "indexed": true },
+      { "name": "seller", "type": "address", "indexed": true },
+      { "name": "reason", "type": "string", "indexed": false }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SaleCompleted",
+    "inputs": [
+      { "name": "tokenId", "type": "uint256", "indexed": true },
+      { "name": "seller", "type": "address", "indexed": true },
+      { "name": "buyer", "type": "address", "indexed": true },
+      { "name": "price", "type": "uint256", "indexed": false }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MaxMarkupUpdated",
+    "inputs": [
+      { "name": "previousMaxMarkupBps", "type": "uint16", "indexed": false },
+      { "name": "newMaxMarkupBps", "type": "uint16", "indexed": false }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "EscrowHookUpdated",
+    "inputs": [
+      { "name": "previousHook", "type": "address", "indexed": true },
+      { "name": "newHook", "type": "address", "indexed": true }
+    ],
+    "anonymous": false
+  }
+]

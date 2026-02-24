@@ -1,0 +1,86 @@
+[
+  {
+    "type": "function",
+    "name": "validatePaymasterUserOp",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      {
+        "name": "userOp",
+        "type": "tuple",
+        "components": [
+          { "name": "sender", "type": "address" },
+          { "name": "nonce", "type": "uint256" },
+          { "name": "initCode", "type": "bytes" },
+          { "name": "callData", "type": "bytes" },
+          { "name": "callGasLimit", "type": "uint256" },
+          { "name": "verificationGasLimit", "type": "uint256" },
+          { "name": "preVerificationGas", "type": "uint256" },
+          { "name": "maxFeePerGas", "type": "uint256" },
+          { "name": "maxPriorityFeePerGas", "type": "uint256" },
+          { "name": "paymasterAndData", "type": "bytes" },
+          { "name": "signature", "type": "bytes" }
+        ]
+      },
+      { "name": "userOpHash", "type": "bytes32" },
+      { "name": "maxCost", "type": "uint256" }
+    ],
+    "outputs": [
+      { "name": "context", "type": "bytes" },
+      { "name": "validationData", "type": "uint256" }
+    ]
+  },
+  {
+    "type": "function",
+    "name": "postOp",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      { "name": "mode", "type": "uint8" },
+      { "name": "context", "type": "bytes" },
+      { "name": "actualGasCost", "type": "uint256" }
+    ],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "sessionSigner",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [ { "name": "", "type": "address" } ]
+  },
+  {
+    "type": "function",
+    "name": "setSessionSigner",
+    "stateMutability": "nonpayable",
+    "inputs": [ { "name": "newSigner", "type": "address" } ],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "setDailyGasBudget",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      { "name": "user", "type": "address" },
+      { "name": "maxCost", "type": "uint256" }
+    ],
+    "outputs": []
+  },
+  {
+    "type": "event",
+    "name": "SessionPolicySet",
+    "inputs": [
+      { "name": "user", "type": "address", "indexed": true },
+      { "name": "policyHash", "type": "bytes32", "indexed": false },
+      { "name": "expiresAt", "type": "uint256", "indexed": false }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SessionSignerUpdated",
+    "inputs": [
+      { "name": "previousSigner", "type": "address", "indexed": true },
+      { "name": "newSigner", "type": "address", "indexed": true }
+    ],
+    "anonymous": false
+  }
+]

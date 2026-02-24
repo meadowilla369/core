@@ -1,0 +1,92 @@
+[
+  {
+    "type": "function",
+    "name": "owner",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [ { "name": "", "type": "address" } ]
+  },
+  {
+    "type": "function",
+    "name": "guardian",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [ { "name": "", "type": "address" } ]
+  },
+  {
+    "type": "function",
+    "name": "pendingNewOwner",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [ { "name": "", "type": "address" } ]
+  },
+  {
+    "type": "function",
+    "name": "recoveryInitiated",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [ { "name": "", "type": "uint256" } ]
+  },
+  {
+    "type": "function",
+    "name": "RECOVERY_DELAY",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [ { "name": "", "type": "uint256" } ]
+  },
+  {
+    "type": "function",
+    "name": "isRecoveryPending",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [ { "name": "", "type": "bool" } ]
+  },
+  {
+    "type": "function",
+    "name": "initiateRecovery",
+    "stateMutability": "nonpayable",
+    "inputs": [ { "name": "newOwner", "type": "address" } ],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "completeRecovery",
+    "stateMutability": "nonpayable",
+    "inputs": [],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "cancelRecovery",
+    "stateMutability": "nonpayable",
+    "inputs": [],
+    "outputs": []
+  },
+  {
+    "type": "event",
+    "name": "RecoveryInitiated",
+    "inputs": [
+      { "name": "oldOwner", "type": "address", "indexed": true },
+      { "name": "newOwner", "type": "address", "indexed": true },
+      { "name": "timestamp", "type": "uint256", "indexed": false }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "RecoveryCompleted",
+    "inputs": [
+      { "name": "previousOwner", "type": "address", "indexed": true },
+      { "name": "newOwner", "type": "address", "indexed": true }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "RecoveryCancelled",
+    "inputs": [
+      { "name": "owner", "type": "address", "indexed": true }
+    ],
+    "anonymous": false
+  }
+]
