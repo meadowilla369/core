@@ -55,7 +55,7 @@ Verification evidence:
 
 ## Phase 5 - Non-Contract Full Process Backlog (for next repos/services)
 
-- [ ] Backend payment webhook + idempotency + mint worker.
+- [x] Backend payment webhook + idempotency + mint worker.
 - [ ] Backend eKYC gate for resale listing.
 - [ ] Escrow transfer ledger in PostgreSQL.
 - [ ] Check-in QR verification service with atomic DB marking.
@@ -123,7 +123,7 @@ Verification evidence:
 - [ ] Event Service: event listing/details/availability, organizer event management.
 - [ ] Ticketing Service: reservation (15-min TTL), inventory lock, purchase initiation.
 - [x] Payment Orchestrator: webhook verification, idempotency, reconciliation, retry handling.
-- [ ] Mint Worker: consume paid events, call `TicketNFT.mint`, retry policy + support queue.
+- [x] Mint Worker: consume paid events, call `TicketNFT.mint`, retry policy + support queue.
 - [ ] Marketplace Service: create/cancel listing, escrow payload assembly, complete sale trigger.
 - [ ] Check-in Service: QR signature verification + atomic DB check-in + async `markAsUsed`.
 - [ ] Refund Service: cancellation policy, refund queue, payout status sync.
