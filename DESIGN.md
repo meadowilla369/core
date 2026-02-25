@@ -334,14 +334,26 @@ CREATE INDEX idx_purchases_buyer_status ON purchases(buyer_id, status);
 
 CREATE TABLE escrow_transfers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  settlement_id UUID NOT NULL UNIQUE,
   listing_id UUID NOT NULL REFERENCES listings(id),
+  payment_id UUID NOT NULL REFERENCES payments(id),
+  token_id BIGINT NOT NULL REFERENCES tickets(token_id),
   seller_id UUID NOT NULL REFERENCES users(id),
   buyer_id UUID NOT NULL REFERENCES users(id),
   gross_amount BIGINT NOT NULL,
   seller_amount BIGINT NOT NULL,
   platform_fee BIGINT NOT NULL,
   organizer_royalty BIGINT NOT NULL,
+  escrow_data BYTEA NOT NULL,
+  escrow_data_hash BYTEA NOT NULL UNIQUE,
+  escrow_data_version SMALLINT NOT NULL DEFAULT 1,
+  backend_signature BYTEA NOT NULL,
+  backend_signer VARCHAR(42) NOT NULL,
+  signed_at TIMESTAMP NOT NULL,
+  submit_tx_hash CHAR(66),
+  confirm_tx_hash CHAR(66),
   status VARCHAR(20) DEFAULT 'pending',
+  failure_reason TEXT,
   released_at TIMESTAMP,
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
@@ -518,6 +530,98 @@ Flow summary:
 2. `cancelListing(tokenId)` returns NFT if `msg.sender` = seller or backend (e.g., event cancellation).
 3. `completeSale(tokenId, buyer, bytes calldata escrowData)` callable by `ESCROW_ROLE` after fiat confirmation; transfers NFT to buyer and emits payout splits consumed by backend.
 
+#### EscrowData Payload Specification (V1)
+
+Canonical payload type:
+```solidity
+// Encoded with abi.encode in exact field order below.
+struct EscrowSettlementPayloadV1 {
+  uint8 version;              // = 1
+  bytes16 settlementId;       // UUID binary
+  bytes16 listingId;          // UUID binary
+  bytes16 paymentId;          // UUID binary
+  uint256 tokenId;
+  address seller;
+  address buyer;
+  uint128 grossAmount;        // minor units (existing *_cents convention)
+  uint128 sellerAmount;       // minor units
+  uint128 platformFee;        // minor units
+  uint128 organizerRoyalty;   // minor units
+  bytes3 currency;            // "VND"
+  uint8 gateway;              // enum in backend: 1=MOMO, 2=VNPAY
+  bytes32 gatewayReferenceHash;
+  uint64 settledAt;           // unix seconds
+  bytes32 nonce;              // unique per settlement
+}
+```
+
+Encoding and serialization rules:
+1. `escrowData = abi.encode(EscrowSettlementPayloadV1)` in the exact field order above.
+2. Signature material is out-of-band; do not include backend signature bytes in `escrowData`.
+3. UUIDs are serialized to binary `bytes16` before encoding.
+4. `gatewayReferenceHash = keccak256(bytes(gateway_reference))` in backend canonicalization.
+
+#### EscrowData Validation Rules
+
+Before submitting `completeSale`, backend must enforce:
+1. `version == 1` and `currency == "VND"`.
+2. `seller`, `buyer`, `tokenId`, and `listingId` match the active listing snapshot being settled.
+3. `grossAmount == sellerAmount + platformFee + organizerRoyalty`.
+4. `paymentId` references a `payments` row in `confirmed` status.
+5. `nonce` is unique in backend settlement ledger.
+6. `escrowDataHash = keccak256(escrowData)` is reserved as idempotency key before transaction submit.
+
+#### Backend Integrity Model
+
+Settlement integrity controls:
+1. Backend signs `escrowDataHash` using the private key corresponding to `escrowHook` (EIP-191 message signing).
+2. Store signature evidence in settlement ledger/audit fields: `backend_signature`, `backend_signer`, `signed_at`.
+3. Verify recovered signer address equals `escrowHook` before calling `completeSale`.
+4. On-chain replay guard remains hash-based (`keccak256(escrowData)` consumed once).
+
+#### Internal Backend Settlement API Contract
+
+Endpoint:
+```text
+POST /internal/marketplace/settlements/finalize
+```
+
+Request contract:
+```json
+{
+  "version": 1,
+  "settlementId": "uuid",
+  "listingId": "uuid",
+  "paymentId": "uuid",
+  "tokenId": "12345",
+  "seller": "0x...",
+  "buyer": "0x...",
+  "grossAmount": "120000",
+  "sellerAmount": "110000",
+  "platformFee": "8000",
+  "organizerRoyalty": "2000",
+  "currency": "VND",
+  "gateway": 1,
+  "gatewayReference": "gateway-ref",
+  "settledAt": 1739400000,
+  "nonce": "0x..."
+}
+```
+
+Response contract:
+```json
+{
+  "settlementId": "uuid",
+  "escrowDataHash": "0x...",
+  "submitTxHash": "0x...",
+  "status": "submitted"
+}
+```
+
+Idempotency:
+1. Client sends `Idempotency-Key: <escrowDataHash>`.
+2. Backend enforces uniqueness via `escrow_transfers.escrow_data_hash`.
+
 Events:
 ```
 event Listed(uint256 indexed tokenId, address indexed seller, uint256 price);
@@ -527,7 +631,8 @@ event SaleCompleted(uint256 indexed tokenId, address indexed seller, address ind
 
 Security controls:
 - Reentrancy guard on state mutating functions.
-- `escrowData` hashed + stored to prevent replay; backend includes payment ID.
+- `escrowData` uses canonical ABI v1 payload and hash-based replay prevention.
+- Backend signature is out-of-band and validated against `escrowHook` before submit.
 - Optional `max listings per wallet` gating via modifier calling attestations.
 
 ### Paymaster / Bundler
@@ -573,6 +678,19 @@ Paymaster ---> validates EOAs/Smart wallets for user ops
 | Fuzz | Foundry Fuzz | Reentrancy attempts, concurrent completeSale/cancelListing |
 | Integration | Hardhat + forked Base | End-to-end payment→mint + listing purchase |
 | Audit | External (Trail of Bits / PeckShield) | Focus on marketplace custody + paymaster |
+
+#### Escrow Settlement Test Matrix
+
+| Scenario | Expected Result | Suggested Layer |
+|----------|-----------------|-----------------|
+| Deterministic ABI encoding produces stable bytes/hash for same input (golden vectors) | Same payload input always yields identical `escrowData` and `escrowDataHash` | Unit (backend serializer) |
+| Amount split mismatch (`grossAmount` != sum of components) | Validation failure before chain submit | Unit |
+| Listing/entity mismatch (`listingId`/`tokenId`/`seller`/`buyer`) | Validation failure before chain submit | Unit + Integration |
+| Duplicate `escrowDataHash` submitted | Backend rejects as duplicate idempotency key | Unit + Integration |
+| Replay of identical `escrowData` on-chain | `completeSale` reverts on consumed hash | Integration + Property-based |
+| Signature recovers to address different from `escrowHook` | Backend rejects settlement and stores failure reason | Unit |
+| Duplicate webhook/payment callback for same payment | No new settlement row, existing settlement returned | Integration |
+| Submit tx fails and backend retries | No double transfer, idempotency preserved across retries | Integration + Fuzz |
 
 #### Verification Schedule & Artifact Links
 
@@ -621,8 +739,11 @@ Key safeguards: OTP 5/15 min limit, device fingerprint storage, Privy attestatio
 Seller App -> Marketplace Svc (biometric-signed request)
 Marketplace Svc -> TicketNFT (transfer to contract) -> updates `listings`
 Buyer App -> Marketplace Svc -> Payment Orchestrator -> gateway
-Webhook -> Payment Orchestrator -> Marketplace Svc -> `completeSale`
-Marketplace Svc -> TicketNFT (transfer to buyer) -> Escrow release via banking API
+Webhook confirmed -> Payment Orchestrator -> Marketplace Svc
+Marketplace Svc assembles EscrowSettlementPayloadV1 -> abi.encode -> escrowData
+Marketplace Svc computes escrowDataHash -> signs hash -> persists escrow ledger
+Marketplace Svc submits `completeSale(tokenId, buyer, escrowData)`
+Marketplace Svc records submit tx hash/finality -> releases payout via banking API
 ```
 Controls: price cap enforced on-chain, escrow ledger, seller KYC validation hook.
 

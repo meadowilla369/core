@@ -97,11 +97,9 @@ User Journey:
                                                        └──────────────────┘
 ```
 
-#### Key Architecture: Who Signs What?
+#### Key Architecture: Who 
 
-| Operation | Who Signs | User Key Needed | Gas Paid By |
-|-----------|-----------|-----------------|-------------|
-| **Mint (buy ticket)** | Backend (platform key) | No | Paymaster |
+|
 | **List for resale** | User (biometric) | Yes | Paymaster |
 | **Buy resale ticket** | Buyer (biometric) | Yes | Paymaster |
 | **Transfer ticket** | Owner (biometric) | Yes | Paymaster |
