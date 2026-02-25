@@ -116,6 +116,7 @@ Verification evidence:
 - [x] Runtime skeleton implemented for `user-service` and integrated via `api-gateway`.
 - [x] Runtime skeleton implemented for `kyc-service` and integrated via `api-gateway`.
 - [x] Runtime skeleton implemented for `event-service` and integrated via `api-gateway`.
+- [x] Runtime skeleton implemented for `ticketing-service` and integrated via `api-gateway`.
 - [ ] Auth Service: OTP request/verify, token refresh, session/device management, rate limits.
 - [ ] User Service: profile, email backup, freeze/unfreeze state, audit logs.
 - [ ] KYC Service: initiate/upload/face match/status, provider abstraction, fallback handling.

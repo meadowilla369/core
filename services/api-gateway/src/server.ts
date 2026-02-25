@@ -128,14 +128,15 @@ export function createGatewayServer(config: GatewayConfig) {
       }
 
       if (method === "GET" && url.pathname === "/readyz") {
-        const [authReady, userReady, kycReady, eventReady] = await Promise.all([
+        const [authReady, userReady, kycReady, eventReady, ticketingReady] = await Promise.all([
           checkServiceReady(config, "auth-service", config.authServiceBaseUrl),
           checkServiceReady(config, "user-service", config.userServiceBaseUrl),
           checkServiceReady(config, "kyc-service", config.kycServiceBaseUrl),
-          checkServiceReady(config, "event-service", config.eventServiceBaseUrl)
+          checkServiceReady(config, "event-service", config.eventServiceBaseUrl),
+          checkServiceReady(config, "ticketing-service", config.ticketingServiceBaseUrl)
         ]);
 
-        const ready = authReady && userReady && kycReady && eventReady;
+        const ready = authReady && userReady && kycReady && eventReady && ticketingReady;
         return sendJson(res, ready ? 200 : 503, {
           success: ready,
           data: {
@@ -143,7 +144,8 @@ export function createGatewayServer(config: GatewayConfig) {
             authServiceReady: authReady,
             userServiceReady: userReady,
             kycServiceReady: kycReady,
-            eventServiceReady: eventReady
+            eventServiceReady: eventReady,
+            ticketingServiceReady: ticketingReady
           }
         });
       }
@@ -191,6 +193,18 @@ export function createGatewayServer(config: GatewayConfig) {
           config,
           config.eventServiceBaseUrl,
           "event-service",
+          url.pathname,
+          url.search
+        );
+      }
+
+      if (url.pathname === "/v1/tickets" || url.pathname.startsWith("/v1/tickets/")) {
+        return proxyRequest(
+          req,
+          res,
+          config,
+          config.ticketingServiceBaseUrl,
+          "ticketing-service",
           url.pathname,
           url.search
         );

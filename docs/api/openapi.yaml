@@ -16,6 +16,7 @@ tags:
   - name: Users
   - name: KYC
   - name: Events
+  - name: Tickets
 
 paths:
   /healthz:
@@ -370,6 +371,121 @@ paths:
         "404":
           description: Event not found
 
+  /v1/tickets/reserve:
+    post:
+      tags: [Tickets]
+      summary: Reserve tickets for an event
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TicketReserveInput"
+      responses:
+        "200":
+          description: Reservation created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketReserveResponse"
+        "400":
+          description: Invalid payload
+        "401":
+          description: Missing user context
+
+  /v1/tickets/purchase:
+    post:
+      tags: [Tickets]
+      summary: Mark reservation as paid and issue mock tickets
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TicketPurchaseInput"
+      responses:
+        "200":
+          description: Purchase processed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketPurchaseResponse"
+        "400":
+          description: Invalid state
+        "401":
+          description: Missing user context
+        "404":
+          description: Reservation not found
+
+  /v1/tickets/me:
+    get:
+      tags: [Tickets]
+      summary: List current user tickets
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+      responses:
+        "200":
+          description: Ticket list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketListResponse"
+        "401":
+          description: Missing user context
+
+  /v1/tickets/{tokenId}:
+    get:
+      tags: [Tickets]
+      summary: Get ticket detail
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+        - name: tokenId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Ticket detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketDetailResponse"
+        "401":
+          description: Missing user context
+        "404":
+          description: Ticket not found
+
+  /v1/tickets/{tokenId}/qr:
+    post:
+      tags: [Tickets]
+      summary: Generate rotating QR payload for ticket
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - name: tokenId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: QR payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketQrResponse"
+        "401":
+          description: Missing user context
+        "404":
+          description: Ticket not found
+
 components:
   parameters:
     XUserId:
@@ -379,6 +495,13 @@ components:
       schema:
         type: string
       description: Simulated user identity header used by current skeleton.
+    IdempotencyKey:
+      name: idempotency-key
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Optional idempotency key for mutation endpoints.
 
   schemas:
     OtpRequestInput:
@@ -685,3 +808,122 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/EventAvailabilityItem"
+
+    TicketReserveInput:
+      type: object
+      properties:
+        eventId:
+          type: string
+        ticketTypeId:
+          type: string
+        quantity:
+          type: integer
+      required: [eventId, ticketTypeId, quantity]
+
+    TicketPurchaseInput:
+      type: object
+      properties:
+        reservationId:
+          type: string
+        paymentMethod:
+          type: string
+      required: [reservationId, paymentMethod]
+
+    TicketRecord:
+      type: object
+      properties:
+        tokenId:
+          type: string
+        eventId:
+          type: string
+        ticketTypeId:
+          type: string
+        ownerUserId:
+          type: string
+        seatInfo:
+          type: string
+        reservationId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    TicketReserveResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            reservationId:
+              type: string
+            eventId:
+              type: string
+            ticketTypeId:
+              type: string
+            quantity:
+              type: integer
+            totalAmount:
+              type: number
+            status:
+              type: string
+            expiresAt:
+              type: string
+              format: date-time
+
+    TicketPurchaseResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            reservationId:
+              type: string
+            paymentIntentId:
+              type: string
+            status:
+              type: string
+            ticketsIssued:
+              type: integer
+
+    TicketListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/TicketRecord"
+
+    TicketDetailResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/TicketRecord"
+
+    TicketQrResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            tokenId:
+              type: string
+            eventId:
+              type: string
+            timestamp:
+              type: integer
+            nonce:
+              type: string
+            walletAddress:
+              type: string
+            signature:
+              type: string
