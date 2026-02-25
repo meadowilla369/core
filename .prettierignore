@@ -1,0 +1,7 @@
+out
+lib
+cache
+node_modules
+dist
+.pnpm-store
+.turbo

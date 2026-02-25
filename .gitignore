@@ -1,3 +1,26 @@
+# Foundry artifacts
 out/
 lib/
 cache/
+
+# Node/monorepo artifacts
+node_modules/
+.pnpm-store/
+.turbo/
+coverage/
+dist/
+*.tsbuildinfo
+
+# Environment and local overrides
+.env
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/

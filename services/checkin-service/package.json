@@ -1,0 +1,15 @@
+{
+  "name": "@ticket-platform/svc-checkin-service",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Check-in service skeleton",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "node --watch src/index.ts",
+    "test": "echo 'TODO: add tests for svc-checkin-service'",
+    "lint": "echo 'TODO: add lint for svc-checkin-service'",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "format": "echo 'TODO: add formatter for svc-checkin-service'"
+  }
+}

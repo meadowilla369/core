@@ -1,0 +1,15 @@
+{
+  "name": "@ticket-platform/svc-payment-orchestrator",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Payment orchestrator skeleton",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "node --watch src/index.ts",
+    "test": "echo 'TODO: add tests for svc-payment-orchestrator'",
+    "lint": "echo 'TODO: add lint for svc-payment-orchestrator'",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "format": "echo 'TODO: add formatter for svc-payment-orchestrator'"
+  }
+}

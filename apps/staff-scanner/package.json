@@ -1,0 +1,15 @@
+{
+  "name": "@ticket-platform/app-staff-scanner",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Staff scanner app skeleton",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "node --watch src/index.ts",
+    "test": "echo 'TODO: add tests for app-staff-scanner'",
+    "lint": "echo 'TODO: add lint for app-staff-scanner'",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "format": "echo 'TODO: add formatter for app-staff-scanner'"
+  }
+}

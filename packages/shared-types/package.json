@@ -1,0 +1,13 @@
+{
+  "name": "@ticket-platform/shared-types",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "echo 'TODO: add tests for shared-types'",
+    "lint": "echo 'TODO: add lint for shared-types'",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "format": "echo 'TODO: add formatter for shared-types'"
+  }
+}

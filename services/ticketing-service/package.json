@@ -1,0 +1,15 @@
+{
+  "name": "@ticket-platform/svc-ticketing-service",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Ticketing service skeleton",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "node --watch src/index.ts",
+    "test": "echo 'TODO: add tests for svc-ticketing-service'",
+    "lint": "echo 'TODO: add lint for svc-ticketing-service'",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "format": "echo 'TODO: add formatter for svc-ticketing-service'"
+  }
+}

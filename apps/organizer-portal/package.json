@@ -1,0 +1,15 @@
+{
+  "name": "@ticket-platform/app-organizer-portal",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Organizer portal skeleton",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "node --watch src/index.ts",
+    "test": "echo 'TODO: add tests for app-organizer-portal'",
+    "lint": "echo 'TODO: add lint for app-organizer-portal'",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "format": "echo 'TODO: add formatter for app-organizer-portal'"
+  }
+}

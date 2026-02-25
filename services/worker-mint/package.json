@@ -1,0 +1,15 @@
+{
+  "name": "@ticket-platform/svc-worker-mint",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Mint worker skeleton",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "node --watch src/index.ts",
+    "test": "echo 'TODO: add tests for svc-worker-mint'",
+    "lint": "echo 'TODO: add lint for svc-worker-mint'",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "format": "echo 'TODO: add formatter for svc-worker-mint'"
+  }
+}
