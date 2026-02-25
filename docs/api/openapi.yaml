@@ -17,6 +17,8 @@ tags:
   - name: KYC
   - name: Events
   - name: Tickets
+  - name: Payments
+  - name: Webhooks
 
 paths:
   /healthz:
@@ -486,6 +488,141 @@ paths:
         "404":
           description: Ticket not found
 
+  /v1/payments/intents:
+    post:
+      tags: [Payments]
+      summary: Create payment intent for reserved tickets
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentIntentInput"
+      responses:
+        "200":
+          description: Payment intent created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentIntentResponse"
+        "400":
+          description: Invalid payload
+        "401":
+          description: Missing user context
+
+  /v1/payments/{paymentId}:
+    get:
+      tags: [Payments]
+      summary: Get payment status by ID
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Payment found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentDetailResponse"
+        "404":
+          description: Payment not found
+
+  /v1/payments/reconciliation/jobs:
+    get:
+      tags: [Payments]
+      summary: List pending webhook retry jobs
+      responses:
+        "200":
+          description: Retry jobs list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReconciliationJobsResponse"
+
+  /v1/payments/reconciliation/run:
+    post:
+      tags: [Payments]
+      summary: Process due webhook retry jobs once
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Reconciliation run summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReconciliationRunResponse"
+
+  /v1/webhooks/momo:
+    post:
+      tags: [Webhooks]
+      summary: Receive payment confirmation webhook from Momo
+      parameters:
+        - $ref: "#/components/parameters/WebhookSignature"
+        - $ref: "#/components/parameters/WebhookTimestamp"
+        - $ref: "#/components/parameters/WebhookNonce"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentWebhookInput"
+      responses:
+        "200":
+          description: Webhook processed or duplicate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentWebhookResponse"
+        "202":
+          description: Webhook queued for retry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentWebhookResponse"
+        "400":
+          description: Invalid payload
+        "401":
+          description: Signature verification failed
+
+  /v1/webhooks/vnpay:
+    post:
+      tags: [Webhooks]
+      summary: Receive payment confirmation webhook from VNPAY
+      parameters:
+        - $ref: "#/components/parameters/WebhookSignature"
+        - $ref: "#/components/parameters/WebhookTimestamp"
+        - $ref: "#/components/parameters/WebhookNonce"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaymentWebhookInput"
+      responses:
+        "200":
+          description: Webhook processed or duplicate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentWebhookResponse"
+        "202":
+          description: Webhook queued for retry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentWebhookResponse"
+        "400":
+          description: Invalid payload
+        "401":
+          description: Signature verification failed
+
 components:
   parameters:
     XUserId:
@@ -502,6 +639,27 @@ components:
       schema:
         type: string
       description: Optional idempotency key for mutation endpoints.
+    WebhookSignature:
+      name: x-webhook-signature
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Hex HMAC SHA-256 signature of `${timestamp}.${nonce}.${rawBody}`.
+    WebhookTimestamp:
+      name: x-webhook-timestamp
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Unix timestamp in seconds or milliseconds.
+    WebhookNonce:
+      name: x-webhook-nonce
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Unique nonce to prevent webhook replay.
 
   schemas:
     OtpRequestInput:
@@ -927,3 +1085,152 @@ components:
               type: string
             signature:
               type: string
+
+    PaymentIntentInput:
+      type: object
+      properties:
+        reservationId:
+          type: string
+        amount:
+          type: number
+        currency:
+          type: string
+          default: VND
+        gateway:
+          type: string
+          enum: [momo, vnpay]
+      required: [reservationId, amount, gateway]
+
+    PaymentRecord:
+      type: object
+      properties:
+        paymentId:
+          type: string
+        reservationId:
+          type: string
+        userId:
+          type: string
+        amount:
+          type: number
+        currency:
+          type: string
+          enum: [VND]
+        gateway:
+          type: string
+          enum: [momo, vnpay]
+        status:
+          type: string
+          enum: [pending, confirmed, failed, cancelled]
+        gatewayTransactionId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PaymentIntentResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          allOf:
+            - $ref: "#/components/schemas/PaymentRecord"
+            - type: object
+              properties:
+                paymentUrl:
+                  type: string
+
+    PaymentDetailResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/PaymentRecord"
+
+    ReconciliationJob:
+      type: object
+      properties:
+        retryJobId:
+          type: string
+        eventKey:
+          type: string
+        paymentId:
+          type: string
+        gateway:
+          type: string
+          enum: [momo, vnpay]
+        attempt:
+          type: integer
+        nextRetryAt:
+          type: string
+          format: date-time
+        lastError:
+          type: string
+
+    ReconciliationJobsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReconciliationJob"
+
+    ReconciliationRunResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            processed:
+              type: integer
+            requeued:
+              type: integer
+            deadLettered:
+              type: integer
+            remaining:
+              type: integer
+
+    PaymentWebhookInput:
+      type: object
+      properties:
+        eventId:
+          type: string
+        paymentId:
+          type: string
+        gatewayTransactionId:
+          type: string
+        status:
+          type: string
+        amount:
+          type: number
+        currency:
+          type: string
+      required: [paymentId, status]
+
+    PaymentWebhookResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            eventKey:
+              type: string
+            status:
+              type: string
+            paymentId:
+              type: string
+            retryJobId:
+              type: string
+            nextRetryAt:
+              type: string
+              format: date-time

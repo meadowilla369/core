@@ -13,7 +13,8 @@ server.listen(config.port, config.host, () => {
     userServiceBaseUrl: config.userServiceBaseUrl,
     kycServiceBaseUrl: config.kycServiceBaseUrl,
     eventServiceBaseUrl: config.eventServiceBaseUrl,
-    ticketingServiceBaseUrl: config.ticketingServiceBaseUrl
+    ticketingServiceBaseUrl: config.ticketingServiceBaseUrl,
+    paymentOrchestratorBaseUrl: config.paymentOrchestratorBaseUrl
   });
 });
 

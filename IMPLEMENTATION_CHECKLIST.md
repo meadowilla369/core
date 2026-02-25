@@ -122,7 +122,7 @@ Verification evidence:
 - [ ] KYC Service: initiate/upload/face match/status, provider abstraction, fallback handling.
 - [ ] Event Service: event listing/details/availability, organizer event management.
 - [ ] Ticketing Service: reservation (15-min TTL), inventory lock, purchase initiation.
-- [ ] Payment Orchestrator: webhook verification, idempotency, reconciliation, retry handling.
+- [x] Payment Orchestrator: webhook verification, idempotency, reconciliation, retry handling.
 - [ ] Mint Worker: consume paid events, call `TicketNFT.mint`, retry policy + support queue.
 - [ ] Marketplace Service: create/cancel listing, escrow payload assembly, complete sale trigger.
 - [ ] Check-in Service: QR signature verification + atomic DB check-in + async `markAsUsed`.

@@ -1,6 +1,6 @@
 # API Gateway Service
 
-Runnable gateway skeleton for auth, user, KYC, event, and ticket routes.
+Runnable gateway skeleton for auth, user, KYC, event, ticket, payment, and webhook routes.
 
 ## Run (source mode)
 
@@ -11,6 +11,7 @@ USER_SERVICE_BASE_URL=http://127.0.0.1:3002 \
 KYC_SERVICE_BASE_URL=http://127.0.0.1:3003 \
 EVENT_SERVICE_BASE_URL=http://127.0.0.1:3004 \
 TICKETING_SERVICE_BASE_URL=http://127.0.0.1:3005 \
+PAYMENT_ORCHESTRATOR_BASE_URL=http://127.0.0.1:3006 \
 node --experimental-strip-types src/index.ts
 ```
 
@@ -23,6 +24,8 @@ node --experimental-strip-types src/index.ts
 - `* /v1/kyc/*` -> proxied to KYC service `/kyc/*`
 - `* /v1/events/*` -> proxied to event service `/events/*`
 - `* /v1/tickets/*` -> proxied to ticketing service `/tickets/*`
+- `* /v1/payments/*` -> proxied to payment orchestrator `/payments/*`
+- `* /v1/webhooks/*` -> proxied to payment orchestrator `/webhooks/*`
 
 ## Environment Variables
 
@@ -34,4 +37,5 @@ node --experimental-strip-types src/index.ts
 - `KYC_SERVICE_BASE_URL` (default: `http://127.0.0.1:3003`)
 - `EVENT_SERVICE_BASE_URL` (default: `http://127.0.0.1:3004`)
 - `TICKETING_SERVICE_BASE_URL` (default: `http://127.0.0.1:3005`)
+- `PAYMENT_ORCHESTRATOR_BASE_URL` (default: `http://127.0.0.1:3006`)
 - `REQUEST_TIMEOUT_MS` (default: `2000`)
