@@ -1,0 +1,359 @@
+openapi: 3.1.0
+info:
+  title: Ticket Platform API
+  version: 0.1.0
+  description: |
+    Initial API contract for gateway public endpoints and internal service endpoints.
+servers:
+  - url: https://api.example.com
+    description: Public API Gateway
+  - url: http://localhost:3000
+    description: Local API Gateway
+
+tags:
+  - name: Health
+  - name: Auth
+  - name: Users
+
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Gateway health check
+      responses:
+        "200":
+          description: Healthy
+
+  /readyz:
+    get:
+      tags: [Health]
+      summary: Gateway readiness check
+      responses:
+        "200":
+          description: All upstream services are ready
+        "503":
+          description: One or more upstream services are not ready
+
+  /v1/auth/otp/request:
+    post:
+      tags: [Auth]
+      summary: Request OTP for phone login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OtpRequestInput"
+      responses:
+        "200":
+          description: OTP issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OtpRequestResponse"
+        "400":
+          description: Invalid phone
+        "429":
+          description: Rate limited
+
+  /v1/auth/otp/verify:
+    post:
+      tags: [Auth]
+      summary: Verify OTP and issue access/refresh tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OtpVerifyInput"
+      responses:
+        "200":
+          description: OTP verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthTokenResponse"
+        "400":
+          description: Invalid payload
+        "401":
+          description: Invalid or expired OTP
+
+  /v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh access token using refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshInput"
+      responses:
+        "200":
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthTokenResponse"
+        "400":
+          description: Invalid payload
+        "401":
+          description: Invalid refresh token
+
+  /v1/users/me:
+    get:
+      tags: [Users]
+      summary: Get current user profile
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfileResponse"
+        "401":
+          description: Missing user context
+    put:
+      tags: [Users]
+      summary: Update current user profile
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserProfileUpdateInput"
+      responses:
+        "200":
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfileResponse"
+        "400":
+          description: Invalid payload
+        "401":
+          description: Missing user context
+
+  /v1/users/me/email:
+    post:
+      tags: [Users]
+      summary: Set or update user email and trigger verification
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserEmailInput"
+      responses:
+        "200":
+          description: Verification request accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserEmailResponse"
+        "400":
+          description: Invalid email
+        "401":
+          description: Missing user context
+
+  /v1/users/me/devices:
+    get:
+      tags: [Users]
+      summary: List user devices
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+      responses:
+        "200":
+          description: Device list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserDevicesResponse"
+        "401":
+          description: Missing user context
+
+  /v1/users/me/devices/{deviceId}:
+    delete:
+      tags: [Users]
+      summary: Revoke a user device
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Device revoked
+        "400":
+          description: Cannot revoke current device
+        "401":
+          description: Missing user context
+        "404":
+          description: Device not found
+
+components:
+  parameters:
+    XUserId:
+      name: x-user-id
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Simulated user identity header used by current skeleton.
+
+  schemas:
+    OtpRequestInput:
+      type: object
+      properties:
+        phone:
+          type: string
+      required: [phone]
+
+    OtpRequestResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            requestId:
+              type: string
+            expiresIn:
+              type: integer
+            retryAfter:
+              type: integer
+            otpCode:
+              type: string
+
+    OtpVerifyInput:
+      type: object
+      properties:
+        phone:
+          type: string
+        requestId:
+          type: string
+        otp:
+          type: string
+      required: [phone, requestId, otp]
+
+    RefreshInput:
+      type: object
+      properties:
+        refreshToken:
+          type: string
+      required: [refreshToken]
+
+    AuthTokenResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            accessToken:
+              type: string
+            accessTokenExpiresAt:
+              type: string
+              format: date-time
+            refreshToken:
+              type: string
+            refreshTokenExpiresAt:
+              type: string
+              format: date-time
+
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+        phoneNumber:
+          type: string
+        fullName:
+          type: string
+        email:
+          type: string
+        emailVerified:
+          type: boolean
+        isFrozen:
+          type: boolean
+        freezeReason:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+
+    UserProfileUpdateInput:
+      type: object
+      properties:
+        fullName:
+          type: string
+        email:
+          type: string
+
+    UserProfileResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/UserProfile"
+
+    UserEmailInput:
+      type: object
+      properties:
+        email:
+          type: string
+      required: [email]
+
+    UserEmailResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            email:
+              type: string
+            verificationSent:
+              type: boolean
+
+    UserDevice:
+      type: object
+      properties:
+        id:
+          type: string
+        deviceName:
+          type: string
+        platform:
+          type: string
+        isCurrent:
+          type: boolean
+        revokedAt:
+          type: string
+          format: date-time
+        revokedReason:
+          type: string
+        lastActiveAt:
+          type: string
+          format: date-time
+
+    UserDevicesResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserDevice"

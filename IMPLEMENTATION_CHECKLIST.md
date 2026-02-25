@@ -146,7 +146,7 @@ Verification evidence:
 
 ## Phase 12 - API Contracts and Integration
 
-- [ ] Publish OpenAPI spec for public APIs and internal APIs.
+- [x] Publish OpenAPI spec for public APIs and internal APIs.
 - [ ] Implement request/response validation and shared error code dictionary.
 - [ ] Implement idempotency-key support for critical mutating endpoints.
 - [ ] Implement webhook signature verification middleware.
