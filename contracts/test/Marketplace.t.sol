@@ -7,6 +7,25 @@ import "../src/Marketplace.sol";
 import "../src/TicketNFT.sol";
 
 contract MarketplaceTest is Test {
+    struct EscrowPayloadV1 {
+        uint8 version;
+        bytes16 settlementId;
+        bytes16 listingId;
+        bytes16 paymentId;
+        uint256 tokenId;
+        address seller;
+        address buyer;
+        uint128 grossAmount;
+        uint128 sellerAmount;
+        uint128 platformFee;
+        uint128 organizerRoyalty;
+        bytes3 currency;
+        uint8 gateway;
+        bytes32 gatewayReferenceHash;
+        uint64 settledAt;
+        bytes32 nonce;
+    }
+
     TicketNFT internal ticket;
     Marketplace internal marketplace;
 
@@ -20,6 +39,7 @@ contract MarketplaceTest is Test {
     uint256 internal constant EVENT_ID = 1;
     uint256 internal constant TICKET_TYPE_ID = 1;
     uint64 internal constant ORIGINAL_PRICE = 100_000;
+    bytes3 internal constant VND = bytes3("VND");
 
     function setUp() public {
         vm.prank(admin);
@@ -63,8 +83,10 @@ contract MarketplaceTest is Test {
         marketplace.listForSale(tokenId, price, expiry);
         assertEq(ticket.ownerOf(tokenId), address(marketplace));
 
+        bytes memory escrowData = _validEscrowData(tokenId, seller, buyer, price, bytes32("payment-001"));
+
         vm.prank(escrow);
-        marketplace.completeSale(tokenId, buyer, bytes("payment-001"));
+        marketplace.completeSale(tokenId, buyer, escrowData);
 
         IMarketplace.Listing memory sold = marketplace.listing(tokenId);
         assertEq(ticket.ownerOf(tokenId), buyer);
@@ -111,7 +133,7 @@ contract MarketplaceTest is Test {
         vm.prank(seller);
         marketplace.listForSale(tokenOne, tokenOnePrice, expiry);
 
-        bytes memory escrowData = bytes("shared-payment-id");
+        bytes memory escrowData = _validEscrowData(tokenOne, seller, buyer, tokenOnePrice, bytes32("shared-id"));
 
         vm.prank(escrow);
         marketplace.completeSale(tokenOne, buyer, escrowData);
@@ -123,6 +145,87 @@ contract MarketplaceTest is Test {
         vm.prank(escrow);
         vm.expectRevert("Marketplace: escrow replay");
         marketplace.completeSale(tokenTwo, buyer, escrowData);
+    }
+
+    function testListForSaleRevertsWhenTicketAlreadyUsed() public {
+        uint256 tokenId = _mintTicketTo(seller, "C1");
+        _approveMarketplace(seller);
+
+        vm.prank(admin);
+        ticket.markAsUsed(tokenId);
+
+        uint256 price = _maxAllowedPrice(tokenId);
+
+        vm.prank(seller);
+        vm.expectRevert("Marketplace: used ticket");
+        marketplace.listForSale(tokenId, price, uint64(block.timestamp + 1 days));
+    }
+
+    function testCompleteSaleRevertsWhenPayloadCurrencyInvalid() public {
+        uint256 tokenId = _mintTicketTo(seller, "C2");
+        _approveMarketplace(seller);
+
+        uint256 price = _maxAllowedPrice(tokenId);
+        vm.prank(seller);
+        marketplace.listForSale(tokenId, price, uint64(block.timestamp + 1 days));
+
+        EscrowPayloadV1 memory payload = _defaultPayload(tokenId, seller, buyer, price, bytes32("currency"));
+        payload.currency = bytes3("USD");
+        bytes memory escrowData = abi.encode(payload);
+
+        vm.prank(escrow);
+        vm.expectRevert("Marketplace: bad currency");
+        marketplace.completeSale(tokenId, buyer, escrowData);
+    }
+
+    function testCompleteSaleRevertsWhenPayloadSplitMismatch() public {
+        uint256 tokenId = _mintTicketTo(seller, "C3");
+        _approveMarketplace(seller);
+
+        uint256 price = _maxAllowedPrice(tokenId);
+        vm.prank(seller);
+        marketplace.listForSale(tokenId, price, uint64(block.timestamp + 1 days));
+
+        EscrowPayloadV1 memory payload = _defaultPayload(tokenId, seller, buyer, price, bytes32("split"));
+        payload.organizerRoyalty = 1;
+        bytes memory escrowData = abi.encode(payload);
+
+        vm.prank(escrow);
+        vm.expectRevert("Marketplace: split mismatch");
+        marketplace.completeSale(tokenId, buyer, escrowData);
+    }
+
+    function testCompleteSaleRevertsWhenTokenMismatch() public {
+        uint256 tokenId = _mintTicketTo(seller, "C4");
+        _approveMarketplace(seller);
+
+        uint256 price = _maxAllowedPrice(tokenId);
+        vm.prank(seller);
+        marketplace.listForSale(tokenId, price, uint64(block.timestamp + 1 days));
+
+        bytes memory escrowData = _validEscrowData(tokenId + 1, seller, buyer, price, bytes32("token-mismatch"));
+
+        vm.prank(escrow);
+        vm.expectRevert("Marketplace: token mismatch");
+        marketplace.completeSale(tokenId, buyer, escrowData);
+    }
+
+    function testCompleteSaleRevertsWhenTicketUsedWhileListed() public {
+        uint256 tokenId = _mintTicketTo(seller, "C5");
+        _approveMarketplace(seller);
+
+        uint256 price = _maxAllowedPrice(tokenId);
+        vm.prank(seller);
+        marketplace.listForSale(tokenId, price, uint64(block.timestamp + 1 days));
+
+        vm.prank(admin);
+        ticket.markAsUsed(tokenId);
+
+        bytes memory escrowData = _validEscrowData(tokenId, seller, buyer, price, bytes32("used-while-listed"));
+
+        vm.prank(escrow);
+        vm.expectRevert("Marketplace: used ticket");
+        marketplace.completeSale(tokenId, buyer, escrowData);
     }
 
     function _mintTicketTo(address to, bytes memory seatInfo) internal returns (uint256 tokenId) {
@@ -139,5 +242,46 @@ contract MarketplaceTest is Test {
     function _maxAllowedPrice(uint256 tokenId) internal view returns (uint256) {
         ITicketNFT.TicketInfo memory info = ticket.ticketData(tokenId);
         return (uint256(info.originalPrice) * uint256(marketplace.maxMarkupBps())) / 10_000;
+    }
+
+    function _validEscrowData(
+        uint256 tokenId,
+        address sellerAddress,
+        address buyerAddress,
+        uint256 grossAmount,
+        bytes32 nonce
+    ) internal view returns (bytes memory) {
+        return abi.encode(_defaultPayload(tokenId, sellerAddress, buyerAddress, grossAmount, nonce));
+    }
+
+    function _defaultPayload(
+        uint256 tokenId,
+        address sellerAddress,
+        address buyerAddress,
+        uint256 grossAmount,
+        bytes32 nonce
+    ) internal view returns (EscrowPayloadV1 memory payload) {
+        uint128 sellerAmount = uint128((grossAmount * 90) / 100);
+        uint128 platformFee = uint128((grossAmount * 5) / 100);
+        uint128 organizerRoyalty = uint128(grossAmount - uint256(sellerAmount) - uint256(platformFee));
+
+        payload = EscrowPayloadV1({
+            version: 1,
+            settlementId: bytes16(uint128(tokenId + 1)),
+            listingId: bytes16(uint128(tokenId + 2)),
+            paymentId: bytes16(uint128(tokenId + 3)),
+            tokenId: tokenId,
+            seller: sellerAddress,
+            buyer: buyerAddress,
+            grossAmount: uint128(grossAmount),
+            sellerAmount: sellerAmount,
+            platformFee: platformFee,
+            organizerRoyalty: organizerRoyalty,
+            currency: VND,
+            gateway: 1,
+            gatewayReferenceHash: keccak256("gateway-ref"),
+            settledAt: uint64(block.timestamp),
+            nonce: nonce
+        });
     }
 }

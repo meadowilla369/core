@@ -12,18 +12,32 @@ import "../interfaces/ITicketNFT.sol";
 
 /// @title Marketplace
 /// @notice Custodial resale marketplace enforcing markup caps and escrow replay protection.
-contract Marketplace is
-    AccessControlEnumerable,
-    Pausable,
-    ReentrancyGuard,
-    IERC721Receiver,
-    IMarketplace
-{
+contract Marketplace is AccessControlEnumerable, Pausable, ReentrancyGuard, IERC721Receiver, IMarketplace {
     bytes32 public constant ESCROW_ROLE = keccak256("ESCROW_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
     uint16 public constant MIN_MARKUP_BPS = 11000;
     uint16 public constant MAX_MARKUP_BPS = 12000;
+    bytes3 private constant VND_CURRENCY = bytes3("VND");
+
+    struct EscrowSettlementPayloadV1 {
+        uint8 version;
+        bytes16 settlementId;
+        bytes16 listingId;
+        bytes16 paymentId;
+        uint256 tokenId;
+        address seller;
+        address buyer;
+        uint128 grossAmount;
+        uint128 sellerAmount;
+        uint128 platformFee;
+        uint128 organizerRoyalty;
+        bytes3 currency;
+        uint8 gateway;
+        bytes32 gatewayReferenceHash;
+        uint64 settledAt;
+        bytes32 nonce;
+    }
 
     ITicketNFT public immutable ticketNFT;
     IERC721 private immutable _ticketToken;
@@ -54,11 +68,12 @@ contract Marketplace is
         _unpause();
     }
 
-    function listForSale(
-        uint256 tokenId,
-        uint256 price,
-        uint64 expiresAt
-    ) external override whenNotPaused nonReentrant {
+    function listForSale(uint256 tokenId, uint256 price, uint64 expiresAt)
+        external
+        override
+        whenNotPaused
+        nonReentrant
+    {
         require(price > 0, "Marketplace: price required");
         require(!_listings[tokenId].active, "Marketplace: already listed");
         require(expiresAt == 0 || expiresAt > block.timestamp, "Marketplace: invalid expiry");
@@ -68,6 +83,8 @@ contract Marketplace is
 
         ITicketNFT.TicketInfo memory info = ticketNFT.ticketData(tokenId);
         require(!ticketNFT.eventCancelled(info.eventId), "Marketplace: event cancelled");
+        require(!info.isUsed, "Marketplace: used ticket");
+        require(!info.refundClaimed, "Marketplace: refunded ticket");
 
         uint256 maxAllowedPrice = (uint256(info.originalPrice) * uint256(maxMarkupBps)) / 10_000;
         require(price <= maxAllowedPrice, "Marketplace: price too high");
@@ -82,25 +99,22 @@ contract Marketplace is
     function cancelListing(uint256 tokenId) external override whenNotPaused nonReentrant {
         Listing memory current = _listings[tokenId];
         require(current.active, "Marketplace: listing inactive");
-        require(
-            msg.sender == current.seller || hasRole(ESCROW_ROLE, msg.sender),
-            "Marketplace: not authorized"
-        );
+        require(msg.sender == current.seller || hasRole(ESCROW_ROLE, msg.sender), "Marketplace: not authorized");
 
         delete _listings[tokenId];
         _ticketToken.safeTransferFrom(address(this), current.seller, tokenId);
 
-        string memory reason = msg.sender == current.seller
-            ? "seller_cancelled"
-            : "operator_cancelled";
+        string memory reason = msg.sender == current.seller ? "seller_cancelled" : "operator_cancelled";
         emit ListingCancelled(tokenId, current.seller, reason);
     }
 
-    function completeSale(
-        uint256 tokenId,
-        address buyer,
-        bytes calldata escrowData
-    ) external override onlyRole(ESCROW_ROLE) whenNotPaused nonReentrant {
+    function completeSale(uint256 tokenId, address buyer, bytes calldata escrowData)
+        external
+        override
+        onlyRole(ESCROW_ROLE)
+        whenNotPaused
+        nonReentrant
+    {
         require(buyer != address(0), "Marketplace: buyer required");
         require(escrowData.length > 0, "Marketplace: escrowData required");
 
@@ -112,6 +126,13 @@ contract Marketplace is
         require(!consumedEscrowHashes[escrowHash], "Marketplace: escrow replay");
         consumedEscrowHashes[escrowHash] = true;
 
+        _validateEscrowPayload(tokenId, buyer, current, escrowData);
+
+        ITicketNFT.TicketInfo memory info = ticketNFT.ticketData(tokenId);
+        require(!ticketNFT.eventCancelled(info.eventId), "Marketplace: event cancelled");
+        require(!info.isUsed, "Marketplace: used ticket");
+        require(!info.refundClaimed, "Marketplace: refunded ticket");
+
         delete _listings[tokenId];
         _ticketToken.safeTransferFrom(address(this), buyer, tokenId);
 
@@ -119,10 +140,7 @@ contract Marketplace is
     }
 
     function setMaxMarkupBps(uint16 newMaxMarkupBps) external override onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(
-            newMaxMarkupBps >= MIN_MARKUP_BPS && newMaxMarkupBps <= MAX_MARKUP_BPS,
-            "Marketplace: invalid markup"
-        );
+        require(newMaxMarkupBps >= MIN_MARKUP_BPS && newMaxMarkupBps <= MAX_MARKUP_BPS, "Marketplace: invalid markup");
         uint16 previous = maxMarkupBps;
         maxMarkupBps = newMaxMarkupBps;
         emit MaxMarkupUpdated(previous, newMaxMarkupBps);
@@ -138,26 +156,41 @@ contract Marketplace is
         return _listings[tokenId];
     }
 
-    function onERC721Received(
-        address operator,
-        address,
-        uint256,
-        bytes calldata
-    ) external view override returns (bytes4) {
+    function onERC721Received(address operator, address, uint256, bytes calldata)
+        external
+        view
+        override
+        returns (bytes4)
+    {
         require(msg.sender == address(_ticketToken), "Marketplace: unsupported NFT");
         require(operator == address(this), "Marketplace: direct transfer blocked");
         return IERC721Receiver.onERC721Received.selector;
     }
 
-    function supportsInterface(bytes4 interfaceId)
-        public
+    function _validateEscrowPayload(uint256 tokenId, address buyer, Listing memory current, bytes calldata escrowData)
+        internal
         view
-        override(AccessControlEnumerable)
-        returns (bool)
     {
-        return
-            interfaceId == type(IMarketplace).interfaceId ||
-            interfaceId == type(IERC721Receiver).interfaceId ||
-            super.supportsInterface(interfaceId);
+        EscrowSettlementPayloadV1 memory payload = abi.decode(escrowData, (EscrowSettlementPayloadV1));
+
+        require(payload.version == 1, "Marketplace: bad payload version");
+        require(payload.currency == VND_CURRENCY, "Marketplace: bad currency");
+        require(payload.gateway == 1 || payload.gateway == 2, "Marketplace: bad gateway");
+        require(payload.settledAt <= block.timestamp, "Marketplace: settlement in future");
+        require(payload.nonce != bytes32(0), "Marketplace: nonce required");
+
+        require(payload.tokenId == tokenId, "Marketplace: token mismatch");
+        require(payload.seller == current.seller, "Marketplace: seller mismatch");
+        require(payload.buyer == buyer, "Marketplace: buyer mismatch");
+        require(payload.grossAmount == current.price, "Marketplace: amount mismatch");
+
+        uint256 splitTotal =
+            uint256(payload.sellerAmount) + uint256(payload.platformFee) + uint256(payload.organizerRoyalty);
+        require(splitTotal == uint256(payload.grossAmount), "Marketplace: split mismatch");
+    }
+
+    function supportsInterface(bytes4 interfaceId) public view override(AccessControlEnumerable) returns (bool) {
+        return interfaceId == type(IMarketplace).interfaceId || interfaceId == type(IERC721Receiver).interfaceId
+            || super.supportsInterface(interfaceId);
     }
 }

@@ -40,11 +40,7 @@ contract TicketNFT is ERC721Enumerable, Pausable, AccessControlEnumerable, ITick
     event TicketTypeConfigured(uint256 indexed ticketTypeId, uint64 price);
     event SeatInfoUpdated(uint256 indexed tokenId, bytes seatInfo);
 
-    constructor(
-        string memory name_,
-        string memory symbol_,
-        address admin
-    ) ERC721(name_, symbol_) {
+    constructor(string memory name_, string memory symbol_, address admin) ERC721(name_, symbol_) {
         require(admin != address(0), "TicketNFT: admin required");
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(OPERATOR_ROLE, admin);
@@ -111,12 +107,12 @@ contract TicketNFT is ERC721Enumerable, Pausable, AccessControlEnumerable, ITick
     // Mint & lifecycle
     // -----------------
 
-    function mint(
-        address to,
-        uint256 eventId,
-        uint256 ticketTypeId,
-        bytes calldata seatInfoData
-    ) external override onlyRole(MINTER_ROLE) whenNotPaused {
+    function mint(address to, uint256 eventId, uint256 ticketTypeId, bytes calldata seatInfoData)
+        external
+        override
+        onlyRole(MINTER_ROLE)
+        whenNotPaused
+    {
         require(!_eventCancelled[eventId], "TicketNFT: event cancelled");
         EventConfig memory config = _eventConfigs[eventId];
         require(config.exists, "TicketNFT: event missing");
@@ -167,6 +163,8 @@ contract TicketNFT is ERC721Enumerable, Pausable, AccessControlEnumerable, ITick
     function markRefundClaimed(uint256 tokenId, uint256 amount) external onlyRole(EVENT_MANAGER_ROLE) {
         require(_ownerOf(tokenId) != address(0), "TicketNFT: nonexistent token");
         TicketInfo storage info = _ticketInfo[tokenId];
+        require(_eventCancelled[info.eventId], "TicketNFT: event active");
+        require(!info.isUsed, "TicketNFT: already used");
         require(!info.refundClaimed, "TicketNFT: refund claimed");
         info.refundClaimed = true;
         emit TicketRefunded(tokenId, amount);
@@ -222,6 +220,13 @@ contract TicketNFT is ERC721Enumerable, Pausable, AccessControlEnumerable, ITick
         whenNotPaused
         returns (address)
     {
+        address from = _ownerOf(tokenId);
+        if (from != address(0) && to != address(0)) {
+            TicketInfo memory info = _ticketInfo[tokenId];
+            require(!info.isUsed, "TicketNFT: used ticket");
+            require(!info.refundClaimed, "TicketNFT: refunded ticket");
+            require(!_eventCancelled[info.eventId], "TicketNFT: event cancelled");
+        }
         return super._update(to, tokenId, auth);
     }
 
