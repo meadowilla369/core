@@ -1,0 +1,329 @@
+import { randomBytes, randomUUID } from "node:crypto";
+import { createServer, IncomingMessage, ServerResponse } from "node:http";
+
+import type { AuthConfig } from "./config.js";
+import { log } from "./logger.js";
+
+interface OtpRecord {
+  phone: string;
+  requestId: string;
+  code: string;
+  expiresAtMs: number;
+}
+
+interface RefreshRecord {
+  phone: string;
+  expiresAtMs: number;
+}
+
+interface RequestOtpBody {
+  phone?: string;
+}
+
+interface VerifyOtpBody {
+  phone?: string;
+  requestId?: string;
+  otp?: string;
+}
+
+interface RefreshBody {
+  refreshToken?: string;
+}
+
+const PHONE_REGEX = /^\+?[1-9]\d{7,14}$/;
+
+function sendJson(res: ServerResponse, statusCode: number, payload: unknown): void {
+  res.statusCode = statusCode;
+  res.setHeader("content-type", "application/json; charset=utf-8");
+  res.end(JSON.stringify(payload));
+}
+
+async function readJson<T>(req: IncomingMessage): Promise<T> {
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of req) {
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  }
+
+  const raw = Buffer.concat(chunks).toString("utf-8").trim();
+  if (!raw) {
+    return {} as T;
+  }
+
+  return JSON.parse(raw) as T;
+}
+
+function generateOtpCode(length: number): string {
+  const min = 10 ** Math.max(length - 1, 1);
+  const max = 10 ** length;
+  return String(Math.floor(Math.random() * (max - min) + min));
+}
+
+function generateToken(prefix: string): string {
+  return `${prefix}_${randomUUID().replace(/-/g, "")}${randomBytes(8).toString("hex")}`;
+}
+
+function pruneTimestamps(now: number, timestamps: number[], windowMs: number): number[] {
+  return timestamps.filter((value) => now - value < windowMs);
+}
+
+export function createAuthServer(config: AuthConfig) {
+  const otpByKey = new Map<string, OtpRecord>();
+  const refreshByToken = new Map<string, RefreshRecord>();
+  const requestAttemptsByPhone = new Map<string, number[]>();
+
+  const cleanupTimer = setInterval(() => {
+    const now = Date.now();
+
+    for (const [key, otp] of otpByKey.entries()) {
+      if (otp.expiresAtMs <= now) {
+        otpByKey.delete(key);
+      }
+    }
+
+    for (const [token, refreshRecord] of refreshByToken.entries()) {
+      if (refreshRecord.expiresAtMs <= now) {
+        refreshByToken.delete(token);
+      }
+    }
+
+    for (const [phone, attempts] of requestAttemptsByPhone.entries()) {
+      const validAttempts = pruneTimestamps(now, attempts, config.otpRateWindowSec * 1000);
+      if (validAttempts.length === 0) {
+        requestAttemptsByPhone.delete(phone);
+      } else {
+        requestAttemptsByPhone.set(phone, validAttempts);
+      }
+    }
+  }, 60_000);
+
+  const server = createServer(async (req, res) => {
+    try {
+      const method = req.method ?? "GET";
+      const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+
+      if (method === "GET" && url.pathname === "/healthz") {
+        return sendJson(res, 200, {
+          success: true,
+          data: {
+            service: config.serviceName,
+            status: "ok",
+            timestamp: new Date().toISOString()
+          }
+        });
+      }
+
+      if (method === "POST" && url.pathname === "/auth/otp/request") {
+        const body = await readJson<RequestOtpBody>(req);
+        const phone = body.phone?.trim() ?? "";
+
+        if (!PHONE_REGEX.test(phone)) {
+          return sendJson(res, 400, {
+            success: false,
+            error: {
+              code: "INVALID_PHONE",
+              message: "Phone number is invalid"
+            }
+          });
+        }
+
+        const now = Date.now();
+        const windowMs = config.otpRateWindowSec * 1000;
+        const attempts = pruneTimestamps(now, requestAttemptsByPhone.get(phone) ?? [], windowMs);
+
+        if (attempts.length >= config.otpMaxRequestsPerWindow) {
+          const retryAfterSec = Math.max(1, Math.ceil((attempts[0] + windowMs - now) / 1000));
+          return sendJson(res, 429, {
+            success: false,
+            error: {
+              code: "OTP_RATE_LIMITED",
+              message: "Too many OTP requests"
+            },
+            data: {
+              retryAfter: retryAfterSec
+            }
+          });
+        }
+
+        const requestId = `req_${randomUUID().replace(/-/g, "")}`;
+        const otpCode = generateOtpCode(config.otpLength);
+        const expiresAtMs = now + config.otpTtlSec * 1000;
+        const key = `${phone}:${requestId}`;
+
+        otpByKey.set(key, {
+          phone,
+          requestId,
+          code: otpCode,
+          expiresAtMs
+        });
+
+        attempts.push(now);
+        requestAttemptsByPhone.set(phone, attempts);
+
+        log(config.serviceName, "info", "OTP issued", {
+          phone,
+          requestId,
+          expiresAtMs
+        });
+
+        return sendJson(res, 200, {
+          success: true,
+          data: {
+            requestId,
+            expiresIn: config.otpTtlSec,
+            retryAfter: 60,
+            ...(config.exposeOtpInResponse ? { otpCode } : {})
+          }
+        });
+      }
+
+      if (method === "POST" && url.pathname === "/auth/otp/verify") {
+        const body = await readJson<VerifyOtpBody>(req);
+        const phone = body.phone?.trim() ?? "";
+        const requestId = body.requestId?.trim() ?? "";
+        const otp = body.otp?.trim() ?? "";
+
+        if (!phone || !requestId || !otp) {
+          return sendJson(res, 400, {
+            success: false,
+            error: {
+              code: "INVALID_VERIFY_PAYLOAD",
+              message: "phone, requestId and otp are required"
+            }
+          });
+        }
+
+        const key = `${phone}:${requestId}`;
+        const record = otpByKey.get(key);
+
+        if (!record) {
+          return sendJson(res, 401, {
+            success: false,
+            error: {
+              code: "OTP_NOT_FOUND",
+              message: "OTP request not found"
+            }
+          });
+        }
+
+        if (Date.now() > record.expiresAtMs) {
+          otpByKey.delete(key);
+          return sendJson(res, 401, {
+            success: false,
+            error: {
+              code: "OTP_EXPIRED",
+              message: "OTP has expired"
+            }
+          });
+        }
+
+        if (record.code !== otp) {
+          return sendJson(res, 401, {
+            success: false,
+            error: {
+              code: "OTP_INVALID",
+              message: "OTP is invalid"
+            }
+          });
+        }
+
+        otpByKey.delete(key);
+
+        const accessToken = generateToken("atk");
+        const refreshToken = generateToken("rtk");
+        const accessTokenExpiresAtMs = Date.now() + config.accessTokenTtlSec * 1000;
+        const refreshTokenExpiresAtMs = Date.now() + config.refreshTokenTtlSec * 1000;
+
+        refreshByToken.set(refreshToken, {
+          phone,
+          expiresAtMs: refreshTokenExpiresAtMs
+        });
+
+        return sendJson(res, 200, {
+          success: true,
+          data: {
+            accessToken,
+            accessTokenExpiresAt: new Date(accessTokenExpiresAtMs).toISOString(),
+            refreshToken,
+            refreshTokenExpiresAt: new Date(refreshTokenExpiresAtMs).toISOString()
+          }
+        });
+      }
+
+      if (method === "POST" && url.pathname === "/auth/refresh") {
+        const body = await readJson<RefreshBody>(req);
+        const refreshToken = body.refreshToken?.trim() ?? "";
+
+        if (!refreshToken) {
+          return sendJson(res, 400, {
+            success: false,
+            error: {
+              code: "INVALID_REFRESH_PAYLOAD",
+              message: "refreshToken is required"
+            }
+          });
+        }
+
+        const refreshRecord = refreshByToken.get(refreshToken);
+        if (!refreshRecord || Date.now() > refreshRecord.expiresAtMs) {
+          refreshByToken.delete(refreshToken);
+          return sendJson(res, 401, {
+            success: false,
+            error: {
+              code: "REFRESH_INVALID",
+              message: "Refresh token is invalid or expired"
+            }
+          });
+        }
+
+        refreshByToken.delete(refreshToken);
+
+        const nextAccessToken = generateToken("atk");
+        const nextRefreshToken = generateToken("rtk");
+        const accessTokenExpiresAtMs = Date.now() + config.accessTokenTtlSec * 1000;
+        const refreshTokenExpiresAtMs = Date.now() + config.refreshTokenTtlSec * 1000;
+
+        refreshByToken.set(nextRefreshToken, {
+          phone: refreshRecord.phone,
+          expiresAtMs: refreshTokenExpiresAtMs
+        });
+
+        return sendJson(res, 200, {
+          success: true,
+          data: {
+            accessToken: nextAccessToken,
+            accessTokenExpiresAt: new Date(accessTokenExpiresAtMs).toISOString(),
+            refreshToken: nextRefreshToken,
+            refreshTokenExpiresAt: new Date(refreshTokenExpiresAtMs).toISOString()
+          }
+        });
+      }
+
+      return sendJson(res, 404, {
+        success: false,
+        error: {
+          code: "NOT_FOUND",
+          message: "Route not found"
+        }
+      });
+    } catch (error) {
+      log(config.serviceName, "error", "Unhandled request error", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+
+      return sendJson(res, 500, {
+        success: false,
+        error: {
+          code: "INTERNAL_ERROR",
+          message: "Internal server error"
+        }
+      });
+    }
+  });
+
+  server.on("close", () => {
+    clearInterval(cleanupTimer);
+  });
+
+  return server;
+}

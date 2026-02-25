@@ -3,13 +3,14 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "API gateway skeleton",
+  "description": "API gateway runnable skeleton",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "node --watch src/index.ts",
+    "dev": "node --watch --experimental-strip-types src/index.ts",
+    "start": "node dist/index.js",
     "test": "echo 'TODO: add tests for svc-api-gateway'",
-    "lint": "echo 'TODO: add lint for svc-api-gateway'",
+    "lint": "eslint src --ext .ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "format": "echo 'TODO: add formatter for svc-api-gateway'"
+    "format": "prettier src --check"
   }
 }

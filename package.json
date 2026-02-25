@@ -16,6 +16,7 @@
     "contracts:test": "cd contracts && forge test --offline"
   },
   "devDependencies": {
+    "@types/node": "^22.10.1",
     "@eslint/js": "^9.14.0",
     "eslint": "^9.14.0",
     "husky": "^9.1.6",

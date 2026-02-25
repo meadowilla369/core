@@ -112,6 +112,7 @@ Verification evidence:
 
 ## Phase 10 - Backend Core Services (Node.js/TypeScript)
 
+- [x] Runtime skeleton implemented for `api-gateway` and `auth-service` with live HTTP smoke test.
 - [ ] Auth Service: OTP request/verify, token refresh, session/device management, rate limits.
 - [ ] User Service: profile, email backup, freeze/unfreeze state, audit logs.
 - [ ] KYC Service: initiate/upload/face match/status, provider abstraction, fallback handling.
