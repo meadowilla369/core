@@ -10,7 +10,8 @@ server.listen(config.port, config.host, () => {
     host: config.host,
     port: config.port,
     authServiceBaseUrl: config.authServiceBaseUrl,
-    userServiceBaseUrl: config.userServiceBaseUrl
+    userServiceBaseUrl: config.userServiceBaseUrl,
+    kycServiceBaseUrl: config.kycServiceBaseUrl
   });
 });
 

@@ -4,6 +4,7 @@ export interface GatewayConfig {
   port: number;
   authServiceBaseUrl: string;
   userServiceBaseUrl: string;
+  kycServiceBaseUrl: string;
   requestTimeoutMs: number;
 }
 
@@ -23,6 +24,7 @@ export function loadConfig(): GatewayConfig {
     port: parseNumber(process.env.PORT, 3000),
     authServiceBaseUrl: process.env.AUTH_SERVICE_BASE_URL ?? "http://127.0.0.1:3001",
     userServiceBaseUrl: process.env.USER_SERVICE_BASE_URL ?? "http://127.0.0.1:3002",
+    kycServiceBaseUrl: process.env.KYC_SERVICE_BASE_URL ?? "http://127.0.0.1:3003",
     requestTimeoutMs: parseNumber(process.env.REQUEST_TIMEOUT_MS, 2000)
   };
 }

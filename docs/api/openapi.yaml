@@ -14,6 +14,7 @@ tags:
   - name: Health
   - name: Auth
   - name: Users
+  - name: KYC
 
 paths:
   /healthz:
@@ -199,6 +200,92 @@ paths:
         "404":
           description: Device not found
 
+  /v1/kyc/initiate:
+    post:
+      tags: [KYC]
+      summary: Initiate KYC flow for current user
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KycInitiateInput"
+      responses:
+        "200":
+          description: KYC flow initiated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KycStatusResponse"
+        "401":
+          description: Missing user context
+
+  /v1/kyc/upload:
+    post:
+      tags: [KYC]
+      summary: Upload identity documents for KYC
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KycUploadInput"
+      responses:
+        "200":
+          description: Documents uploaded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KycStatusResponse"
+        "400":
+          description: Invalid payload
+        "401":
+          description: Missing user context
+
+  /v1/kyc/face-match:
+    post:
+      tags: [KYC]
+      summary: Submit selfie and face match scores
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KycFaceMatchInput"
+      responses:
+        "200":
+          description: Face match processed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KycStatusResponse"
+        "400":
+          description: Invalid payload
+        "401":
+          description: Missing user context
+
+  /v1/kyc/status:
+    get:
+      tags: [KYC]
+      summary: Get current KYC status for user
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+      responses:
+        "200":
+          description: KYC status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KycStatusResponse"
+        "401":
+          description: Missing user context
+
 components:
   parameters:
     XUserId:
@@ -357,3 +444,65 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/UserDevice"
+
+    KycInitiateInput:
+      type: object
+      properties:
+        provider:
+          type: string
+
+    KycUploadInput:
+      type: object
+      properties:
+        cccdNumber:
+          type: string
+        frontImageRef:
+          type: string
+        backImageRef:
+          type: string
+      required: [frontImageRef, backImageRef]
+
+    KycFaceMatchInput:
+      type: object
+      properties:
+        selfieImageRef:
+          type: string
+        livenessScore:
+          type: number
+          minimum: 0
+          maximum: 1
+        faceMatchScore:
+          type: number
+          minimum: 0
+          maximum: 1
+      required: [selfieImageRef, livenessScore, faceMatchScore]
+
+    KycStatusData:
+      type: object
+      properties:
+        kycId:
+          type: string
+        provider:
+          type: string
+        status:
+          type: string
+          enum: [pending, document_uploaded, in_review, approved, rejected]
+        cccdNumber:
+          type: string
+        livenessScore:
+          type: number
+        faceMatchScore:
+          type: number
+        rejectionReason:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+
+    KycStatusResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/KycStatusData"

@@ -15,7 +15,7 @@
 ## Required Baseline Variables
 
 - Runtime: `NODE_ENV`, `API_BASE_URL`
-- Service routing: `AUTH_SERVICE_BASE_URL`, `USER_SERVICE_BASE_URL`
+- Service routing: `AUTH_SERVICE_BASE_URL`, `USER_SERVICE_BASE_URL`, `KYC_SERVICE_BASE_URL`
 - Data: `DATABASE_URL`, `REDIS_URL`
 - Blockchain: `BASE_RPC_URL`
 - Integrations: payment and KYC provider settings
