@@ -15,6 +15,7 @@ tags:
   - name: Auth
   - name: Users
   - name: KYC
+  - name: Events
 
 paths:
   /healthz:
@@ -286,6 +287,89 @@ paths:
         "401":
           description: Missing user context
 
+  /v1/events:
+    get:
+      tags: [Events]
+      summary: List events
+      parameters:
+        - name: city
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Events list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventListResponse"
+
+  /v1/events/{eventId}:
+    get:
+      tags: [Events]
+      summary: Get event details
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Event details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventDetailResponse"
+        "404":
+          description: Event not found
+
+  /v1/events/{eventId}/ticket-types:
+    get:
+      tags: [Events]
+      summary: Get ticket types for event
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Ticket type list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketTypeListResponse"
+        "404":
+          description: Event not found
+
+  /v1/events/{eventId}/availability:
+    get:
+      tags: [Events]
+      summary: Get real-time event ticket availability
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Availability summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventAvailabilityResponse"
+        "404":
+          description: Event not found
+
 components:
   parameters:
     XUserId:
@@ -506,3 +590,98 @@ components:
           type: boolean
         data:
           $ref: "#/components/schemas/KycStatusData"
+
+    EventSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        city:
+          type: string
+        venue:
+          type: string
+        startAt:
+          type: string
+          format: date-time
+        endAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [active, cancelled]
+
+    TicketType:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        price:
+          type: number
+        quantity:
+          type: integer
+        soldCount:
+          type: integer
+
+    EventDetail:
+      allOf:
+        - $ref: "#/components/schemas/EventSummary"
+        - type: object
+          properties:
+            ticketTypes:
+              type: array
+              items:
+                $ref: "#/components/schemas/TicketType"
+
+    EventAvailabilityItem:
+      type: object
+      properties:
+        ticketTypeId:
+          type: string
+        available:
+          type: integer
+        sold:
+          type: integer
+        quantity:
+          type: integer
+
+    EventListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventSummary"
+
+    EventDetailResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/EventDetail"
+
+    TicketTypeListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/TicketType"
+
+    EventAvailabilityResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventAvailabilityItem"

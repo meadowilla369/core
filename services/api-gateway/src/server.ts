@@ -128,20 +128,22 @@ export function createGatewayServer(config: GatewayConfig) {
       }
 
       if (method === "GET" && url.pathname === "/readyz") {
-        const [authReady, userReady, kycReady] = await Promise.all([
+        const [authReady, userReady, kycReady, eventReady] = await Promise.all([
           checkServiceReady(config, "auth-service", config.authServiceBaseUrl),
           checkServiceReady(config, "user-service", config.userServiceBaseUrl),
-          checkServiceReady(config, "kyc-service", config.kycServiceBaseUrl)
+          checkServiceReady(config, "kyc-service", config.kycServiceBaseUrl),
+          checkServiceReady(config, "event-service", config.eventServiceBaseUrl)
         ]);
 
-        const ready = authReady && userReady && kycReady;
+        const ready = authReady && userReady && kycReady && eventReady;
         return sendJson(res, ready ? 200 : 503, {
           success: ready,
           data: {
             service: config.serviceName,
             authServiceReady: authReady,
             userServiceReady: userReady,
-            kycServiceReady: kycReady
+            kycServiceReady: kycReady,
+            eventServiceReady: eventReady
           }
         });
       }
@@ -177,6 +179,18 @@ export function createGatewayServer(config: GatewayConfig) {
           config,
           config.kycServiceBaseUrl,
           "kyc-service",
+          url.pathname,
+          url.search
+        );
+      }
+
+      if (url.pathname === "/v1/events" || url.pathname.startsWith("/v1/events/")) {
+        return proxyRequest(
+          req,
+          res,
+          config,
+          config.eventServiceBaseUrl,
+          "event-service",
           url.pathname,
           url.search
         );

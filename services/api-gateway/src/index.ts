@@ -11,7 +11,8 @@ server.listen(config.port, config.host, () => {
     port: config.port,
     authServiceBaseUrl: config.authServiceBaseUrl,
     userServiceBaseUrl: config.userServiceBaseUrl,
-    kycServiceBaseUrl: config.kycServiceBaseUrl
+    kycServiceBaseUrl: config.kycServiceBaseUrl,
+    eventServiceBaseUrl: config.eventServiceBaseUrl
   });
 });
 

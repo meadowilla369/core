@@ -1,6 +1,6 @@
 # API Gateway Service
 
-Runnable gateway skeleton for auth, user, and KYC routes.
+Runnable gateway skeleton for auth, user, KYC, and event routes.
 
 ## Run (source mode)
 
@@ -9,6 +9,7 @@ PORT=3000 HOST=127.0.0.1 \
 AUTH_SERVICE_BASE_URL=http://127.0.0.1:3001 \
 USER_SERVICE_BASE_URL=http://127.0.0.1:3002 \
 KYC_SERVICE_BASE_URL=http://127.0.0.1:3003 \
+EVENT_SERVICE_BASE_URL=http://127.0.0.1:3004 \
 node --experimental-strip-types src/index.ts
 ```
 
@@ -19,6 +20,7 @@ node --experimental-strip-types src/index.ts
 - `* /v1/auth/*` -> proxied to auth service `/auth/*`
 - `* /v1/users/*` -> proxied to user service `/users/*`
 - `* /v1/kyc/*` -> proxied to KYC service `/kyc/*`
+- `* /v1/events/*` -> proxied to event service `/events/*`
 
 ## Environment Variables
 
@@ -28,4 +30,5 @@ node --experimental-strip-types src/index.ts
 - `AUTH_SERVICE_BASE_URL` (default: `http://127.0.0.1:3001`)
 - `USER_SERVICE_BASE_URL` (default: `http://127.0.0.1:3002`)
 - `KYC_SERVICE_BASE_URL` (default: `http://127.0.0.1:3003`)
+- `EVENT_SERVICE_BASE_URL` (default: `http://127.0.0.1:3004`)
 - `REQUEST_TIMEOUT_MS` (default: `2000`)
