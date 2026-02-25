@@ -9,7 +9,8 @@ server.listen(config.port, config.host, () => {
   log(config.serviceName, "info", "API gateway listening", {
     host: config.host,
     port: config.port,
-    authServiceBaseUrl: config.authServiceBaseUrl
+    authServiceBaseUrl: config.authServiceBaseUrl,
+    userServiceBaseUrl: config.userServiceBaseUrl
   });
 });
 

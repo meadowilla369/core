@@ -38,16 +38,18 @@ async function readBody(req: IncomingMessage): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-async function proxyToAuthService(
+async function proxyRequest(
   req: IncomingMessage,
   res: ServerResponse,
   config: GatewayConfig,
+  upstreamBaseUrl: string,
+  upstreamName: string,
   pathname: string,
   search: string
 ): Promise<void> {
   const method = req.method ?? "GET";
   const upstreamPath = pathname.replace(/^\/v1/, "") + search;
-  const upstreamUrl = `${config.authServiceBaseUrl}${upstreamPath}`;
+  const upstreamUrl = `${upstreamBaseUrl}${upstreamPath}`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
 
@@ -72,6 +74,7 @@ async function proxyToAuthService(
     res.end(responseBuffer);
   } catch (error) {
     log(config.serviceName, "error", "Failed to proxy request", {
+      upstreamName,
       upstreamUrl,
       error: error instanceof Error ? error.message : String(error)
     });
@@ -80,7 +83,7 @@ async function proxyToAuthService(
       success: false,
       error: {
         code: "UPSTREAM_UNAVAILABLE",
-        message: "Auth service unavailable"
+        message: `${upstreamName} unavailable`
       }
     });
   } finally {
@@ -88,18 +91,19 @@ async function proxyToAuthService(
   }
 }
 
-async function checkAuthReady(config: GatewayConfig): Promise<boolean> {
+async function checkServiceReady(config: GatewayConfig, serviceName: string, baseUrl: string): Promise<boolean> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
 
   try {
-    const response = await fetch(`${config.authServiceBaseUrl}/healthz`, {
+    const response = await fetch(`${baseUrl}/healthz`, {
       method: "GET",
       signal: controller.signal
     });
 
     return response.ok;
   } catch {
+    log(config.serviceName, "warn", "Readiness check failed", { serviceName, baseUrl });
     return false;
   } finally {
     clearTimeout(timeout);
@@ -124,18 +128,44 @@ export function createGatewayServer(config: GatewayConfig) {
       }
 
       if (method === "GET" && url.pathname === "/readyz") {
-        const authReady = await checkAuthReady(config);
-        return sendJson(res, authReady ? 200 : 503, {
-          success: authReady,
+        const [authReady, userReady] = await Promise.all([
+          checkServiceReady(config, "auth-service", config.authServiceBaseUrl),
+          checkServiceReady(config, "user-service", config.userServiceBaseUrl)
+        ]);
+
+        const ready = authReady && userReady;
+        return sendJson(res, ready ? 200 : 503, {
+          success: ready,
           data: {
             service: config.serviceName,
-            authServiceReady: authReady
+            authServiceReady: authReady,
+            userServiceReady: userReady
           }
         });
       }
 
       if (url.pathname.startsWith("/v1/auth/")) {
-        return proxyToAuthService(req, res, config, url.pathname, url.search);
+        return proxyRequest(
+          req,
+          res,
+          config,
+          config.authServiceBaseUrl,
+          "auth-service",
+          url.pathname,
+          url.search
+        );
+      }
+
+      if (url.pathname === "/v1/users" || url.pathname.startsWith("/v1/users/")) {
+        return proxyRequest(
+          req,
+          res,
+          config,
+          config.userServiceBaseUrl,
+          "user-service",
+          url.pathname,
+          url.search
+        );
       }
 
       return sendJson(res, 404, {

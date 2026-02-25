@@ -3,6 +3,7 @@ export interface GatewayConfig {
   host: string;
   port: number;
   authServiceBaseUrl: string;
+  userServiceBaseUrl: string;
   requestTimeoutMs: number;
 }
 
@@ -21,6 +22,7 @@ export function loadConfig(): GatewayConfig {
     host: process.env.HOST ?? "127.0.0.1",
     port: parseNumber(process.env.PORT, 3000),
     authServiceBaseUrl: process.env.AUTH_SERVICE_BASE_URL ?? "http://127.0.0.1:3001",
+    userServiceBaseUrl: process.env.USER_SERVICE_BASE_URL ?? "http://127.0.0.1:3002",
     requestTimeoutMs: parseNumber(process.env.REQUEST_TIMEOUT_MS, 2000)
   };
 }
