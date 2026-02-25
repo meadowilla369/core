@@ -20,6 +20,7 @@ tags:
   - name: Marketplace
   - name: CheckIn
   - name: Refunds
+  - name: Recovery
   - name: Payments
   - name: Webhooks
 
@@ -745,6 +746,127 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RefundSyncResponse"
+
+  /v1/recovery/initiate:
+    post:
+      tags: [Recovery]
+      summary: Initiate account recovery
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecoveryInitiateInput"
+      responses:
+        "200":
+          description: Recovery initiated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecoveryDetailResponse"
+        "400":
+          description: Invalid payload
+        "401":
+          description: Missing user context
+        "409":
+          description: Recovery already active
+
+  /v1/recovery/verify:
+    post:
+      tags: [Recovery]
+      summary: Submit one recovery verification channel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecoveryVerifyInput"
+      responses:
+        "200":
+          description: Verification accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecoveryDetailResponse"
+        "400":
+          description: Invalid payload or state
+        "404":
+          description: Recovery not found
+
+  /v1/recovery/{recoveryId}/status:
+    get:
+      tags: [Recovery]
+      summary: Get recovery status
+      parameters:
+        - name: recoveryId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Recovery status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecoveryDetailResponse"
+        "404":
+          description: Recovery not found
+
+  /v1/recovery/{recoveryId}/cancel:
+    post:
+      tags: [Recovery]
+      summary: Cancel active recovery request
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+        - name: recoveryId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Recovery cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecoveryDetailResponse"
+        "401":
+          description: Missing user context
+        "403":
+          description: Not request owner
+        "404":
+          description: Recovery not found
+
+  /v1/recovery/{recoveryId}/rotate-guardian:
+    post:
+      tags: [Recovery]
+      summary: Complete guardian rotation after hold period
+      parameters:
+        - name: recoveryId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecoveryRotateGuardianInput"
+      responses:
+        "200":
+          description: Guardian rotated and recovery completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecoveryRotateGuardianResponse"
+        "400":
+          description: Hold not finished or invalid payload
+        "404":
+          description: Recovery not found
 
   /v1/payments/intents:
     post:
@@ -1731,6 +1853,101 @@ components:
               type: integer
             remainingPending:
               type: integer
+
+    RecoveryInitiateInput:
+      type: object
+      properties:
+        newDeviceFingerprint:
+          type: string
+        reason:
+          type: string
+        currentGuardianAddress:
+          type: string
+        requestedGuardianAddress:
+          type: string
+      required: [newDeviceFingerprint]
+
+    RecoveryVerifyInput:
+      type: object
+      properties:
+        recoveryId:
+          type: string
+        channel:
+          type: string
+          enum: [phone_otp, email_otp, kyc_selfie]
+        code:
+          type: string
+      required: [recoveryId, channel, code]
+
+    RecoveryRecord:
+      type: object
+      properties:
+        recoveryId:
+          type: string
+        userId:
+          type: string
+        status:
+          type: string
+          enum: [pending_verification, on_hold, eligible_for_rotation, completed, cancelled]
+        newDeviceFingerprint:
+          type: string
+        reason:
+          type: string
+        verifiedChannels:
+          type: array
+          items:
+            type: string
+        initiatedAt:
+          type: string
+          format: date-time
+        holdExpiresAt:
+          type: string
+          format: date-time
+        currentGuardianAddress:
+          type: string
+        requestedGuardianAddress:
+          type: string
+        completedAt:
+          type: string
+          format: date-time
+        cancelledAt:
+          type: string
+          format: date-time
+
+    RecoveryDetailResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/RecoveryRecord"
+
+    RecoveryRotateGuardianInput:
+      type: object
+      properties:
+        requestedGuardianAddress:
+          type: string
+
+    RecoveryRotateGuardianResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          allOf:
+            - $ref: "#/components/schemas/RecoveryRecord"
+            - type: object
+              properties:
+                guardianRotation:
+                  type: object
+                  properties:
+                    oldGuardianAddress:
+                      type: string
+                    newGuardianAddress:
+                      type: string
+                    rotatedAt:
+                      type: string
+                      format: date-time
 
     PaymentIntentInput:
       type: object

@@ -137,7 +137,8 @@ export function createGatewayServer(config: GatewayConfig) {
           paymentOrchestratorReady,
           marketplaceReady,
           checkinReady,
-          refundReady
+          refundReady,
+          recoveryReady
         ] = await Promise.all([
             checkServiceReady(config, "auth-service", config.authServiceBaseUrl),
             checkServiceReady(config, "user-service", config.userServiceBaseUrl),
@@ -147,7 +148,8 @@ export function createGatewayServer(config: GatewayConfig) {
             checkServiceReady(config, "payment-orchestrator", config.paymentOrchestratorBaseUrl),
             checkServiceReady(config, "marketplace-service", config.marketplaceServiceBaseUrl),
             checkServiceReady(config, "checkin-service", config.checkinServiceBaseUrl),
-            checkServiceReady(config, "refund-service", config.refundServiceBaseUrl)
+            checkServiceReady(config, "refund-service", config.refundServiceBaseUrl),
+            checkServiceReady(config, "recovery-service", config.recoveryServiceBaseUrl)
           ]);
 
         const ready =
@@ -159,7 +161,8 @@ export function createGatewayServer(config: GatewayConfig) {
           paymentOrchestratorReady &&
           marketplaceReady &&
           checkinReady &&
-          refundReady;
+          refundReady &&
+          recoveryReady;
         return sendJson(res, ready ? 200 : 503, {
           success: ready,
           data: {
@@ -172,7 +175,8 @@ export function createGatewayServer(config: GatewayConfig) {
             paymentOrchestratorReady,
             marketplaceReady,
             checkinReady,
-            refundReady
+            refundReady,
+            recoveryReady
           }
         });
       }
@@ -292,6 +296,18 @@ export function createGatewayServer(config: GatewayConfig) {
           config,
           config.refundServiceBaseUrl,
           "refund-service",
+          url.pathname,
+          url.search
+        );
+      }
+
+      if (url.pathname === "/v1/recovery" || url.pathname.startsWith("/v1/recovery/")) {
+        return proxyRequest(
+          req,
+          res,
+          config,
+          config.recoveryServiceBaseUrl,
+          "recovery-service",
           url.pathname,
           url.search
         );

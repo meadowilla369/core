@@ -17,7 +17,8 @@ server.listen(config.port, config.host, () => {
     paymentOrchestratorBaseUrl: config.paymentOrchestratorBaseUrl,
     marketplaceServiceBaseUrl: config.marketplaceServiceBaseUrl,
     checkinServiceBaseUrl: config.checkinServiceBaseUrl,
-    refundServiceBaseUrl: config.refundServiceBaseUrl
+    refundServiceBaseUrl: config.refundServiceBaseUrl,
+    recoveryServiceBaseUrl: config.recoveryServiceBaseUrl
   });
 });
 

@@ -11,6 +11,7 @@ export interface GatewayConfig {
   marketplaceServiceBaseUrl: string;
   checkinServiceBaseUrl: string;
   refundServiceBaseUrl: string;
+  recoveryServiceBaseUrl: string;
   requestTimeoutMs: number;
 }
 
@@ -37,6 +38,7 @@ export function loadConfig(): GatewayConfig {
     marketplaceServiceBaseUrl: process.env.MARKETPLACE_SERVICE_BASE_URL ?? "http://127.0.0.1:3007",
     checkinServiceBaseUrl: process.env.CHECKIN_SERVICE_BASE_URL ?? "http://127.0.0.1:3008",
     refundServiceBaseUrl: process.env.REFUND_SERVICE_BASE_URL ?? "http://127.0.0.1:3009",
+    recoveryServiceBaseUrl: process.env.RECOVERY_SERVICE_BASE_URL ?? "http://127.0.0.1:3011",
     requestTimeoutMs: parseNumber(process.env.REQUEST_TIMEOUT_MS, 2000)
   };
 }
