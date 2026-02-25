@@ -14,7 +14,8 @@ server.listen(config.port, config.host, () => {
     kycServiceBaseUrl: config.kycServiceBaseUrl,
     eventServiceBaseUrl: config.eventServiceBaseUrl,
     ticketingServiceBaseUrl: config.ticketingServiceBaseUrl,
-    paymentOrchestratorBaseUrl: config.paymentOrchestratorBaseUrl
+    paymentOrchestratorBaseUrl: config.paymentOrchestratorBaseUrl,
+    marketplaceServiceBaseUrl: config.marketplaceServiceBaseUrl
   });
 });
 

@@ -124,7 +124,7 @@ Verification evidence:
 - [ ] Ticketing Service: reservation (15-min TTL), inventory lock, purchase initiation.
 - [x] Payment Orchestrator: webhook verification, idempotency, reconciliation, retry handling.
 - [x] Mint Worker: consume paid events, call `TicketNFT.mint`, retry policy + support queue.
-- [ ] Marketplace Service: create/cancel listing, escrow payload assembly, complete sale trigger.
+- [x] Marketplace Service: create/cancel listing, escrow payload assembly, complete sale trigger.
 - [ ] Check-in Service: QR signature verification + atomic DB check-in + async `markAsUsed`.
 - [ ] Refund Service: cancellation policy, refund queue, payout status sync.
 - [ ] Recovery Service: initiate, dual verification, hold timer, guardian rotation workflow.

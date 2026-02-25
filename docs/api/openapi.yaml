@@ -17,6 +17,7 @@ tags:
   - name: KYC
   - name: Events
   - name: Tickets
+  - name: Marketplace
   - name: Payments
   - name: Webhooks
 
@@ -488,6 +489,130 @@ paths:
         "404":
           description: Ticket not found
 
+  /v1/marketplace/listings:
+    get:
+      tags: [Marketplace]
+      summary: Browse resale listings
+      parameters:
+        - name: eventId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Listing collection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketplaceListingListResponse"
+    post:
+      tags: [Marketplace]
+      summary: Create resale listing (requires KYC)
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+        - $ref: "#/components/parameters/XKycStatus"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarketplaceCreateListingInput"
+      responses:
+        "200":
+          description: Listing created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketplaceListingResponse"
+        "400":
+          description: Invalid payload
+        "401":
+          description: Missing user context
+        "403":
+          description: KYC not approved
+        "409":
+          description: Token already listed
+
+  /v1/marketplace/listings/{listingId}:
+    delete:
+      tags: [Marketplace]
+      summary: Cancel resale listing
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+        - name: listingId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Listing cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketplaceListingResponse"
+        "401":
+          description: Missing user context
+        "403":
+          description: Only seller can cancel
+        "404":
+          description: Listing not found
+
+  /v1/marketplace/listings/{listingId}/purchase:
+    post:
+      tags: [Marketplace]
+      summary: Purchase resale listing and build escrow settlement payload
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - name: listingId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarketplacePurchaseInput"
+      responses:
+        "200":
+          description: Purchase accepted and settlement trigger queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketplacePurchaseResponse"
+        "400":
+          description: Invalid payload or listing not active
+        "401":
+          description: Missing user context
+        "404":
+          description: Listing not found
+
+  /v1/marketplace/me/sales:
+    get:
+      tags: [Marketplace]
+      summary: List seller completed sales
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+      responses:
+        "200":
+          description: Completed sales list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketplaceSalesResponse"
+        "401":
+          description: Missing user context
+
   /v1/payments/intents:
     post:
       tags: [Payments]
@@ -632,6 +757,13 @@ components:
       schema:
         type: string
       description: Simulated user identity header used by current skeleton.
+    XKycStatus:
+      name: x-kyc-status
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Simulated KYC status header. Listing creation requires `approved`.
     IdempotencyKey:
       name: idempotency-key
       in: header
@@ -1085,6 +1217,187 @@ components:
               type: string
             signature:
               type: string
+
+    MarketplaceCreateListingInput:
+      type: object
+      properties:
+        tokenId:
+          type: string
+        eventId:
+          type: string
+        originalPrice:
+          type: number
+        askPrice:
+          type: number
+        sellerWalletAddress:
+          type: string
+      required: [tokenId, eventId, originalPrice, askPrice, sellerWalletAddress]
+
+    MarketplaceListing:
+      type: object
+      properties:
+        id:
+          type: string
+        tokenId:
+          type: string
+        eventId:
+          type: string
+        sellerUserId:
+          type: string
+        sellerWalletAddress:
+          type: string
+        originalPrice:
+          type: number
+        askPrice:
+          type: number
+        currency:
+          type: string
+          enum: [VND]
+        status:
+          type: string
+          enum: [active, cancelled, completed]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        buyerUserId:
+          type: string
+        paymentId:
+          type: string
+        settlementId:
+          type: string
+
+    MarketplaceListingResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/MarketplaceListing"
+
+    MarketplaceListingListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/MarketplaceListing"
+
+    MarketplacePurchaseInput:
+      type: object
+      properties:
+        paymentId:
+          type: string
+        gateway:
+          type: string
+          enum: [momo, vnpay]
+        gatewayReference:
+          type: string
+        buyerWalletAddress:
+          type: string
+      required: [paymentId, gateway, gatewayReference, buyerWalletAddress]
+
+    MarketplaceEscrowPayload:
+      type: object
+      properties:
+        version:
+          type: integer
+        settlementId:
+          type: string
+        listingId:
+          type: string
+        paymentId:
+          type: string
+        tokenId:
+          type: string
+        seller:
+          type: string
+        buyer:
+          type: string
+        grossAmount:
+          type: number
+        sellerAmount:
+          type: number
+        platformFee:
+          type: number
+        organizerRoyalty:
+          type: number
+        currency:
+          type: string
+        gateway:
+          type: integer
+        gatewayReferenceHash:
+          type: string
+        settledAt:
+          type: integer
+        nonce:
+          type: string
+
+    MarketplacePurchaseResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            listing:
+              $ref: "#/components/schemas/MarketplaceListing"
+            settlement:
+              type: object
+              properties:
+                escrowPayload:
+                  $ref: "#/components/schemas/MarketplaceEscrowPayload"
+                escrowDataHash:
+                  type: string
+            completeSaleTrigger:
+              type: object
+              properties:
+                requestId:
+                  type: string
+                status:
+                  type: string
+
+    MarketplaceSalesItem:
+      type: object
+      properties:
+        listingId:
+          type: string
+        paymentId:
+          type: string
+        settlementId:
+          type: string
+        escrowDataHash:
+          type: string
+        completeSaleRequestId:
+          type: string
+        completedAt:
+          type: string
+          format: date-time
+        tokenId:
+          type: string
+        eventId:
+          type: string
+        buyerUserId:
+          type: string
+        askPrice:
+          type: number
+        currency:
+          type: string
+
+    MarketplaceSalesResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/MarketplaceSalesItem"
 
     PaymentIntentInput:
       type: object

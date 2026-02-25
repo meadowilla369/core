@@ -128,18 +128,32 @@ export function createGatewayServer(config: GatewayConfig) {
       }
 
       if (method === "GET" && url.pathname === "/readyz") {
-        const [authReady, userReady, kycReady, eventReady, ticketingReady, paymentOrchestratorReady] =
-          await Promise.all([
+        const [
+          authReady,
+          userReady,
+          kycReady,
+          eventReady,
+          ticketingReady,
+          paymentOrchestratorReady,
+          marketplaceReady
+        ] = await Promise.all([
             checkServiceReady(config, "auth-service", config.authServiceBaseUrl),
             checkServiceReady(config, "user-service", config.userServiceBaseUrl),
             checkServiceReady(config, "kyc-service", config.kycServiceBaseUrl),
             checkServiceReady(config, "event-service", config.eventServiceBaseUrl),
             checkServiceReady(config, "ticketing-service", config.ticketingServiceBaseUrl),
-            checkServiceReady(config, "payment-orchestrator", config.paymentOrchestratorBaseUrl)
+            checkServiceReady(config, "payment-orchestrator", config.paymentOrchestratorBaseUrl),
+            checkServiceReady(config, "marketplace-service", config.marketplaceServiceBaseUrl)
           ]);
 
         const ready =
-          authReady && userReady && kycReady && eventReady && ticketingReady && paymentOrchestratorReady;
+          authReady &&
+          userReady &&
+          kycReady &&
+          eventReady &&
+          ticketingReady &&
+          paymentOrchestratorReady &&
+          marketplaceReady;
         return sendJson(res, ready ? 200 : 503, {
           success: ready,
           data: {
@@ -149,7 +163,8 @@ export function createGatewayServer(config: GatewayConfig) {
             kycServiceReady: kycReady,
             eventServiceReady: eventReady,
             ticketingServiceReady: ticketingReady,
-            paymentOrchestratorReady
+            paymentOrchestratorReady,
+            marketplaceReady
           }
         });
       }
@@ -233,6 +248,18 @@ export function createGatewayServer(config: GatewayConfig) {
           config,
           config.paymentOrchestratorBaseUrl,
           "payment-orchestrator",
+          url.pathname,
+          url.search
+        );
+      }
+
+      if (url.pathname === "/v1/marketplace" || url.pathname.startsWith("/v1/marketplace/")) {
+        return proxyRequest(
+          req,
+          res,
+          config,
+          config.marketplaceServiceBaseUrl,
+          "marketplace-service",
           url.pathname,
           url.search
         );
