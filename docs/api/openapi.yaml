@@ -18,6 +18,7 @@ tags:
   - name: Events
   - name: Tickets
   - name: Marketplace
+  - name: CheckIn
   - name: Payments
   - name: Webhooks
 
@@ -612,6 +613,62 @@ paths:
                 $ref: "#/components/schemas/MarketplaceSalesResponse"
         "401":
           description: Missing user context
+
+  /v1/checkin/verify:
+    post:
+      tags: [CheckIn]
+      summary: Verify QR signature and perform first-scan-wins check-in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckinVerifyInput"
+      responses:
+        "200":
+          description: Check-in verification result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckinVerifyResponse"
+        "400":
+          description: Invalid payload
+
+  /v1/checkin/events/{eventId}/stats:
+    get:
+      tags: [CheckIn]
+      summary: Get check-in metrics for an event
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Event check-in stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckinStatsResponse"
+
+  /v1/checkin/events/{eventId}/gates:
+    get:
+      tags: [CheckIn]
+      summary: Get gate-level check-in counts for an event
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Event gates check-in stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckinGatesResponse"
 
   /v1/payments/intents:
     post:
@@ -1398,6 +1455,106 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/MarketplaceSalesItem"
+
+    CheckinQrData:
+      type: object
+      properties:
+        tokenId:
+          type: string
+        eventId:
+          type: string
+        timestamp:
+          type: integer
+        nonce:
+          type: string
+        walletAddress:
+          type: string
+        signature:
+          type: string
+      required: [tokenId, eventId, timestamp, nonce, walletAddress, signature]
+
+    CheckinVerifyInput:
+      type: object
+      properties:
+        qrData:
+          $ref: "#/components/schemas/CheckinQrData"
+        gateId:
+          type: string
+      required: [qrData, gateId]
+
+    CheckinVerifyResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            valid:
+              type: boolean
+            ticketId:
+              type: string
+            eventId:
+              type: string
+            gateId:
+              type: string
+            checkedInAt:
+              type: string
+              format: date-time
+            markAsUsedJobId:
+              type: string
+            reason:
+              type: string
+            message:
+              type: string
+
+    CheckinGateStat:
+      type: object
+      properties:
+        gateId:
+          type: string
+        checkedInCount:
+          type: integer
+
+    CheckinStatsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            eventId:
+              type: string
+            totalScans:
+              type: integer
+            validScans:
+              type: integer
+            invalidScans:
+              type: integer
+            invalidByReason:
+              type: object
+              additionalProperties:
+                type: integer
+            gates:
+              type: array
+              items:
+                $ref: "#/components/schemas/CheckinGateStat"
+
+    CheckinGatesResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            eventId:
+              type: string
+            gates:
+              type: array
+              items:
+                $ref: "#/components/schemas/CheckinGateStat"
 
     PaymentIntentInput:
       type: object

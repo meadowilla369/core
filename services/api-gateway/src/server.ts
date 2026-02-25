@@ -135,7 +135,8 @@ export function createGatewayServer(config: GatewayConfig) {
           eventReady,
           ticketingReady,
           paymentOrchestratorReady,
-          marketplaceReady
+          marketplaceReady,
+          checkinReady
         ] = await Promise.all([
             checkServiceReady(config, "auth-service", config.authServiceBaseUrl),
             checkServiceReady(config, "user-service", config.userServiceBaseUrl),
@@ -143,7 +144,8 @@ export function createGatewayServer(config: GatewayConfig) {
             checkServiceReady(config, "event-service", config.eventServiceBaseUrl),
             checkServiceReady(config, "ticketing-service", config.ticketingServiceBaseUrl),
             checkServiceReady(config, "payment-orchestrator", config.paymentOrchestratorBaseUrl),
-            checkServiceReady(config, "marketplace-service", config.marketplaceServiceBaseUrl)
+            checkServiceReady(config, "marketplace-service", config.marketplaceServiceBaseUrl),
+            checkServiceReady(config, "checkin-service", config.checkinServiceBaseUrl)
           ]);
 
         const ready =
@@ -153,7 +155,8 @@ export function createGatewayServer(config: GatewayConfig) {
           eventReady &&
           ticketingReady &&
           paymentOrchestratorReady &&
-          marketplaceReady;
+          marketplaceReady &&
+          checkinReady;
         return sendJson(res, ready ? 200 : 503, {
           success: ready,
           data: {
@@ -164,7 +167,8 @@ export function createGatewayServer(config: GatewayConfig) {
             eventServiceReady: eventReady,
             ticketingServiceReady: ticketingReady,
             paymentOrchestratorReady,
-            marketplaceReady
+            marketplaceReady,
+            checkinReady
           }
         });
       }
@@ -260,6 +264,18 @@ export function createGatewayServer(config: GatewayConfig) {
           config,
           config.marketplaceServiceBaseUrl,
           "marketplace-service",
+          url.pathname,
+          url.search
+        );
+      }
+
+      if (url.pathname === "/v1/checkin" || url.pathname.startsWith("/v1/checkin/")) {
+        return proxyRequest(
+          req,
+          res,
+          config,
+          config.checkinServiceBaseUrl,
+          "checkin-service",
           url.pathname,
           url.search
         );

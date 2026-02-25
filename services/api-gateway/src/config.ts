@@ -9,6 +9,7 @@ export interface GatewayConfig {
   ticketingServiceBaseUrl: string;
   paymentOrchestratorBaseUrl: string;
   marketplaceServiceBaseUrl: string;
+  checkinServiceBaseUrl: string;
   requestTimeoutMs: number;
 }
 
@@ -33,6 +34,7 @@ export function loadConfig(): GatewayConfig {
     ticketingServiceBaseUrl: process.env.TICKETING_SERVICE_BASE_URL ?? "http://127.0.0.1:3005",
     paymentOrchestratorBaseUrl: process.env.PAYMENT_ORCHESTRATOR_BASE_URL ?? "http://127.0.0.1:3006",
     marketplaceServiceBaseUrl: process.env.MARKETPLACE_SERVICE_BASE_URL ?? "http://127.0.0.1:3007",
+    checkinServiceBaseUrl: process.env.CHECKIN_SERVICE_BASE_URL ?? "http://127.0.0.1:3008",
     requestTimeoutMs: parseNumber(process.env.REQUEST_TIMEOUT_MS, 2000)
   };
 }

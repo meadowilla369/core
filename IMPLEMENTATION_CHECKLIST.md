@@ -58,7 +58,7 @@ Verification evidence:
 - [x] Backend payment webhook + idempotency + mint worker.
 - [ ] Backend eKYC gate for resale listing.
 - [ ] Escrow transfer ledger in PostgreSQL.
-- [ ] Check-in QR verification service with atomic DB marking.
+- [x] Check-in QR verification service with atomic DB marking.
 - [ ] Event cancellation/refund workflow service.
 - [ ] Wallet recovery service orchestration.
 - [ ] Dispute management service.
@@ -125,7 +125,7 @@ Verification evidence:
 - [x] Payment Orchestrator: webhook verification, idempotency, reconciliation, retry handling.
 - [x] Mint Worker: consume paid events, call `TicketNFT.mint`, retry policy + support queue.
 - [x] Marketplace Service: create/cancel listing, escrow payload assembly, complete sale trigger.
-- [ ] Check-in Service: QR signature verification + atomic DB check-in + async `markAsUsed`.
+- [x] Check-in Service: QR signature verification + atomic DB check-in + async `markAsUsed`.
 - [ ] Refund Service: cancellation policy, refund queue, payout status sync.
 - [ ] Recovery Service: initiate, dual verification, hold timer, guardian rotation workflow.
 - [ ] Dispute Service: tiered SLA flow, auto-rules, escalation and evidence storage.

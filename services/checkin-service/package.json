@@ -3,13 +3,14 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Check-in service skeleton",
+  "description": "Check-in service runnable skeleton",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "node --watch src/index.ts",
+    "dev": "node --watch --experimental-strip-types src/index.ts",
+    "start": "node dist/index.js",
     "test": "echo 'TODO: add tests for svc-checkin-service'",
-    "lint": "echo 'TODO: add lint for svc-checkin-service'",
+    "lint": "eslint src --ext .ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "format": "echo 'TODO: add formatter for svc-checkin-service'"
+    "format": "prettier src --check"
   }
 }
