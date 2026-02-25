@@ -136,7 +136,8 @@ export function createGatewayServer(config: GatewayConfig) {
           ticketingReady,
           paymentOrchestratorReady,
           marketplaceReady,
-          checkinReady
+          checkinReady,
+          refundReady
         ] = await Promise.all([
             checkServiceReady(config, "auth-service", config.authServiceBaseUrl),
             checkServiceReady(config, "user-service", config.userServiceBaseUrl),
@@ -145,7 +146,8 @@ export function createGatewayServer(config: GatewayConfig) {
             checkServiceReady(config, "ticketing-service", config.ticketingServiceBaseUrl),
             checkServiceReady(config, "payment-orchestrator", config.paymentOrchestratorBaseUrl),
             checkServiceReady(config, "marketplace-service", config.marketplaceServiceBaseUrl),
-            checkServiceReady(config, "checkin-service", config.checkinServiceBaseUrl)
+            checkServiceReady(config, "checkin-service", config.checkinServiceBaseUrl),
+            checkServiceReady(config, "refund-service", config.refundServiceBaseUrl)
           ]);
 
         const ready =
@@ -156,7 +158,8 @@ export function createGatewayServer(config: GatewayConfig) {
           ticketingReady &&
           paymentOrchestratorReady &&
           marketplaceReady &&
-          checkinReady;
+          checkinReady &&
+          refundReady;
         return sendJson(res, ready ? 200 : 503, {
           success: ready,
           data: {
@@ -168,7 +171,8 @@ export function createGatewayServer(config: GatewayConfig) {
             ticketingServiceReady: ticketingReady,
             paymentOrchestratorReady,
             marketplaceReady,
-            checkinReady
+            checkinReady,
+            refundReady
           }
         });
       }
@@ -276,6 +280,18 @@ export function createGatewayServer(config: GatewayConfig) {
           config,
           config.checkinServiceBaseUrl,
           "checkin-service",
+          url.pathname,
+          url.search
+        );
+      }
+
+      if (url.pathname === "/v1/refunds" || url.pathname.startsWith("/v1/refunds/")) {
+        return proxyRequest(
+          req,
+          res,
+          config,
+          config.refundServiceBaseUrl,
+          "refund-service",
           url.pathname,
           url.search
         );

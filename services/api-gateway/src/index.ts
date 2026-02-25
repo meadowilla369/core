@@ -16,7 +16,8 @@ server.listen(config.port, config.host, () => {
     ticketingServiceBaseUrl: config.ticketingServiceBaseUrl,
     paymentOrchestratorBaseUrl: config.paymentOrchestratorBaseUrl,
     marketplaceServiceBaseUrl: config.marketplaceServiceBaseUrl,
-    checkinServiceBaseUrl: config.checkinServiceBaseUrl
+    checkinServiceBaseUrl: config.checkinServiceBaseUrl,
+    refundServiceBaseUrl: config.refundServiceBaseUrl
   });
 });
 

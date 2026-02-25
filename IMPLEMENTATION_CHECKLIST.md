@@ -56,10 +56,10 @@ Verification evidence:
 ## Phase 5 - Non-Contract Full Process Backlog (for next repos/services)
 
 - [x] Backend payment webhook + idempotency + mint worker.
-- [ ] Backend eKYC gate for resale listing.
+- [x] Backend eKYC gate for resale listing.
 - [ ] Escrow transfer ledger in PostgreSQL.
 - [x] Check-in QR verification service with atomic DB marking.
-- [ ] Event cancellation/refund workflow service.
+- [x] Event cancellation/refund workflow service.
 - [ ] Wallet recovery service orchestration.
 - [ ] Dispute management service.
 - [ ] Observability and operations runbooks.
@@ -126,7 +126,7 @@ Verification evidence:
 - [x] Mint Worker: consume paid events, call `TicketNFT.mint`, retry policy + support queue.
 - [x] Marketplace Service: create/cancel listing, escrow payload assembly, complete sale trigger.
 - [x] Check-in Service: QR signature verification + atomic DB check-in + async `markAsUsed`.
-- [ ] Refund Service: cancellation policy, refund queue, payout status sync.
+- [x] Refund Service: cancellation policy, refund queue, payout status sync.
 - [ ] Recovery Service: initiate, dual verification, hold timer, guardian rotation workflow.
 - [ ] Dispute Service: tiered SLA flow, auto-rules, escalation and evidence storage.
 - [ ] Notification Service: SMS/email/push templates and event-driven triggers.

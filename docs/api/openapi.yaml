@@ -19,6 +19,7 @@ tags:
   - name: Tickets
   - name: Marketplace
   - name: CheckIn
+  - name: Refunds
   - name: Payments
   - name: Webhooks
 
@@ -669,6 +670,81 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CheckinGatesResponse"
+
+  /v1/refunds/requests:
+    post:
+      tags: [Refunds]
+      summary: Create refund request for cancelled or postponed event
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefundCreateInput"
+      responses:
+        "200":
+          description: Refund request created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefundDetailResponse"
+        "400":
+          description: Invalid or ineligible request
+        "401":
+          description: Missing user context
+        "409":
+          description: Refund already requested
+
+  /v1/refunds/me:
+    get:
+      tags: [Refunds]
+      summary: List current user refund requests
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+      responses:
+        "200":
+          description: Refund request list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefundListResponse"
+        "401":
+          description: Missing user context
+
+  /v1/refunds/{refundId}:
+    get:
+      tags: [Refunds]
+      summary: Get refund request details
+      parameters:
+        - name: refundId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Refund request detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefundDetailResponse"
+        "404":
+          description: Refund request not found
+
+  /v1/refunds/sync:
+    post:
+      tags: [Refunds]
+      summary: Trigger one payout sync cycle for queued refunds
+      responses:
+        "200":
+          description: Sync summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefundSyncResponse"
 
   /v1/payments/intents:
     post:
@@ -1555,6 +1631,106 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/CheckinGateStat"
+
+    RefundCreateInput:
+      type: object
+      properties:
+        ticketId:
+          type: string
+        eventId:
+          type: string
+        paymentId:
+          type: string
+        refundMethod:
+          type: string
+          enum: [momo, bank_transfer]
+        eventStatus:
+          type: string
+          enum: [cancelled, postponed, active]
+        refundWindowOpen:
+          type: boolean
+        originalPurchasePrice:
+          type: number
+        resalePurchasePrice:
+          type: number
+      required: [ticketId, eventId, paymentId, originalPurchasePrice]
+
+    RefundRecord:
+      type: object
+      properties:
+        refundId:
+          type: string
+        userId:
+          type: string
+        ticketId:
+          type: string
+        eventId:
+          type: string
+        paymentId:
+          type: string
+        refundMethod:
+          type: string
+          enum: [momo, bank_transfer]
+        refundAmount:
+          type: number
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+        retryCount:
+          type: integer
+        nextAttemptAt:
+          type: string
+          format: date-time
+        payoutReference:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        failureReason:
+          type: string
+
+    RefundDetailResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/RefundRecord"
+
+    RefundListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/RefundRecord"
+
+    RefundSyncResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            processed:
+              type: integer
+            completed:
+              type: integer
+            failed:
+              type: integer
+            requeued:
+              type: integer
+            remainingPending:
+              type: integer
 
     PaymentIntentInput:
       type: object
