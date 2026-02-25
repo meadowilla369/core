@@ -61,7 +61,7 @@ Verification evidence:
 - [x] Check-in QR verification service with atomic DB marking.
 - [x] Event cancellation/refund workflow service.
 - [x] Wallet recovery service orchestration.
-- [ ] Dispute management service.
+- [x] Dispute management service.
 - [ ] Observability and operations runbooks.
 - [x] Decomposed backlog into detailed execution phases (Phase 6-17).
 
@@ -128,7 +128,7 @@ Verification evidence:
 - [x] Check-in Service: QR signature verification + atomic DB check-in + async `markAsUsed`.
 - [x] Refund Service: cancellation policy, refund queue, payout status sync.
 - [x] Recovery Service: initiate, dual verification, hold timer, guardian rotation workflow.
-- [ ] Dispute Service: tiered SLA flow, auto-rules, escalation and evidence storage.
+- [x] Dispute Service: tiered SLA flow, auto-rules, escalation and evidence storage.
 - [ ] Notification Service: SMS/email/push templates and event-driven triggers.
 - [ ] Admin/Internal APIs: settlements finalize endpoint, support moderation endpoints.
 

@@ -21,6 +21,7 @@ tags:
   - name: CheckIn
   - name: Refunds
   - name: Recovery
+  - name: Disputes
   - name: Payments
   - name: Webhooks
 
@@ -867,6 +868,134 @@ paths:
           description: Hold not finished or invalid payload
         "404":
           description: Recovery not found
+
+  /v1/disputes:
+    post:
+      tags: [Disputes]
+      summary: File a new dispute case
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DisputeCreateInput"
+      responses:
+        "200":
+          description: Dispute created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DisputeDetailResponse"
+        "400":
+          description: Invalid payload
+        "401":
+          description: Missing user context
+
+  /v1/disputes/me:
+    get:
+      tags: [Disputes]
+      summary: List disputes filed by current user
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+      responses:
+        "200":
+          description: Dispute list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DisputeListResponse"
+        "401":
+          description: Missing user context
+
+  /v1/disputes/{disputeId}:
+    get:
+      tags: [Disputes]
+      summary: Get dispute detail, messages, and audit trail
+      parameters:
+        - name: disputeId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Dispute detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DisputeExpandedResponse"
+        "403":
+          description: Not allowed to access dispute
+        "404":
+          description: Dispute not found
+
+  /v1/disputes/{disputeId}/messages:
+    post:
+      tags: [Disputes]
+      summary: Add message to dispute thread
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+        - name: disputeId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DisputeMessageInput"
+      responses:
+        "200":
+          description: Message appended
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DisputeMessageResponse"
+        "400":
+          description: Invalid payload
+        "401":
+          description: Missing user context
+        "403":
+          description: Not allowed to post
+        "404":
+          description: Dispute not found
+
+  /v1/disputes/{disputeId}/escalate:
+    post:
+      tags: [Disputes]
+      summary: Escalate dispute to next support tier
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+        - name: disputeId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DisputeEscalateInput"
+      responses:
+        "200":
+          description: Dispute escalated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DisputeDetailResponse"
+        "400":
+          description: Max tier reached or invalid state
+        "401":
+          description: Missing user context
+        "403":
+          description: Not allowed to escalate
+        "404":
+          description: Dispute not found
 
   /v1/payments/intents:
     post:
@@ -1948,6 +2077,164 @@ components:
                     rotatedAt:
                       type: string
                       format: date-time
+
+    DisputeCreateInput:
+      type: object
+      properties:
+        category:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        disputedAmount:
+          type: number
+        ticketId:
+          type: string
+        paymentId:
+          type: string
+        eventId:
+          type: string
+        evidence:
+          type: object
+      required: [category, title, description, disputedAmount]
+
+    DisputeRecord:
+      type: object
+      properties:
+        disputeId:
+          type: string
+        userId:
+          type: string
+        category:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        disputedAmount:
+          type: number
+        ticketId:
+          type: string
+        paymentId:
+          type: string
+        eventId:
+          type: string
+        evidence:
+          type: object
+        status:
+          type: string
+          enum: [open, in_review, auto_resolved, escalated, resolved, closed]
+        currentTier:
+          type: integer
+          enum: [1, 2, 3]
+        slaDeadlineAt:
+          type: string
+          format: date-time
+        autoResolutionAction:
+          type: string
+        messageCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    DisputeDetailResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/DisputeRecord"
+
+    DisputeListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/DisputeRecord"
+
+    DisputeMessage:
+      type: object
+      properties:
+        id:
+          type: string
+        disputeId:
+          type: string
+        senderType:
+          type: string
+          enum: [user, support, system]
+        message:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    DisputeAudit:
+      type: object
+      properties:
+        id:
+          type: string
+        disputeId:
+          type: string
+        action:
+          type: string
+        performedBy:
+          type: string
+        details:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+
+    DisputeExpandedResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          allOf:
+            - $ref: "#/components/schemas/DisputeRecord"
+            - type: object
+              properties:
+                messages:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/DisputeMessage"
+                auditLog:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/DisputeAudit"
+
+    DisputeMessageInput:
+      type: object
+      properties:
+        message:
+          type: string
+        senderType:
+          type: string
+          enum: [user, support, system]
+      required: [message]
+
+    DisputeMessageResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/DisputeMessage"
+
+    DisputeEscalateInput:
+      type: object
+      properties:
+        reason:
+          type: string
 
     PaymentIntentInput:
       type: object

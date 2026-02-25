@@ -18,7 +18,8 @@ server.listen(config.port, config.host, () => {
     marketplaceServiceBaseUrl: config.marketplaceServiceBaseUrl,
     checkinServiceBaseUrl: config.checkinServiceBaseUrl,
     refundServiceBaseUrl: config.refundServiceBaseUrl,
-    recoveryServiceBaseUrl: config.recoveryServiceBaseUrl
+    recoveryServiceBaseUrl: config.recoveryServiceBaseUrl,
+    disputeServiceBaseUrl: config.disputeServiceBaseUrl
   });
 });
 

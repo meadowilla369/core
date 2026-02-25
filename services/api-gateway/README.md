@@ -1,6 +1,6 @@
 # API Gateway Service
 
-Runnable gateway skeleton for auth, user, KYC, event, ticket, marketplace, check-in, refund, recovery, payment, and webhook routes.
+Runnable gateway skeleton for auth, user, KYC, event, ticket, marketplace, check-in, refund, recovery, dispute, payment, and webhook routes.
 
 ## Run (source mode)
 
@@ -16,6 +16,7 @@ MARKETPLACE_SERVICE_BASE_URL=http://127.0.0.1:3007 \
 CHECKIN_SERVICE_BASE_URL=http://127.0.0.1:3008 \
 REFUND_SERVICE_BASE_URL=http://127.0.0.1:3009 \
 RECOVERY_SERVICE_BASE_URL=http://127.0.0.1:3011 \
+DISPUTE_SERVICE_BASE_URL=http://127.0.0.1:3012 \
 node --experimental-strip-types src/index.ts
 ```
 
@@ -34,6 +35,7 @@ node --experimental-strip-types src/index.ts
 - `* /v1/checkin/*` -> proxied to check-in service `/checkin/*`
 - `* /v1/refunds/*` -> proxied to refund service `/refunds/*`
 - `* /v1/recovery/*` -> proxied to recovery service `/recovery/*`
+- `* /v1/disputes/*` -> proxied to dispute service `/disputes/*`
 
 ## Environment Variables
 
@@ -50,4 +52,5 @@ node --experimental-strip-types src/index.ts
 - `CHECKIN_SERVICE_BASE_URL` (default: `http://127.0.0.1:3008`)
 - `REFUND_SERVICE_BASE_URL` (default: `http://127.0.0.1:3009`)
 - `RECOVERY_SERVICE_BASE_URL` (default: `http://127.0.0.1:3011`)
+- `DISPUTE_SERVICE_BASE_URL` (default: `http://127.0.0.1:3012`)
 - `REQUEST_TIMEOUT_MS` (default: `2000`)

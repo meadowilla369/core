@@ -138,7 +138,8 @@ export function createGatewayServer(config: GatewayConfig) {
           marketplaceReady,
           checkinReady,
           refundReady,
-          recoveryReady
+          recoveryReady,
+          disputeReady
         ] = await Promise.all([
             checkServiceReady(config, "auth-service", config.authServiceBaseUrl),
             checkServiceReady(config, "user-service", config.userServiceBaseUrl),
@@ -149,7 +150,8 @@ export function createGatewayServer(config: GatewayConfig) {
             checkServiceReady(config, "marketplace-service", config.marketplaceServiceBaseUrl),
             checkServiceReady(config, "checkin-service", config.checkinServiceBaseUrl),
             checkServiceReady(config, "refund-service", config.refundServiceBaseUrl),
-            checkServiceReady(config, "recovery-service", config.recoveryServiceBaseUrl)
+            checkServiceReady(config, "recovery-service", config.recoveryServiceBaseUrl),
+            checkServiceReady(config, "dispute-service", config.disputeServiceBaseUrl)
           ]);
 
         const ready =
@@ -162,7 +164,8 @@ export function createGatewayServer(config: GatewayConfig) {
           marketplaceReady &&
           checkinReady &&
           refundReady &&
-          recoveryReady;
+          recoveryReady &&
+          disputeReady;
         return sendJson(res, ready ? 200 : 503, {
           success: ready,
           data: {
@@ -176,7 +179,8 @@ export function createGatewayServer(config: GatewayConfig) {
             marketplaceReady,
             checkinReady,
             refundReady,
-            recoveryReady
+            recoveryReady,
+            disputeReady
           }
         });
       }
@@ -308,6 +312,18 @@ export function createGatewayServer(config: GatewayConfig) {
           config,
           config.recoveryServiceBaseUrl,
           "recovery-service",
+          url.pathname,
+          url.search
+        );
+      }
+
+      if (url.pathname === "/v1/disputes" || url.pathname.startsWith("/v1/disputes/")) {
+        return proxyRequest(
+          req,
+          res,
+          config,
+          config.disputeServiceBaseUrl,
+          "dispute-service",
           url.pathname,
           url.search
         );
