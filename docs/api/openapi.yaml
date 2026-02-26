@@ -210,6 +210,54 @@ paths:
         "401":
           description: Missing user context
 
+  /v1/users/me/freeze:
+    post:
+      tags: [Users]
+      summary: Freeze current user account
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserFreezeInput"
+      responses:
+        "200":
+          description: Account frozen
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfileResponse"
+        "400":
+          description: Already frozen
+        "401":
+          description: Missing user context
+
+  /v1/users/me/unfreeze:
+    post:
+      tags: [Users]
+      summary: Unfreeze current user account
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserFreezeInput"
+      responses:
+        "200":
+          description: Account unfrozen
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfileResponse"
+        "400":
+          description: Account not frozen
+        "401":
+          description: Missing user context
+
   /v1/users/me/devices:
     get:
       tags: [Users]
@@ -246,6 +294,22 @@ paths:
           description: Missing user context
         "404":
           description: Device not found
+
+  /v1/users/me/audit-logs:
+    get:
+      tags: [Users]
+      summary: List user profile/security audit logs
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+      responses:
+        "200":
+          description: Audit log list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserAuditLogListResponse"
+        "401":
+          description: Missing user context
 
   /v1/kyc/initiate:
     post:
@@ -1509,6 +1573,12 @@ components:
             verificationSent:
               type: boolean
 
+    UserFreezeInput:
+      type: object
+      properties:
+        reason:
+          type: string
+
     UserDevice:
       type: object
       properties:
@@ -1538,6 +1608,33 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/UserDevice"
+
+    UserAuditLog:
+      type: object
+      properties:
+        id:
+          type: string
+        action:
+          type: string
+        actor:
+          type: string
+        reason:
+          type: string
+        metadata:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+
+    UserAuditLogListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserAuditLog"
 
     KycInitiateInput:
       type: object

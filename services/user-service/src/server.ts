@@ -34,6 +34,19 @@ interface SetEmailBody {
   email?: string;
 }
 
+interface FreezeBody {
+  reason?: string;
+}
+
+interface UserAuditLog {
+  id: string;
+  action: string;
+  actor: string;
+  reason?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}
+
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function sendJson(res: ServerResponse, statusCode: number, payload: unknown): void {
@@ -75,6 +88,26 @@ function derivePhoneNumber(userId: string): string {
 export function createUserServer(config: UserServiceConfig) {
   const users = new Map<string, UserProfile>();
   const devicesByUser = new Map<string, UserDevice[]>();
+  const auditLogsByUser = new Map<string, UserAuditLog[]>();
+
+  const appendAudit = (
+    userId: string,
+    action: string,
+    actor: string,
+    reason?: string,
+    metadata: Record<string, unknown> = {}
+  ): void => {
+    const entries = auditLogsByUser.get(userId) ?? [];
+    entries.push({
+      id: `ual_${randomUUID().replace(/-/g, "")}`,
+      action,
+      actor,
+      reason,
+      metadata,
+      createdAt: new Date().toISOString()
+    });
+    auditLogsByUser.set(userId, entries);
+  };
 
   const ensureUser = (userId: string): UserProfile => {
     const existing = users.get(userId);
@@ -102,6 +135,8 @@ export function createUserServer(config: UserServiceConfig) {
         lastActiveAt: now
       }
     ]);
+    auditLogsByUser.set(userId, []);
+    appendAudit(userId, "PROFILE_CREATED", "system");
 
     return profile;
   };
@@ -177,6 +212,10 @@ export function createUserServer(config: UserServiceConfig) {
 
         profile.updatedAt = new Date().toISOString();
         users.set(userId, profile);
+        appendAudit(userId, "PROFILE_UPDATED", userId, undefined, {
+          fullNameUpdated: typeof body.fullName === "string",
+          emailUpdated: typeof body.email === "string"
+        });
 
         return sendJson(res, 200, {
           success: true,
@@ -202,6 +241,7 @@ export function createUserServer(config: UserServiceConfig) {
         profile.emailVerified = false;
         profile.updatedAt = new Date().toISOString();
         users.set(userId, profile);
+        appendAudit(userId, "EMAIL_SET", userId, undefined, { email });
 
         return sendJson(res, 200, {
           success: true,
@@ -252,6 +292,7 @@ export function createUserServer(config: UserServiceConfig) {
           revokedReason: "user_request"
         };
         devicesByUser.set(userId, devices);
+        appendAudit(userId, "DEVICE_REVOKED", userId, "user_request", { deviceId });
 
         return sendJson(res, 200, {
           success: true,
@@ -259,6 +300,66 @@ export function createUserServer(config: UserServiceConfig) {
             revoked: true,
             deviceId
           }
+        });
+      }
+
+      if (method === "POST" && url.pathname === "/users/me/freeze") {
+        const body = await readJson<FreezeBody>(req);
+        const reason = body.reason?.trim() || "user_requested";
+
+        if (profile.isFrozen) {
+          return sendJson(res, 400, {
+            success: false,
+            error: {
+              code: "ALREADY_FROZEN",
+              message: "User is already frozen"
+            }
+          });
+        }
+
+        profile.isFrozen = true;
+        profile.freezeReason = reason;
+        profile.updatedAt = new Date().toISOString();
+        users.set(userId, profile);
+        appendAudit(userId, "ACCOUNT_FROZEN", userId, reason);
+
+        return sendJson(res, 200, {
+          success: true,
+          data: profile
+        });
+      }
+
+      if (method === "POST" && url.pathname === "/users/me/unfreeze") {
+        const body = await readJson<FreezeBody>(req);
+        const reason = body.reason?.trim() || "user_requested";
+
+        if (!profile.isFrozen) {
+          return sendJson(res, 400, {
+            success: false,
+            error: {
+              code: "NOT_FROZEN",
+              message: "User is not frozen"
+            }
+          });
+        }
+
+        profile.isFrozen = false;
+        profile.freezeReason = undefined;
+        profile.updatedAt = new Date().toISOString();
+        users.set(userId, profile);
+        appendAudit(userId, "ACCOUNT_UNFROZEN", userId, reason);
+
+        return sendJson(res, 200, {
+          success: true,
+          data: profile
+        });
+      }
+
+      if (method === "GET" && url.pathname === "/users/me/audit-logs") {
+        const entries = (auditLogsByUser.get(userId) ?? []).slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        return sendJson(res, 200, {
+          success: true,
+          data: entries
         });
       }
 
