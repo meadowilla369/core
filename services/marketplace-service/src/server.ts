@@ -47,6 +47,35 @@ interface CompletedSale {
   completedAt: string;
 }
 
+interface FinalizeSettlementBody {
+  version?: number;
+  settlementId?: string;
+  listingId?: string;
+  paymentId?: string;
+  tokenId?: string;
+  seller?: string;
+  buyer?: string;
+  grossAmount?: number;
+  sellerAmount?: number;
+  platformFee?: number;
+  organizerRoyalty?: number;
+  currency?: string;
+  gateway?: number;
+  gatewayReference?: string;
+  settledAt?: number;
+  nonce?: string;
+}
+
+interface SettlementLedgerRecord {
+  settlementId: string;
+  listingId: string;
+  paymentId: string;
+  escrowDataHash: string;
+  submitTxHash: string;
+  status: "submitted";
+  submittedAt: string;
+}
+
 function sendJson(res: ServerResponse, statusCode: number, payload: unknown): void {
   res.statusCode = statusCode;
   res.setHeader("content-type", "application/json; charset=utf-8");
@@ -81,6 +110,11 @@ function extractSingleHeader(req: IncomingMessage, headerName: string): string |
 
 function extractUserId(req: IncomingMessage): string | null {
   return extractSingleHeader(req, "x-user-id");
+}
+
+function hasInternalAccess(req: IncomingMessage, config: MarketplaceConfig): boolean {
+  const key = extractSingleHeader(req, "x-internal-api-key");
+  return key === config.internalApiKey;
 }
 
 function extractIdempotencyKey(req: IncomingMessage): string | null {
@@ -124,6 +158,7 @@ export function createMarketplaceServer(config: MarketplaceConfig) {
   const listingsById = new Map<string, Listing>();
   const listingIdByTokenId = new Map<string, string>();
   const completedSales: CompletedSale[] = [];
+  const settlementLedgerById = new Map<string, SettlementLedgerRecord>();
   const idempotencyResponses = new Map<string, unknown>();
 
   return createServer(async (req, res) => {
@@ -534,6 +569,133 @@ export function createMarketplaceServer(config: MarketplaceConfig) {
         return sendJson(res, 200, {
           success: true,
           data: sales
+        });
+      }
+
+      if (method === "POST" && url.pathname === "/internal/marketplace/settlements/finalize") {
+        if (!hasInternalAccess(req, config)) {
+          return sendJson(res, 401, {
+            success: false,
+            error: {
+              code: "UNAUTHORIZED_INTERNAL",
+              message: "Invalid internal API key"
+            }
+          });
+        }
+
+        const body = await readJson<FinalizeSettlementBody>(req);
+        const settlementId = body.settlementId?.trim() ?? "";
+        const listingId = body.listingId?.trim() ?? "";
+        const paymentId = body.paymentId?.trim() ?? "";
+        const tokenId = body.tokenId?.trim() ?? "";
+        const seller = body.seller?.trim() ?? "";
+        const buyer = body.buyer?.trim() ?? "";
+        const currency = body.currency?.trim().toUpperCase() ?? "";
+        const gatewayReference = body.gatewayReference?.trim() ?? "";
+
+        if (
+          body.version !== 1 ||
+          !settlementId ||
+          !listingId ||
+          !paymentId ||
+          !tokenId ||
+          !seller ||
+          !buyer ||
+          !currency ||
+          !gatewayReference ||
+          typeof body.grossAmount !== "number" ||
+          typeof body.sellerAmount !== "number" ||
+          typeof body.platformFee !== "number" ||
+          typeof body.organizerRoyalty !== "number" ||
+          typeof body.gateway !== "number" ||
+          typeof body.settledAt !== "number" ||
+          !body.nonce
+        ) {
+          return sendJson(res, 400, {
+            success: false,
+            error: {
+              code: "INVALID_SETTLEMENT_PAYLOAD",
+              message: "Settlement payload missing required fields"
+            }
+          });
+        }
+
+        if (currency !== "VND") {
+          return sendJson(res, 400, {
+            success: false,
+            error: {
+              code: "INVALID_CURRENCY",
+              message: "Only VND settlement is supported"
+            }
+          });
+        }
+
+        if (body.grossAmount !== body.sellerAmount + body.platformFee + body.organizerRoyalty) {
+          return sendJson(res, 400, {
+            success: false,
+            error: {
+              code: "INVALID_SETTLEMENT_SPLIT",
+              message: "grossAmount must equal sellerAmount + platformFee + organizerRoyalty"
+            }
+          });
+        }
+
+        const listing = listingsById.get(listingId);
+        if (!listing || listing.tokenId !== tokenId) {
+          return sendJson(res, 400, {
+            success: false,
+            error: {
+              code: "LISTING_MISMATCH",
+              message: "Listing and token mismatch"
+            }
+          });
+        }
+
+        const existing = settlementLedgerById.get(settlementId);
+        if (existing) {
+          return sendJson(res, 200, {
+            success: true,
+            data: existing
+          });
+        }
+
+        const gatewayReferenceHash = sha256Hex(gatewayReference);
+        const escrowPayload = {
+          version: body.version,
+          settlementId,
+          listingId,
+          paymentId,
+          tokenId,
+          seller,
+          buyer,
+          grossAmount: body.grossAmount,
+          sellerAmount: body.sellerAmount,
+          platformFee: body.platformFee,
+          organizerRoyalty: body.organizerRoyalty,
+          currency,
+          gateway: body.gateway,
+          gatewayReferenceHash,
+          settledAt: body.settledAt,
+          nonce: body.nonce
+        };
+
+        const escrowDataHash = sha256Hex(JSON.stringify(escrowPayload));
+        const submitTxHash = `0x${sha256Hex(`${escrowDataHash}:${Date.now()}`)}`;
+        const record: SettlementLedgerRecord = {
+          settlementId,
+          listingId,
+          paymentId,
+          escrowDataHash,
+          submitTxHash,
+          status: "submitted",
+          submittedAt: new Date().toISOString()
+        };
+
+        settlementLedgerById.set(settlementId, record);
+
+        return sendJson(res, 200, {
+          success: true,
+          data: record
         });
       }
 

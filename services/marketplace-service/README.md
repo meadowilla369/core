@@ -18,8 +18,10 @@ node --experimental-strip-types src/index.ts
 - `DELETE /marketplace/listings/:listingId`
 - `POST /marketplace/listings/:listingId/purchase`
 - `GET /marketplace/me/sales`
+- `POST /internal/marketplace/settlements/finalize`
 
 ## Auth Simulation
 
 - Use header `x-user-id` as user context.
 - Listing creation also requires `x-kyc-status: approved`.
+- Internal finalize endpoint requires header `x-internal-api-key` (default value from `INTERNAL_API_KEY`).

@@ -37,6 +37,8 @@ node --experimental-strip-types src/index.ts
 - `* /v1/refunds/*` -> proxied to refund service `/refunds/*`
 - `* /v1/recovery/*` -> proxied to recovery service `/recovery/*`
 - `* /v1/disputes/*` -> proxied to dispute service `/disputes/*`
+- `* /v1/internal/marketplace/*` -> proxied to marketplace service `/internal/marketplace/*`
+- `* /v1/internal/disputes/*` -> proxied to dispute service `/internal/disputes/*`
 - `* /v1/notifications/*` -> proxied to notification service `/notifications/*`
 
 ## Environment Variables

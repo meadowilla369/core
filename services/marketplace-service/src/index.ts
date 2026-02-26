@@ -11,7 +11,8 @@ server.listen(config.port, config.host, () => {
     port: config.port,
     maxMarkupBps: config.maxMarkupBps,
     platformFeeBps: config.platformFeeBps,
-    organizerRoyaltyBps: config.organizerRoyaltyBps
+    organizerRoyaltyBps: config.organizerRoyaltyBps,
+    internalApiKeyConfigured: Boolean(config.internalApiKey)
   });
 });
 

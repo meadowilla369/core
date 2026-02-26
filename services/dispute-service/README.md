@@ -18,8 +18,10 @@ node --experimental-strip-types src/index.ts
 - `GET /disputes/:id`
 - `POST /disputes/:id/messages`
 - `POST /disputes/:id/escalate`
+- `POST /internal/disputes/:id/moderate`
 
 ## Notes
 
 - Use `x-user-id` for customer-scoped calls.
 - Support role can be simulated with `x-support-role` header.
+- Internal moderation endpoint accepts `x-internal-api-key` (default via `INTERNAL_API_KEY`).

@@ -5,6 +5,7 @@ export interface MarketplaceConfig {
   maxMarkupBps: number;
   platformFeeBps: number;
   organizerRoyaltyBps: number;
+  internalApiKey: string;
 }
 
 function parseNumber(value: string | undefined, fallback: number): number {
@@ -23,6 +24,7 @@ export function loadConfig(): MarketplaceConfig {
     port: parseNumber(process.env.PORT, 3007),
     maxMarkupBps: parseNumber(process.env.MAX_MARKUP_BPS, 12000),
     platformFeeBps: parseNumber(process.env.PLATFORM_FEE_BPS, 500),
-    organizerRoyaltyBps: parseNumber(process.env.ORGANIZER_ROYALTY_BPS, 200)
+    organizerRoyaltyBps: parseNumber(process.env.ORGANIZER_ROYALTY_BPS, 200),
+    internalApiKey: process.env.INTERNAL_API_KEY ?? "internal_dev_key"
   };
 }

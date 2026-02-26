@@ -333,6 +333,30 @@ export function createGatewayServer(config: GatewayConfig) {
         );
       }
 
+      if (url.pathname.startsWith("/v1/internal/marketplace/")) {
+        return proxyRequest(
+          req,
+          res,
+          config,
+          config.marketplaceServiceBaseUrl,
+          "marketplace-service",
+          url.pathname,
+          url.search
+        );
+      }
+
+      if (url.pathname.startsWith("/v1/internal/disputes/")) {
+        return proxyRequest(
+          req,
+          res,
+          config,
+          config.disputeServiceBaseUrl,
+          "dispute-service",
+          url.pathname,
+          url.search
+        );
+      }
+
       if (url.pathname === "/v1/notifications" || url.pathname.startsWith("/v1/notifications/")) {
         return proxyRequest(
           req,

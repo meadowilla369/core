@@ -618,6 +618,30 @@ paths:
         "401":
           description: Missing user context
 
+  /v1/internal/marketplace/settlements/finalize:
+    post:
+      tags: [Marketplace]
+      summary: Internal settlement finalization and submit trigger
+      parameters:
+        - $ref: "#/components/parameters/InternalApiKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarketplaceSettlementFinalizeInput"
+      responses:
+        "200":
+          description: Settlement submitted or returned from idempotent ledger
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketplaceSettlementFinalizeResponse"
+        "400":
+          description: Invalid settlement payload
+        "401":
+          description: Invalid internal API key
+
   /v1/checkin/verify:
     post:
       tags: [CheckIn]
@@ -998,6 +1022,37 @@ paths:
         "404":
           description: Dispute not found
 
+  /v1/internal/disputes/{disputeId}/moderate:
+    post:
+      tags: [Disputes]
+      summary: Internal support moderation action for dispute
+      parameters:
+        - $ref: "#/components/parameters/InternalApiKey"
+        - name: disputeId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DisputeModerationInput"
+      responses:
+        "200":
+          description: Dispute moderated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DisputeDetailResponse"
+        "400":
+          description: Invalid moderation payload
+        "401":
+          description: Invalid internal API key
+        "404":
+          description: Dispute not found
+
   /v1/notifications/templates:
     get:
       tags: [Notifications]
@@ -1247,6 +1302,13 @@ components:
       schema:
         type: string
       description: Unique nonce to prevent webhook replay.
+    InternalApiKey:
+      name: x-internal-api-key
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Internal service-to-service API key.
 
   schemas:
     OtpRequestInput:
@@ -1854,6 +1916,90 @@ components:
           items:
             $ref: "#/components/schemas/MarketplaceSalesItem"
 
+    MarketplaceSettlementFinalizeInput:
+      type: object
+      properties:
+        version:
+          type: integer
+          enum: [1]
+        settlementId:
+          type: string
+        listingId:
+          type: string
+        paymentId:
+          type: string
+        tokenId:
+          type: string
+        seller:
+          type: string
+        buyer:
+          type: string
+        grossAmount:
+          type: number
+        sellerAmount:
+          type: number
+        platformFee:
+          type: number
+        organizerRoyalty:
+          type: number
+        currency:
+          type: string
+        gateway:
+          type: integer
+        gatewayReference:
+          type: string
+        settledAt:
+          type: integer
+        nonce:
+          type: string
+      required:
+        [
+          version,
+          settlementId,
+          listingId,
+          paymentId,
+          tokenId,
+          seller,
+          buyer,
+          grossAmount,
+          sellerAmount,
+          platformFee,
+          organizerRoyalty,
+          currency,
+          gateway,
+          gatewayReference,
+          settledAt,
+          nonce
+        ]
+
+    MarketplaceSettlementFinalizeRecord:
+      type: object
+      properties:
+        settlementId:
+          type: string
+        listingId:
+          type: string
+        paymentId:
+          type: string
+        escrowDataHash:
+          type: string
+        submitTxHash:
+          type: string
+        status:
+          type: string
+          enum: [submitted]
+        submittedAt:
+          type: string
+          format: date-time
+
+    MarketplaceSettlementFinalizeResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/MarketplaceSettlementFinalizeRecord"
+
     CheckinQrData:
       type: object
       properties:
@@ -2306,6 +2452,18 @@ components:
       properties:
         reason:
           type: string
+
+    DisputeModerationInput:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [resolve_refund_full, resolve_refund_partial, reject, close]
+        resolutionNote:
+          type: string
+        resolutionAmount:
+          type: number
+      required: [action]
 
     NotificationTemplate:
       type: object

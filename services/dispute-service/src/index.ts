@@ -11,7 +11,8 @@ server.listen(config.port, config.host, () => {
     port: config.port,
     slaTier1Hours: config.slaTier1Hours,
     slaTier2Hours: config.slaTier2Hours,
-    slaTier3Hours: config.slaTier3Hours
+    slaTier3Hours: config.slaTier3Hours,
+    internalApiKeyConfigured: Boolean(config.internalApiKey)
   });
 });
 

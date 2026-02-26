@@ -5,6 +5,7 @@ export interface DisputeConfig {
   slaTier1Hours: number;
   slaTier2Hours: number;
   slaTier3Hours: number;
+  internalApiKey: string;
 }
 
 function parseNumber(value: string | undefined, fallback: number): number {
@@ -23,6 +24,7 @@ export function loadConfig(): DisputeConfig {
     port: parseNumber(process.env.PORT, 3012),
     slaTier1Hours: parseNumber(process.env.SLA_TIER1_HOURS, 24),
     slaTier2Hours: parseNumber(process.env.SLA_TIER2_HOURS, 48),
-    slaTier3Hours: parseNumber(process.env.SLA_TIER3_HOURS, 72)
+    slaTier3Hours: parseNumber(process.env.SLA_TIER3_HOURS, 72),
+    internalApiKey: process.env.INTERNAL_API_KEY ?? "internal_dev_key"
   };
 }

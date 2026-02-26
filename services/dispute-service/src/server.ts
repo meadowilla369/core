@@ -28,6 +28,12 @@ interface EscalateBody {
   reason?: string;
 }
 
+interface ModerateDisputeBody {
+  action?: string;
+  resolutionNote?: string;
+  resolutionAmount?: number;
+}
+
 interface DisputeRecord {
   id: string;
   userId: string;
@@ -102,6 +108,11 @@ function extractUserId(req: IncomingMessage): string | null {
 
 function extractSupportRole(req: IncomingMessage): string | null {
   return extractSingleHeader(req, "x-support-role");
+}
+
+function hasInternalAccess(req: IncomingMessage, config: DisputeConfig): boolean {
+  const key = extractSingleHeader(req, "x-internal-api-key");
+  return key === config.internalApiKey || Boolean(extractSupportRole(req));
 }
 
 function toIso(ms: number): string {
@@ -554,6 +565,77 @@ export function createDisputeServer(config: DisputeConfig) {
         });
 
         appendMessage(dispute.id, "system", `Dispute escalated from tier ${fromTier} to tier ${toTier}`);
+
+        return sendJson(res, 200, {
+          success: true,
+          data: serializeDispute(dispute, (messagesByDisputeId.get(dispute.id) ?? []).length)
+        });
+      }
+
+      const moderateMatch = /^\/internal\/disputes\/([^/]+)\/moderate$/.exec(url.pathname);
+      if (method === "POST" && moderateMatch) {
+        if (!hasInternalAccess(req, config)) {
+          return sendJson(res, 401, {
+            success: false,
+            error: {
+              code: "UNAUTHORIZED_INTERNAL",
+              message: "Invalid internal API key"
+            }
+          });
+        }
+
+        const dispute = disputesById.get(moderateMatch[1]);
+        if (!dispute) {
+          return sendJson(res, 404, {
+            success: false,
+            error: {
+              code: "DISPUTE_NOT_FOUND",
+              message: "Dispute not found"
+            }
+          });
+        }
+
+        const body = await readJson<ModerateDisputeBody>(req);
+        const action = body.action?.trim().toLowerCase() ?? "";
+        const resolutionNote = body.resolutionNote?.trim() ?? "Moderated by support";
+
+        if (!action) {
+          return sendJson(res, 400, {
+            success: false,
+            error: {
+              code: "INVALID_MODERATION_PAYLOAD",
+              message: "action is required"
+            }
+          });
+        }
+
+        if (action === "resolve_refund_full" || action === "resolve_refund_partial") {
+          dispute.status = "resolved";
+        } else if (action === "close" || action === "reject") {
+          dispute.status = "closed";
+        } else {
+          return sendJson(res, 400, {
+            success: false,
+            error: {
+              code: "UNSUPPORTED_MODERATION_ACTION",
+              message: "Unsupported moderation action"
+            }
+          });
+        }
+
+        dispute.updatedAt = new Date().toISOString();
+
+        appendAudit(dispute.id, "MODERATE", "internal", {
+          action,
+          resolutionNote,
+          resolutionAmount: body.resolutionAmount
+        });
+
+        appendMessage(
+          dispute.id,
+          "system",
+          `Support moderation applied: ${action}. ${resolutionNote}`
+        );
 
         return sendJson(res, 200, {
           success: true,
