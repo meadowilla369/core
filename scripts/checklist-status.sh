@@ -6,8 +6,8 @@ if [[ ! -f IMPLEMENTATION_CHECKLIST.md ]]; then
   exit 1
 fi
 
-done_count=$(rg -n "^- \[x\]" IMPLEMENTATION_CHECKLIST.md | wc -l | tr -d ' ')
-pending_count=$(rg -n "^- \[ \]" IMPLEMENTATION_CHECKLIST.md | wc -l | tr -d ' ')
+done_count=$( (rg -n "^- \[x\]" IMPLEMENTATION_CHECKLIST.md || true) | wc -l | tr -d ' ')
+pending_count=$( (rg -n "^- \[ \]" IMPLEMENTATION_CHECKLIST.md || true) | wc -l | tr -d ' ')
 
 echo "Checklist status"
 echo "- completed: ${done_count}"

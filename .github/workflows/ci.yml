@@ -29,17 +29,20 @@ jobs:
       - name: Validate migration policy
         run: ./scripts/validate-migrations.sh
 
+      - name: Validate staging parity
+        run: ./scripts/check-staging-parity.sh
+
       - name: Lint
         run: npm run lint
 
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Unit and integration tests
-        run: npm run test
+      - name: Unit/integration/e2e/load/chaos tests
+        run: cd packages/integration-suite && npm run test
 
-      - name: Contracts tests (offline)
-        run: npm run contracts:test
+      - name: Contract quality gates
+        run: ./scripts/run-contract-quality-gates.sh
 
       - name: Build
         run: npm run build

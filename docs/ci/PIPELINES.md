@@ -1,19 +1,36 @@
-# CI Pipeline Overview
+# CI/CD Pipeline Overview
 
-## Workflow
+## CI Workflow
 
 GitHub Actions workflow: `.github/workflows/ci.yml`
 
 Execution order:
 
 1. Install dependencies.
-2. Validate DB migrations (`scripts/validate-migrations.sh`).
-3. Run `lint`.
-4. Run `typecheck`.
-5. Run `test`.
-6. Run contracts tests offline (`forge test --offline`).
-7. Run `build`.
+2. Validate DB migration policy (`scripts/validate-migrations.sh`).
+3. Validate staging parity (`scripts/check-staging-parity.sh`).
+4. Run lint + typecheck.
+5. Run integration suite (`packages/integration-suite`).
+6. Run contract quality gates (`scripts/run-contract-quality-gates.sh`).
+7. Run build.
 8. Generate artifact checksum manifest (`scripts/sign-artifacts.sh`).
+
+## CD Workflow
+
+Workflow: `.github/workflows/cd.yml`
+
+- Blue/green deploy: `scripts/deploy-bluegreen.sh`.
+- Rollback automation: `scripts/rollback-release.sh`.
+- Release and rollback gates:
+- `scripts/release-candidate-gate.sh`
+- `scripts/incident-rollback-gate.sh`
+
+## Contract Deploy Workflow
+
+Workflow: `.github/workflows/contracts-deploy.yml`
+
+- Validates environment-specific deploy config.
+- Runs offline/fuzz/property quality gates before deploy approval.
 
 ## Forward-Only Migration Policy
 
@@ -26,9 +43,9 @@ Validation script enforces:
 
 ## Artifact Signing
 
-Current signing implementation is checksum-based for reproducibility:
+Current signing implementation is checksum-based:
 
 - SHA-256 manifest at `artifacts/signatures/checksums.sha256`.
 - Manifest uploaded as CI artifact on each run.
 
-The next hardening step is integrating KMS-backed cryptographic signatures.
+Next hardening step: KMS-backed cryptographic signatures.

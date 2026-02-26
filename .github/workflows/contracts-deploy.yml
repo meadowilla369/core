@@ -1,0 +1,51 @@
+name: Contracts Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: "Base network"
+        required: true
+        type: choice
+        options:
+          - base-sepolia
+          - base-mainnet
+      config_file:
+        description: "Deploy config file"
+        required: true
+        type: choice
+        options:
+          - contracts/deploy-config/base-sepolia.env.example
+          - contracts/deploy-config/base-mainnet.env.example
+
+jobs:
+  validate-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Setup Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Validate deploy config
+        run: ./scripts/validate-contract-deploy-config.sh "${{ github.event.inputs.config_file }}"
+
+      - name: Run contracts quality gates
+        run: ./scripts/run-contract-quality-gates.sh
+
+      - name: Prepare deploy command
+        run: |
+          echo "Network: ${{ github.event.inputs.network }}"
+          echo "Config: ${{ github.event.inputs.config_file }}"
+          echo "Deploy command prepared. Manual approval required before broadcasting."

@@ -1,0 +1,40 @@
+{
+  "version": "2026-02-26",
+  "roles": {
+    "buyer": [
+      "tickets:read",
+      "tickets:purchase",
+      "disputes:create",
+      "recovery:initiate"
+    ],
+    "organizer": [
+      "events:create",
+      "events:update",
+      "events:cancel",
+      "analytics:read"
+    ],
+    "staff_scanner": [
+      "checkin:verify",
+      "checkin:stats:read"
+    ],
+    "support": [
+      "disputes:read",
+      "disputes:moderate",
+      "refunds:review"
+    ],
+    "platform_admin": [
+      "internal:settlements:finalize",
+      "secrets:rotate",
+      "rbac:manage"
+    ]
+  },
+  "privilegedActions": [
+    "internal:settlements:finalize",
+    "disputes:moderate",
+    "secrets:rotate"
+  ],
+  "mfaRequiredRoles": [
+    "support",
+    "platform_admin"
+  ]
+}

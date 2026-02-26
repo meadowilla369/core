@@ -1,0 +1,66 @@
+name: CD
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      action:
+        description: "Deployment action"
+        required: true
+        type: choice
+        options:
+          - deploy
+          - rollback
+      image_tag:
+        description: "Container image tag"
+        required: false
+        type: string
+      release_id:
+        description: "Release identifier for rollback"
+        required: false
+        type: string
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run release candidate gate
+        if: ${{ github.event.inputs.action == 'deploy' }}
+        run: ./scripts/release-candidate-gate.sh
+
+      - name: Run rollback gate
+        if: ${{ github.event.inputs.action == 'rollback' }}
+        run: ./scripts/incident-rollback-gate.sh
+
+  rollout:
+    needs: gates
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Blue/green deploy
+        if: ${{ github.event.inputs.action == 'deploy' }}
+        run: ./scripts/deploy-bluegreen.sh "${{ github.event.inputs.environment }}" "${{ github.event.inputs.image_tag }}"
+
+      - name: Rollback release
+        if: ${{ github.event.inputs.action == 'rollback' }}
+        run: ./scripts/rollback-release.sh "${{ github.event.inputs.environment }}" "${{ github.event.inputs.release_id }}"
+
+      - name: Upload rollout artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cd-rollout-artifacts
+          path: artifacts/deploy/*.json

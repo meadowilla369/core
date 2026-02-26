@@ -1,0 +1,20 @@
+{
+  "version": "2026-02-26",
+  "kms": {
+    "keyAlias": "alias/ticket-platform-minter",
+    "rotationDays": 90
+  },
+  "iam": {
+    "assumableRoles": [
+      "worker-mint-runtime"
+    ],
+    "allowedActions": [
+      "kms:Sign",
+      "kms:GetPublicKey"
+    ]
+  },
+  "alerting": {
+    "signFailureThreshold": 3,
+    "unexpectedSignerThreshold": 1
+  }
+}

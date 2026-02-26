@@ -1,0 +1,11 @@
+{
+  "version": "2026-02-26",
+  "dailyBudgetWei": "50000000000000000",
+  "warningThresholdPct": 80,
+  "blockThresholdPct": 100,
+  "automaticSafeguards": [
+    "disable_new_sponsorship",
+    "notify_on_call",
+    "open_incident"
+  ]
+}

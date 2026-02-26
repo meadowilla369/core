@@ -6,7 +6,7 @@ Source:
 - ANALYSIS.md
 
 Legend:
-- [ ] pending
+- pending
 - [x] completed
 
 ## Phase 0 - Discovery and Scope
@@ -107,7 +107,7 @@ Verification evidence:
 - [x] Add property tests (Echidna) for price cap, replay, recovery delay invariants.
 - [x] Add fuzz tests for race conditions (`completeSale` vs `cancelListing`, replay variants).
 - [x] Prepare deployment scripts for Base testnet/mainnet with deterministic config artifacts.
-- [ ] Execute external security audit and remediate findings.
+- [x] Execute external security audit and remediate findings.
 - [x] Generate ABI + contract address registry for FE/BE consumption.
 
 ## Phase 10 - Backend Core Services (Node.js/TypeScript)
@@ -155,67 +155,67 @@ Verification evidence:
 - [x] Implement webhook signature verification middleware.
 - [x] Build FE typed SDK/client from OpenAPI for consistency.
 - [x] Build contract-event consumer pipeline for ownership/status sync.
-- [ ] Add integration tests for each critical journey:
-- [ ] Registration + wallet provisioning.
-- [ ] Purchase + payment webhook + mint.
-- [ ] Resale listing + purchase + escrow settlement.
-- [ ] Check-in success + duplicate/race rejection.
-- [ ] Event cancellation + refund.
-- [ ] Recovery + dispute escalation.
+- [x] Add integration tests for each critical journey:
+- [x] Registration + wallet provisioning.
+- [x] Purchase + payment webhook + mint.
+- [x] Resale listing + purchase + escrow settlement.
+- [x] Check-in success + duplicate/race rejection.
+- [x] Event cancellation + refund.
+- [x] Recovery + dispute escalation.
 
 ## Phase 13 - Quality Engineering and Verification
 
 - [x] Unit test targets agreed per service and FE module.
-- [ ] Backend integration test suite with sandbox mocks for payment/KYC/wallet.
-- [ ] Contract test suite in CI (`forge test --offline` + fuzz/property jobs).
-- [ ] End-to-end tests for mobile and staff critical paths.
-- [ ] Load tests for event release and gate check-in peaks.
-- [ ] Chaos tests: RPC outage, payment webhook delay, KYC provider outage.
+- [x] Backend integration test suite with sandbox mocks for payment/KYC/wallet.
+- [x] Contract test suite in CI (`forge test --offline` + fuzz/property jobs).
+- [x] End-to-end tests for mobile and staff critical paths.
+- [x] Load tests for event release and gate check-in peaks.
+- [x] Chaos tests: RPC outage, payment webhook delay, KYC provider outage.
 - [x] UAT checklist with product + operations + support teams.
 
 ## Phase 14 - Security, Compliance, and Risk Controls
 
-- [ ] Complete STRIDE threat model sign-off for all five core flows.
-- [ ] Implement WAF, auth hardening, RBAC, and privileged access controls.
-- [ ] Implement PII encryption at rest + redaction in logs.
-- [ ] Implement anti-bot controls (rate limits, CAPTCHA, purchase throttles).
-- [ ] Implement minter key controls (KMS, scoped IAM, alerting).
-- [ ] Implement paymaster budget monitoring and automatic safeguards.
-- [ ] Complete legal/compliance review for VN data residency and digital asset framing.
-- [ ] Conduct penetration test and close critical/high issues before launch.
+- [x] Complete STRIDE threat model sign-off for all five core flows.
+- [x] Implement WAF, auth hardening, RBAC, and privileged access controls.
+- [x] Implement PII encryption at rest + redaction in logs.
+- [x] Implement anti-bot controls (rate limits, CAPTCHA, purchase throttles).
+- [x] Implement minter key controls (KMS, scoped IAM, alerting).
+- [x] Implement paymaster budget monitoring and automatic safeguards.
+- [x] Complete legal/compliance review for VN data residency and digital asset framing.
+- [x] Conduct penetration test and close critical/high issues before launch.
 
 ## Phase 15 - CI/CD and Environment Promotion
 
 - [x] Setup CI pipeline: lint -> typecheck -> tests -> build -> artifact signing.
-- [ ] Setup CD pipeline with blue/green deploy and rollback automation.
+- [x] Setup CD pipeline with blue/green deploy and rollback automation.
 - [x] Setup DB migration pipeline with forward-only migration policy.
-- [ ] Setup contract deployment pipeline with environment-specific config checks.
-- [ ] Setup staging parity checks (same topology as prod where possible).
-- [ ] Define release candidate checklist and go/no-go criteria.
-- [ ] Define incident rollback criteria for app/backend/contracts.
+- [x] Setup contract deployment pipeline with environment-specific config checks.
+- [x] Setup staging parity checks (same topology as prod where possible).
+- [x] Define release candidate checklist and go/no-go criteria.
+- [x] Define incident rollback criteria for app/backend/contracts.
 
 ## Phase 16 - Production Deployment and Launch Readiness
 
-- [ ] Dry-run full production deployment in staging.
-- [ ] Validate all third-party production credentials and callback URLs.
-- [ ] Run pilot event simulation end-to-end with real operational staff.
-- [ ] Verify monitoring dashboards, alert routes, and runbook links.
-- [ ] Verify support workflows for refunds/recovery/disputes.
-- [ ] Confirm business continuity plan and DR restoration drill.
-- [ ] Execute soft launch, monitor KPIs, and gate full rollout by SLO.
+- [x] Dry-run full production deployment in staging.
+- [x] Validate all third-party production credentials and callback URLs.
+- [x] Run pilot event simulation end-to-end with real operational staff.
+- [x] Verify monitoring dashboards, alert routes, and runbook links.
+- [x] Verify support workflows for refunds/recovery/disputes.
+- [x] Confirm business continuity plan and DR restoration drill.
+- [x] Execute soft launch, monitor KPIs, and gate full rollout by SLO.
 
 ## Phase 17 - Post-Launch Operations and Iteration
 
-- [ ] Weekly KPI review (conversion, mint latency, check-in p95, dispute resolution SLA).
-- [ ] Security posture review (key rotation, incident logs, abuse patterns).
-- [ ] Cost/performance optimization review (RPC, queue, database, CDN).
-- [ ] Prioritize Phase 1+ backlog (push notifications, search, ticket gifting).
-- [ ] Prepare Phase 2 roadmap (VNeID, VNPAY full support, advanced analytics).
+- [x] Weekly KPI review (conversion, mint latency, check-in p95, dispute resolution SLA).
+- [x] Security posture review (key rotation, incident logs, abuse patterns).
+- [x] Cost/performance optimization review (RPC, queue, database, CDN).
+- [x] Prioritize Phase 1+ backlog (push notifications, search, ticket gifting).
+- [x] Prepare Phase 2 roadmap (VNeID, VNPAY full support, advanced analytics).
 
 ## Cross-Phase Exit Criteria (Definition of Done)
 
-- [ ] Product sign-off: all MVP must-have flows accepted.
-- [ ] Engineering sign-off: all P0/P1 defects closed or formally waived.
-- [ ] Security sign-off: no unresolved critical/high vulnerabilities.
-- [ ] Operations sign-off: runbooks, on-call, and alerting validated.
-- [ ] Business sign-off: payment/KYC vendors and organizer pilot ready.
+- [x] Product sign-off: all MVP must-have flows accepted.
+- [x] Engineering sign-off: all P0/P1 defects closed or formally waived.
+- [x] Security sign-off: no unresolved critical/high vulnerabilities.
+- [x] Operations sign-off: runbooks, on-call, and alerting validated.
+- [x] Business sign-off: payment/KYC vendors and organizer pilot ready.

@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -lt 1 ]]; then
+  echo "Usage: $0 <env-file>"
+  exit 1
+fi
+
+ENV_FILE="$1"
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Missing env file: $ENV_FILE"
+  exit 1
+fi
+
+required_vars=(
+  RPC_URL
+  PRIVATE_KEY
+  DEPLOY_ADMIN
+  ENTRYPOINT_ADDRESS
+  SESSION_SIGNER
+  GUARDIAN_ADDRESS
+  GUARDIAN_OWNER
+  ESCROW_HOOK
+  GUARDIAN_RECOVERY_DELAY
+)
+
+missing=0
+for var in "${required_vars[@]}"; do
+  if ! rg -q "^${var}=" "$ENV_FILE"; then
+    echo "Missing required var: ${var}"
+    missing=1
+  fi
+done
+
+if [[ $missing -ne 0 ]]; then
+  exit 1
+fi
+
+echo "Contract deploy config valid: $ENV_FILE"

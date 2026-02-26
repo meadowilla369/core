@@ -1,0 +1,30 @@
+{
+  "version": "2026-02-26",
+  "defaultAction": "allow",
+  "managedRuleSets": [
+    "owasp-crs",
+    "known-bad-inputs",
+    "ip-reputation"
+  ],
+  "customRules": [
+    {
+      "id": "block-sql-injection-patterns",
+      "priority": 10,
+      "action": "block",
+      "match": {
+        "field": "query|body|path",
+        "pattern": "(?i)(union\\s+select|drop\\s+table|information_schema)"
+      }
+    },
+    {
+      "id": "challenge-high-risk-bot-score",
+      "priority": 20,
+      "action": "challenge",
+      "match": {
+        "field": "bot_score",
+        "operator": "gte",
+        "value": 80
+      }
+    }
+  ]
+}

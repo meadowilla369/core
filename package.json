@@ -8,12 +8,17 @@
     "build": "turbo run build",
     "dev": "turbo run dev --parallel",
     "test": "turbo run test",
+    "test:integration-suite": "cd packages/integration-suite && npm run test",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "format": "turbo run format",
     "format:write": "prettier . --write",
     "prepare": "husky",
-    "contracts:test": "cd contracts && forge test --offline"
+    "contracts:test": "cd contracts && forge test --offline",
+    "contracts:quality": "./scripts/run-contract-quality-gates.sh",
+    "staging:parity": "./scripts/check-staging-parity.sh",
+    "release:gate": "./scripts/release-candidate-gate.sh",
+    "rollback:gate": "./scripts/incident-rollback-gate.sh"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",
