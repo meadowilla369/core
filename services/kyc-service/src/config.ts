@@ -3,6 +3,8 @@ export interface KycServiceConfig {
   host: string;
   port: number;
   provider: string;
+  fallbackProvider: string;
+  internalApiKey: string;
   minLivenessScore: number;
   minFaceMatchScore: number;
 }
@@ -22,6 +24,8 @@ export function loadConfig(): KycServiceConfig {
     host: process.env.HOST ?? "127.0.0.1",
     port: parseNumber(process.env.PORT, 3003),
     provider: process.env.KYC_PROVIDER ?? "fpt",
+    fallbackProvider: process.env.KYC_FALLBACK_PROVIDER ?? "vnpt",
+    internalApiKey: process.env.INTERNAL_API_KEY ?? "internal_dev_key",
     minLivenessScore: parseNumber(process.env.KYC_MIN_LIVENESS_SCORE, 0.8),
     minFaceMatchScore: parseNumber(process.env.KYC_MIN_FACE_MATCH_SCORE, 0.7)
   };

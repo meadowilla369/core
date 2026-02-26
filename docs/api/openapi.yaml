@@ -381,6 +381,30 @@ paths:
         "401":
           description: Missing user context
 
+  /v1/kyc/providers/status:
+    post:
+      tags: [KYC]
+      summary: Internal endpoint to update KYC provider availability status
+      parameters:
+        - $ref: "#/components/parameters/InternalApiKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KycProviderStatusInput"
+      responses:
+        "200":
+          description: Provider status updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KycProviderStatusResponse"
+        "400":
+          description: Invalid payload
+        "401":
+          description: Invalid internal API key
+
   /v1/kyc/status:
     get:
       tags: [KYC]
@@ -1675,6 +1699,11 @@ components:
           type: string
         provider:
           type: string
+        providerStatus:
+          type: string
+          enum: [up, down]
+        fallbackUsed:
+          type: boolean
         status:
           type: string
           enum: [pending, document_uploaded, in_review, approved, rejected]
@@ -1697,6 +1726,40 @@ components:
           type: boolean
         data:
           $ref: "#/components/schemas/KycStatusData"
+
+    KycProviderStatusInput:
+      type: object
+      properties:
+        provider:
+          type: string
+        status:
+          type: string
+          enum: [up, down]
+      required: [provider, status]
+
+    KycProviderStatusResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            provider:
+              type: string
+            status:
+              type: string
+              enum: [up, down]
+            providers:
+              type: array
+              items:
+                type: object
+                properties:
+                  provider:
+                    type: string
+                  status:
+                    type: string
+                    enum: [up, down]
 
     EventSummary:
       type: object

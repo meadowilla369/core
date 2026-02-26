@@ -10,8 +10,10 @@ server.listen(config.port, config.host, () => {
     host: config.host,
     port: config.port,
     provider: config.provider,
+    fallbackProvider: config.fallbackProvider,
     minLivenessScore: config.minLivenessScore,
-    minFaceMatchScore: config.minFaceMatchScore
+    minFaceMatchScore: config.minFaceMatchScore,
+    internalApiKeyConfigured: Boolean(config.internalApiKey)
   });
 });
 

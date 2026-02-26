@@ -119,7 +119,7 @@ Verification evidence:
 - [x] Runtime skeleton implemented for `ticketing-service` and integrated via `api-gateway`.
 - [x] Auth Service: OTP request/verify, token refresh, session/device management, rate limits.
 - [x] User Service: profile, email backup, freeze/unfreeze state, audit logs.
-- [ ] KYC Service: initiate/upload/face match/status, provider abstraction, fallback handling.
+- [x] KYC Service: initiate/upload/face match/status, provider abstraction, fallback handling.
 - [ ] Event Service: event listing/details/availability, organizer event management.
 - [ ] Ticketing Service: reservation (15-min TTL), inventory lock, purchase initiation.
 - [x] Payment Orchestrator: webhook verification, idempotency, reconciliation, retry handling.
