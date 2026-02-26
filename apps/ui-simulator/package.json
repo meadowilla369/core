@@ -1,0 +1,10 @@
+{
+  "name": "@ticket-platform/app-ui-simulator",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Browser UI simulator for mobile, staff scanner, and organizer flows",
+  "scripts": {
+    "dev": "node server.mjs"
+  }
+}

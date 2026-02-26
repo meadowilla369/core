@@ -29,3 +29,10 @@ Contracts test:
 cd contracts
 forge test --offline
 ```
+
+Run browser UI simulator (mobile + staff + organizer):
+
+```bash
+npm run ui:dev
+# open http://127.0.0.1:4310
+```

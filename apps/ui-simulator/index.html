@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ticket Platform UI Simulator</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Ticket Platform UI Simulator</h1>
+      <p>Run and test flows like an end-user for Mobile, Staff Scanner, and Organizer Portal.</p>
+
+      <section>
+        <h2>Mobile Buyer</h2>
+        <div class="row">
+          <label>Phone</label>
+          <input id="mobile-phone" value="+84987654321" />
+          <button id="mobile-request-otp">Request OTP</button>
+          <button id="mobile-verify-otp">Verify OTP</button>
+        </div>
+        <div class="row">
+          <label>Event ID</label>
+          <input id="mobile-event-id" value="evt_rockfest_2026" />
+          <label>Ticket Type</label>
+          <input id="mobile-ticket-type" value="tt_rockfest_ga" />
+          <label>Qty</label>
+          <input id="mobile-qty" type="number" value="1" min="1" max="4" />
+          <label>Unit Price</label>
+          <input id="mobile-unit-price" type="number" value="900000" />
+          <button id="mobile-start-purchase">Reserve</button>
+          <button id="mobile-mark-pending">Mark Pending</button>
+          <button id="mobile-finalize-success">Finalize Success</button>
+          <button id="mobile-finalize-fail">Finalize Fail</button>
+        </div>
+        <div class="row">
+          <label>Token ID</label>
+          <input id="mobile-token-id" value="token_demo_001" />
+          <button id="mobile-build-qr">Build Rotating QR</button>
+        </div>
+        <pre id="mobile-output"></pre>
+      </section>
+
+      <section>
+        <h2>Staff Scanner</h2>
+        <div class="row">
+          <label>Gate</label>
+          <input id="staff-gate-id" value="gate-1" />
+          <label>QR Payload</label>
+          <input id="staff-qr" value="sig_usr1_token123_nonce" />
+          <button id="staff-scan">Scan</button>
+          <button id="staff-refresh-metrics">Refresh Metrics</button>
+        </div>
+        <pre id="staff-output"></pre>
+      </section>
+
+      <section>
+        <h2>Organizer Portal</h2>
+        <div class="row">
+          <label>Title</label>
+          <input id="org-title" value="Demo Music Night" />
+          <label>City</label>
+          <input id="org-city" value="Ho Chi Minh City" />
+          <label>Venue</label>
+          <input id="org-venue" value="SECC" />
+          <button id="org-create-event">Create Event</button>
+          <button id="org-cancel-event">Cancel Last Event</button>
+        </div>
+        <div class="row">
+          <label>Ticket Types (JSON)</label>
+          <input id="org-ticket-types" value='[{"name":"GA","price":900000,"quantity":2000}]' />
+          <button id="org-set-ticket-types">Set Ticket Types</button>
+        </div>
+        <button id="org-run-analytics">Run Analytics Demo</button>
+        <pre id="org-output"></pre>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

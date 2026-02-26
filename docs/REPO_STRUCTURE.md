@@ -4,6 +4,7 @@
 - apps/mobile: Buyer mobile app (MVP flow modules + state shell).
 - apps/staff-scanner: Staff check-in scanner app.
 - apps/organizer-portal: Organizer web portal.
+- apps/ui-simulator: Browser-based UI runner for user testing across all three app flows.
 
 ## Backend Services
 - services/api-gateway
