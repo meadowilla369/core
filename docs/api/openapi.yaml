@@ -443,6 +443,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EventListResponse"
+    post:
+      tags: [Events]
+      summary: Create event (organizer)
+      parameters:
+        - $ref: "#/components/parameters/XOrganizerId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EventCreateInput"
+      responses:
+        "200":
+          description: Event created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventDetailResponse"
+        "400":
+          description: Invalid payload
+        "401":
+          description: Missing organizer context
 
   /v1/events/{eventId}:
     get:
@@ -461,6 +483,60 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EventDetailResponse"
+        "404":
+          description: Event not found
+    put:
+      tags: [Events]
+      summary: Update event details (organizer)
+      parameters:
+        - $ref: "#/components/parameters/XOrganizerId"
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EventUpdateInput"
+      responses:
+        "200":
+          description: Event updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventDetailResponse"
+        "401":
+          description: Missing organizer context
+        "403":
+          description: Not organizer owner
+        "404":
+          description: Event not found
+
+  /v1/events/{eventId}/cancel:
+    post:
+      tags: [Events]
+      summary: Cancel event (organizer)
+      parameters:
+        - $ref: "#/components/parameters/XOrganizerId"
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Event cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventDetailResponse"
+        "401":
+          description: Missing organizer context
+        "403":
+          description: Not organizer owner
         "404":
           description: Event not found
 
@@ -1392,6 +1468,13 @@ components:
       schema:
         type: string
       description: Simulated user identity header used by current skeleton.
+    XOrganizerId:
+      name: x-organizer-id
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Simulated organizer identity header for organizer-managed event APIs.
     XKycStatus:
       name: x-kyc-status
       in: header
@@ -1855,6 +1938,58 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/EventAvailabilityItem"
+
+    EventWriteTicketTypeInput:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        price:
+          type: number
+        quantity:
+          type: integer
+
+    EventCreateInput:
+      type: object
+      properties:
+        title:
+          type: string
+        city:
+          type: string
+        venue:
+          type: string
+        startAt:
+          type: string
+          format: date-time
+        endAt:
+          type: string
+          format: date-time
+        ticketTypes:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventWriteTicketTypeInput"
+      required: [title, city, venue, startAt, endAt]
+
+    EventUpdateInput:
+      type: object
+      properties:
+        title:
+          type: string
+        city:
+          type: string
+        venue:
+          type: string
+        startAt:
+          type: string
+          format: date-time
+        endAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [active, cancelled]
 
     TicketReserveInput:
       type: object
