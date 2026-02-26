@@ -34,6 +34,7 @@
 - infra/terraform: IaC modules and environment stacks.
 - infra/k8s: Kubernetes manifests skeleton.
 - infra/docker: Dockerfile templates.
+- infra/db: SQL migrations and local/dev seed fixtures.
 
 ## Scripts
 - scripts/bootstrap.sh: Local setup helper.

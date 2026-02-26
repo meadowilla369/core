@@ -57,7 +57,7 @@ Verification evidence:
 
 - [x] Backend payment webhook + idempotency + mint worker.
 - [x] Backend eKYC gate for resale listing.
-- [ ] Escrow transfer ledger in PostgreSQL.
+- [x] Escrow transfer ledger in PostgreSQL.
 - [x] Check-in QR verification service with atomic DB marking.
 - [x] Event cancellation/refund workflow service.
 - [x] Wallet recovery service orchestration.
@@ -89,15 +89,15 @@ Verification evidence:
 
 ## Phase 8 - Database and Data Contracts
 
-- [ ] Create migration baseline for user/identity domain tables.
-- [ ] Create migration baseline for event/ticketing domain tables.
-- [ ] Create migration baseline for marketplace/escrow domain tables.
-- [ ] Create migration baseline for payments/refunds/webhooks domain tables.
-- [ ] Create migration baseline for check-ins/disputes/support domain tables.
-- [ ] Add indexes/constraints for high-traffic paths (`reservations`, `check_ins`, `listings`, `webhook_events`).
-- [ ] Add enum/constraint strategy for status fields (avoid free-form states).
-- [ ] Add seed strategy for local/dev fixtures.
-- [ ] Add data retention and PII encryption plan (`pgcrypto` + key separation).
+- [x] Create migration baseline for user/identity domain tables.
+- [x] Create migration baseline for event/ticketing domain tables.
+- [x] Create migration baseline for marketplace/escrow domain tables.
+- [x] Create migration baseline for payments/refunds/webhooks domain tables.
+- [x] Create migration baseline for check-ins/disputes/support domain tables.
+- [x] Add indexes/constraints for high-traffic paths (`reservations`, `check_ins`, `listings`, `webhook_events`).
+- [x] Add enum/constraint strategy for status fields (avoid free-form states).
+- [x] Add seed strategy for local/dev fixtures.
+- [x] Add data retention and PII encryption plan (`pgcrypto` + key separation).
 
 ## Phase 9 - Smart Contract Completion and Production Readiness
 
