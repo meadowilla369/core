@@ -22,6 +22,7 @@ tags:
   - name: Refunds
   - name: Recovery
   - name: Disputes
+  - name: Notifications
   - name: Payments
   - name: Webhooks
 
@@ -996,6 +997,76 @@ paths:
           description: Not allowed to escalate
         "404":
           description: Dispute not found
+
+  /v1/notifications/templates:
+    get:
+      tags: [Notifications]
+      summary: List available notification templates
+      responses:
+        "200":
+          description: Notification templates
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationTemplateListResponse"
+
+  /v1/notifications/send:
+    post:
+      tags: [Notifications]
+      summary: Queue direct notification message
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationSendInput"
+      responses:
+        "200":
+          description: Notification queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationDetailResponse"
+        "400":
+          description: Invalid payload
+
+  /v1/notifications/events:
+    post:
+      tags: [Notifications]
+      summary: Trigger template-based notifications from an event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationEventInput"
+      responses:
+        "200":
+          description: Notifications queued from template
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationListResponse"
+        "400":
+          description: Invalid payload
+        "404":
+          description: Template not found
+
+  /v1/notifications/me:
+    get:
+      tags: [Notifications]
+      summary: List current user notifications
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+      responses:
+        "200":
+          description: User notifications
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationListResponse"
+        "401":
+          description: Missing user context
 
   /v1/payments/intents:
     post:
@@ -2235,6 +2306,118 @@ components:
       properties:
         reason:
           type: string
+
+    NotificationTemplate:
+      type: object
+      properties:
+        id:
+          type: string
+        eventType:
+          type: string
+        channels:
+          type: array
+          items:
+            type: string
+            enum: [sms, email, push]
+        title:
+          type: string
+        body:
+          type: string
+
+    NotificationRecord:
+      type: object
+      properties:
+        notificationId:
+          type: string
+        userId:
+          type: string
+        channel:
+          type: string
+          enum: [sms, email, push]
+        title:
+          type: string
+        message:
+          type: string
+        status:
+          type: string
+          enum: [queued, sent, failed]
+        retryCount:
+          type: integer
+        metadata:
+          type: object
+        eventType:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        deliveredAt:
+          type: string
+          format: date-time
+        failureReason:
+          type: string
+
+    NotificationTemplateListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationTemplate"
+
+    NotificationSendInput:
+      type: object
+      properties:
+        userId:
+          type: string
+        channel:
+          type: string
+          enum: [sms, email, push]
+        title:
+          type: string
+        message:
+          type: string
+        metadata:
+          type: object
+      required: [userId, channel, title, message]
+
+    NotificationEventInput:
+      type: object
+      properties:
+        userId:
+          type: string
+        eventType:
+          type: string
+        channels:
+          type: array
+          items:
+            type: string
+            enum: [sms, email, push]
+        variables:
+          type: object
+      required: [userId, eventType]
+
+    NotificationDetailResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/NotificationRecord"
+
+    NotificationListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationRecord"
 
     PaymentIntentInput:
       type: object

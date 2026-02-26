@@ -3,13 +3,14 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Notification service skeleton",
+  "description": "Notification service runnable skeleton",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "node --watch src/index.ts",
+    "dev": "node --watch --experimental-strip-types src/index.ts",
+    "start": "node dist/index.js",
     "test": "echo 'TODO: add tests for svc-notification-service'",
-    "lint": "echo 'TODO: add lint for svc-notification-service'",
+    "lint": "eslint src --ext .ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "format": "echo 'TODO: add formatter for svc-notification-service'"
+    "format": "prettier src --check"
   }
 }

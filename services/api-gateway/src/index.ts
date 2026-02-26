@@ -19,7 +19,8 @@ server.listen(config.port, config.host, () => {
     checkinServiceBaseUrl: config.checkinServiceBaseUrl,
     refundServiceBaseUrl: config.refundServiceBaseUrl,
     recoveryServiceBaseUrl: config.recoveryServiceBaseUrl,
-    disputeServiceBaseUrl: config.disputeServiceBaseUrl
+    disputeServiceBaseUrl: config.disputeServiceBaseUrl,
+    notificationServiceBaseUrl: config.notificationServiceBaseUrl
   });
 });
 

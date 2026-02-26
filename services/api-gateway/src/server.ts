@@ -139,7 +139,8 @@ export function createGatewayServer(config: GatewayConfig) {
           checkinReady,
           refundReady,
           recoveryReady,
-          disputeReady
+          disputeReady,
+          notificationReady
         ] = await Promise.all([
             checkServiceReady(config, "auth-service", config.authServiceBaseUrl),
             checkServiceReady(config, "user-service", config.userServiceBaseUrl),
@@ -151,7 +152,8 @@ export function createGatewayServer(config: GatewayConfig) {
             checkServiceReady(config, "checkin-service", config.checkinServiceBaseUrl),
             checkServiceReady(config, "refund-service", config.refundServiceBaseUrl),
             checkServiceReady(config, "recovery-service", config.recoveryServiceBaseUrl),
-            checkServiceReady(config, "dispute-service", config.disputeServiceBaseUrl)
+            checkServiceReady(config, "dispute-service", config.disputeServiceBaseUrl),
+            checkServiceReady(config, "notification-service", config.notificationServiceBaseUrl)
           ]);
 
         const ready =
@@ -165,7 +167,8 @@ export function createGatewayServer(config: GatewayConfig) {
           checkinReady &&
           refundReady &&
           recoveryReady &&
-          disputeReady;
+          disputeReady &&
+          notificationReady;
         return sendJson(res, ready ? 200 : 503, {
           success: ready,
           data: {
@@ -180,7 +183,8 @@ export function createGatewayServer(config: GatewayConfig) {
             checkinReady,
             refundReady,
             recoveryReady,
-            disputeReady
+            disputeReady,
+            notificationReady
           }
         });
       }
@@ -324,6 +328,18 @@ export function createGatewayServer(config: GatewayConfig) {
           config,
           config.disputeServiceBaseUrl,
           "dispute-service",
+          url.pathname,
+          url.search
+        );
+      }
+
+      if (url.pathname === "/v1/notifications" || url.pathname.startsWith("/v1/notifications/")) {
+        return proxyRequest(
+          req,
+          res,
+          config,
+          config.notificationServiceBaseUrl,
+          "notification-service",
           url.pathname,
           url.search
         );

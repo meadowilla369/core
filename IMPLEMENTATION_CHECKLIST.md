@@ -129,7 +129,7 @@ Verification evidence:
 - [x] Refund Service: cancellation policy, refund queue, payout status sync.
 - [x] Recovery Service: initiate, dual verification, hold timer, guardian rotation workflow.
 - [x] Dispute Service: tiered SLA flow, auto-rules, escalation and evidence storage.
-- [ ] Notification Service: SMS/email/push templates and event-driven triggers.
+- [x] Notification Service: SMS/email/push templates and event-driven triggers.
 - [ ] Admin/Internal APIs: settlements finalize endpoint, support moderation endpoints.
 
 ## Phase 11 - Frontend Delivery (Mobile + Staff + Organizer)
