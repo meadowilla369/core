@@ -1,0 +1,16 @@
+{
+  "name": "@ticket-platform/integration-suite",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build:services": "node tests/utils/build-services.mjs",
+    "test": "npm run build:services && node --test --test-concurrency=1 tests/**/*.test.mjs",
+    "test:critical": "npm run build:services && node --test --test-concurrency=1 tests/integration/critical-journeys.test.mjs",
+    "test:backend": "npm run build:services && node --test --test-concurrency=1 tests/integration/backend-sandbox.test.mjs",
+    "test:e2e": "npm run build:services && node --test --test-concurrency=1 tests/e2e/*.test.mjs",
+    "test:load": "npm run build:services && node --test --test-concurrency=1 tests/perf/load.test.mjs",
+    "test:chaos": "npm run build:services && node --test --test-concurrency=1 tests/perf/chaos.test.mjs",
+    "test:contracts": "node --test --test-concurrency=1 tests/contracts/*.test.mjs"
+  }
+}
