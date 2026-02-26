@@ -46,3 +46,4 @@
 ## Operational Docs
 - docs/ops: Observability alerts and incident runbooks.
 - docs/ci: CI pipeline and migration policy documentation.
+- docs/product: MVP scope and requirement decision records.

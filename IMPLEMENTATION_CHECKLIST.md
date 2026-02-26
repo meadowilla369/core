@@ -67,8 +67,8 @@ Verification evidence:
 
 ## Phase 6 - Program Setup and Monorepo Foundation (BE + FE + Contracts)
 
-- [ ] Finalize product scope for MVP (MoSCoW) and Phase 1+ backlog.
-- [ ] Confirm unresolved requirement decisions (USDT flow, organizer onboarding, event creation details).
+- [x] Finalize product scope for MVP (MoSCoW) and Phase 1+ backlog.
+- [x] Confirm unresolved requirement decisions (USDT flow, organizer onboarding, event creation details).
 - [x] Define target monorepo structure (`apps/mobile`, `apps/staff`, `apps/organizer`, `services/*`, `contracts`).
 - [x] Set coding standards, branching model, PR template, release tags.
 - [x] Setup shared TypeScript config, lint, format, commit hooks.
