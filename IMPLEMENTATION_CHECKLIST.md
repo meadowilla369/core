@@ -150,10 +150,10 @@ Verification evidence:
 ## Phase 12 - API Contracts and Integration
 
 - [x] Publish OpenAPI spec for public APIs and internal APIs.
-- [ ] Implement request/response validation and shared error code dictionary.
-- [ ] Implement idempotency-key support for critical mutating endpoints.
-- [ ] Implement webhook signature verification middleware.
-- [ ] Build FE typed SDK/client from OpenAPI for consistency.
+- [x] Implement request/response validation and shared error code dictionary.
+- [x] Implement idempotency-key support for critical mutating endpoints.
+- [x] Implement webhook signature verification middleware.
+- [x] Build FE typed SDK/client from OpenAPI for consistency.
 - [ ] Build contract-event consumer pipeline for ownership/status sync.
 - [ ] Add integration tests for each critical journey:
 - [ ] Registration + wallet provisioning.

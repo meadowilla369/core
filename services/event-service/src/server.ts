@@ -49,6 +49,13 @@ interface UpdateEventBody {
   status?: "active" | "cancelled";
 }
 
+class InvalidJsonError extends Error {
+  constructor() {
+    super("Invalid JSON payload");
+    this.name = "InvalidJsonError";
+  }
+}
+
 const events: EventRecord[] = [
   {
     id: "evt_rockfest_2026",
@@ -98,7 +105,11 @@ async function readJson<T>(req: IncomingMessage): Promise<T> {
     return {} as T;
   }
 
-  return JSON.parse(raw) as T;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    throw new InvalidJsonError();
+  }
 }
 
 function extractOrganizerId(req: IncomingMessage): string | null {
@@ -401,6 +412,16 @@ export function createEventServer(config: EventServiceConfig) {
         }
       });
     } catch (error) {
+      if (error instanceof InvalidJsonError) {
+        return sendJson(res, 400, {
+          success: false,
+          error: {
+            code: "INVALID_JSON",
+            message: "Request body must be valid JSON"
+          }
+        });
+      }
+
       log(config.serviceName, "error", "Unhandled request error", {
         error: error instanceof Error ? error.message : String(error)
       });
