@@ -40,6 +40,9 @@
 - scripts/bootstrap.sh: Local setup helper.
 - scripts/checklist-status.sh: Quick checklist status helper.
 - scripts/check-error-codes.sh: Validate service error codes against shared dictionary.
+- scripts/validate-migrations.sh: Enforce forward-only DB migration policy.
+- scripts/sign-artifacts.sh: Generate SHA-256 checksum manifest for build artifacts.
 
 ## Operational Docs
 - docs/ops: Observability alerts and incident runbooks.
+- docs/ci: CI pipeline and migration policy documentation.

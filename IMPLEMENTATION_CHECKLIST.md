@@ -186,9 +186,9 @@ Verification evidence:
 
 ## Phase 15 - CI/CD and Environment Promotion
 
-- [ ] Setup CI pipeline: lint -> typecheck -> tests -> build -> artifact signing.
+- [x] Setup CI pipeline: lint -> typecheck -> tests -> build -> artifact signing.
 - [ ] Setup CD pipeline with blue/green deploy and rollback automation.
-- [ ] Setup DB migration pipeline with forward-only migration policy.
+- [x] Setup DB migration pipeline with forward-only migration policy.
 - [ ] Setup contract deployment pipeline with environment-specific config checks.
 - [ ] Setup staging parity checks (same topology as prod where possible).
 - [ ] Define release candidate checklist and go/no-go criteria.
