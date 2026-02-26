@@ -12,7 +12,9 @@ interface OtpRecord {
 }
 
 interface RefreshRecord {
+  userId: string;
   phone: string;
+  sessionId: string;
   expiresAtMs: number;
 }
 
@@ -24,10 +26,26 @@ interface VerifyOtpBody {
   phone?: string;
   requestId?: string;
   otp?: string;
+  deviceId?: string;
+  deviceName?: string;
+  platform?: string;
 }
 
 interface RefreshBody {
   refreshToken?: string;
+}
+
+interface SessionRecord {
+  id: string;
+  userId: string;
+  phone: string;
+  deviceId: string;
+  deviceName: string;
+  platform: string;
+  createdAt: string;
+  lastActiveAt: string;
+  currentRefreshToken: string;
+  revokedAt?: string;
 }
 
 const PHONE_REGEX = /^\+?[1-9]\d{7,14}$/;
@@ -63,6 +81,22 @@ function generateToken(prefix: string): string {
   return `${prefix}_${randomUUID().replace(/-/g, "")}${randomBytes(8).toString("hex")}`;
 }
 
+function deriveUserId(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  return `usr_${digits.slice(-10) || randomUUID().replace(/-/g, "").slice(0, 10)}`;
+}
+
+function extractUserIdHeader(req: IncomingMessage): string | null {
+  const raw = req.headers["x-user-id"];
+  if (!raw) {
+    return null;
+  }
+
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  const normalized = value?.trim();
+  return normalized ? normalized : null;
+}
+
 function pruneTimestamps(now: number, timestamps: number[], windowMs: number): number[] {
   return timestamps.filter((value) => now - value < windowMs);
 }
@@ -71,6 +105,8 @@ export function createAuthServer(config: AuthConfig) {
   const otpByKey = new Map<string, OtpRecord>();
   const refreshByToken = new Map<string, RefreshRecord>();
   const requestAttemptsByPhone = new Map<string, number[]>();
+  const sessionsById = new Map<string, SessionRecord>();
+  const sessionIdsByUserId = new Map<string, Set<string>>();
 
   const cleanupTimer = setInterval(() => {
     const now = Date.now();
@@ -83,6 +119,10 @@ export function createAuthServer(config: AuthConfig) {
 
     for (const [token, refreshRecord] of refreshByToken.entries()) {
       if (refreshRecord.expiresAtMs <= now) {
+        const session = sessionsById.get(refreshRecord.sessionId);
+        if (session && session.currentRefreshToken === token) {
+          session.revokedAt = new Date(now).toISOString();
+        }
         refreshByToken.delete(token);
       }
     }
@@ -229,19 +269,43 @@ export function createAuthServer(config: AuthConfig) {
 
         otpByKey.delete(key);
 
+        const userId = deriveUserId(phone);
+        const sessionId = `ses_${randomUUID().replace(/-/g, "")}`;
         const accessToken = generateToken("atk");
         const refreshToken = generateToken("rtk");
         const accessTokenExpiresAtMs = Date.now() + config.accessTokenTtlSec * 1000;
         const refreshTokenExpiresAtMs = Date.now() + config.refreshTokenTtlSec * 1000;
+        const nowIso = new Date().toISOString();
 
         refreshByToken.set(refreshToken, {
+          userId,
           phone,
+          sessionId,
           expiresAtMs: refreshTokenExpiresAtMs
         });
+
+        const session: SessionRecord = {
+          id: sessionId,
+          userId,
+          phone,
+          deviceId: body.deviceId?.trim() || `dev_${randomUUID().replace(/-/g, "").slice(0, 12)}`,
+          deviceName: body.deviceName?.trim() || "Unknown Device",
+          platform: body.platform?.trim() || "unknown",
+          createdAt: nowIso,
+          lastActiveAt: nowIso,
+          currentRefreshToken: refreshToken
+        };
+
+        sessionsById.set(sessionId, session);
+        const userSessions = sessionIdsByUserId.get(userId) ?? new Set<string>();
+        userSessions.add(sessionId);
+        sessionIdsByUserId.set(userId, userSessions);
 
         return sendJson(res, 200, {
           success: true,
           data: {
+            userId,
+            sessionId,
             accessToken,
             accessTokenExpiresAt: new Date(accessTokenExpiresAtMs).toISOString(),
             refreshToken,
@@ -276,6 +340,18 @@ export function createAuthServer(config: AuthConfig) {
           });
         }
 
+        const session = sessionsById.get(refreshRecord.sessionId);
+        if (!session || session.revokedAt) {
+          refreshByToken.delete(refreshToken);
+          return sendJson(res, 401, {
+            success: false,
+            error: {
+              code: "SESSION_REVOKED",
+              message: "Session is revoked or unavailable"
+            }
+          });
+        }
+
         refreshByToken.delete(refreshToken);
 
         const nextAccessToken = generateToken("atk");
@@ -284,17 +360,104 @@ export function createAuthServer(config: AuthConfig) {
         const refreshTokenExpiresAtMs = Date.now() + config.refreshTokenTtlSec * 1000;
 
         refreshByToken.set(nextRefreshToken, {
+          userId: refreshRecord.userId,
           phone: refreshRecord.phone,
+          sessionId: refreshRecord.sessionId,
           expiresAtMs: refreshTokenExpiresAtMs
         });
+
+        session.currentRefreshToken = nextRefreshToken;
+        session.lastActiveAt = new Date().toISOString();
 
         return sendJson(res, 200, {
           success: true,
           data: {
+            userId: refreshRecord.userId,
+            sessionId: refreshRecord.sessionId,
             accessToken: nextAccessToken,
             accessTokenExpiresAt: new Date(accessTokenExpiresAtMs).toISOString(),
             refreshToken: nextRefreshToken,
             refreshTokenExpiresAt: new Date(refreshTokenExpiresAtMs).toISOString()
+          }
+        });
+      }
+
+      if (method === "GET" && url.pathname === "/auth/sessions") {
+        const userId = extractUserIdHeader(req);
+        if (!userId) {
+          return sendJson(res, 401, {
+            success: false,
+            error: {
+              code: "UNAUTHORIZED",
+              message: "Missing x-user-id header"
+            }
+          });
+        }
+
+        const sessionIds = sessionIdsByUserId.get(userId) ?? new Set<string>();
+        const sessions = Array.from(sessionIds.values())
+          .map((sessionId) => sessionsById.get(sessionId))
+          .filter((session): session is SessionRecord => Boolean(session))
+          .sort((left, right) => right.lastActiveAt.localeCompare(left.lastActiveAt))
+          .map((session) => ({
+            sessionId: session.id,
+            phone: session.phone,
+            deviceId: session.deviceId,
+            deviceName: session.deviceName,
+            platform: session.platform,
+            createdAt: session.createdAt,
+            lastActiveAt: session.lastActiveAt,
+            revokedAt: session.revokedAt
+          }));
+
+        return sendJson(res, 200, {
+          success: true,
+          data: sessions
+        });
+      }
+
+      const revokeMatch = /^\/auth\/sessions\/([^/]+)$/.exec(url.pathname);
+      if (method === "DELETE" && revokeMatch) {
+        const userId = extractUserIdHeader(req);
+        if (!userId) {
+          return sendJson(res, 401, {
+            success: false,
+            error: {
+              code: "UNAUTHORIZED",
+              message: "Missing x-user-id header"
+            }
+          });
+        }
+
+        const session = sessionsById.get(revokeMatch[1]);
+        if (!session) {
+          return sendJson(res, 404, {
+            success: false,
+            error: {
+              code: "SESSION_NOT_FOUND",
+              message: "Session not found"
+            }
+          });
+        }
+
+        if (session.userId !== userId) {
+          return sendJson(res, 403, {
+            success: false,
+            error: {
+              code: "FORBIDDEN",
+              message: "Cannot revoke session of another user"
+            }
+          });
+        }
+
+        session.revokedAt = new Date().toISOString();
+        refreshByToken.delete(session.currentRefreshToken);
+
+        return sendJson(res, 200, {
+          success: true,
+          data: {
+            sessionId: session.id,
+            revokedAt: session.revokedAt
           }
         });
       }

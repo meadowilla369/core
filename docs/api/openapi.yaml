@@ -111,6 +111,43 @@ paths:
         "401":
           description: Invalid refresh token
 
+  /v1/auth/sessions:
+    get:
+      tags: [Auth]
+      summary: List user auth sessions/devices
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+      responses:
+        "200":
+          description: Session list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionListResponse"
+        "401":
+          description: Missing user context
+
+  /v1/auth/sessions/{sessionId}:
+    delete:
+      tags: [Auth]
+      summary: Revoke one auth session/device
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Session revoked
+        "401":
+          description: Missing user context
+        "403":
+          description: Forbidden
+        "404":
+          description: Session not found
+
   /v1/users/me:
     get:
       tags: [Users]
@@ -1344,6 +1381,12 @@ components:
           type: string
         otp:
           type: string
+        deviceId:
+          type: string
+        deviceName:
+          type: string
+        platform:
+          type: string
       required: [phone, requestId, otp]
 
     RefreshInput:
@@ -1361,6 +1404,10 @@ components:
         data:
           type: object
           properties:
+            userId:
+              type: string
+            sessionId:
+              type: string
             accessToken:
               type: string
             accessTokenExpiresAt:
@@ -1371,6 +1418,39 @@ components:
             refreshTokenExpiresAt:
               type: string
               format: date-time
+
+    AuthSession:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        phone:
+          type: string
+        deviceId:
+          type: string
+        deviceName:
+          type: string
+        platform:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        lastActiveAt:
+          type: string
+          format: date-time
+        revokedAt:
+          type: string
+          format: date-time
+
+    AuthSessionListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuthSession"
 
     UserProfile:
       type: object
