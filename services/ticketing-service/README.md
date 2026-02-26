@@ -14,6 +14,8 @@ node --experimental-strip-types src/index.ts
 - `GET /healthz`
 - `POST /tickets/reserve`
 - `POST /tickets/purchase`
+- `POST /tickets/purchase/:reservationId/confirm` (internal webhook simulation)
+- `GET /tickets/reservations/:reservationId`
 - `GET /tickets/me`
 - `GET /tickets/:tokenId`
 - `POST /tickets/:tokenId/qr`
@@ -22,3 +24,4 @@ node --experimental-strip-types src/index.ts
 
 - `x-user-id`: required for ticket endpoints.
 - `idempotency-key`: optional for mutation endpoints.
+- `x-internal-api-key`: required for `POST /tickets/purchase/:reservationId/confirm`.

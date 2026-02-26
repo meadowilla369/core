@@ -608,7 +608,7 @@ paths:
   /v1/tickets/purchase:
     post:
       tags: [Tickets]
-      summary: Mark reservation as paid and issue mock tickets
+      summary: Initiate payment for an active reservation
       parameters:
         - $ref: "#/components/parameters/XUserId"
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -620,13 +620,68 @@ paths:
               $ref: "#/components/schemas/TicketPurchaseInput"
       responses:
         "200":
-          description: Purchase processed
+          description: Payment initiation accepted
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/TicketPurchaseResponse"
         "400":
           description: Invalid state
+        "401":
+          description: Missing user context
+        "404":
+          description: Reservation not found
+
+  /v1/tickets/purchase/{reservationId}/confirm:
+    post:
+      tags: [Tickets]
+      summary: Internal payment confirmation and ticket issuance
+      parameters:
+        - $ref: "#/components/parameters/InternalApiKey"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - name: reservationId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TicketPurchaseConfirmInput"
+      responses:
+        "200":
+          description: Reservation marked paid and tickets issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketPurchaseResponse"
+        "400":
+          description: Invalid payment state
+        "401":
+          description: Missing or invalid internal API key
+        "404":
+          description: Reservation not found
+
+  /v1/tickets/reservations/{reservationId}:
+    get:
+      tags: [Tickets]
+      summary: Get current user reservation status
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+        - name: reservationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Reservation status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketReserveResponse"
         "401":
           description: Missing user context
         "404":
@@ -2011,6 +2066,15 @@ components:
           type: string
       required: [reservationId, paymentMethod]
 
+    TicketPurchaseConfirmInput:
+      type: object
+      properties:
+        gatewayTransactionId:
+          type: string
+        status:
+          type: string
+          description: Accepted values for successful confirmation include paid/success/succeeded/confirmed
+
     TicketRecord:
       type: object
       properties:
@@ -2046,11 +2110,29 @@ components:
               type: string
             quantity:
               type: integer
+            unitPrice:
+              type: number
             totalAmount:
               type: number
             status:
               type: string
+              enum: [pending, payment_pending, paid, expired]
+            paymentIntentId:
+              type: string
+            paymentMethod:
+              type: string
+            gatewayTransactionId:
+              type: string
             expiresAt:
+              type: string
+              format: date-time
+            createdAt:
+              type: string
+              format: date-time
+            paymentInitiatedAt:
+              type: string
+              format: date-time
+            paidAt:
               type: string
               format: date-time
 
@@ -2068,6 +2150,19 @@ components:
               type: string
             status:
               type: string
+              enum: [payment_pending, paid]
+            paymentMethod:
+              type: string
+            gatewayTransactionId:
+              type: string
+            paymentGatewayStatus:
+              type: string
+              enum: [pending, confirmed]
+            totalAmount:
+              type: number
+            expiresAt:
+              type: string
+              format: date-time
             ticketsIssued:
               type: integer
 
