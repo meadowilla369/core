@@ -1,0 +1,33 @@
+aws_region = "ap-southeast-1"
+environment = "staging"
+vpc_cidr = "10.20.0.0/16"
+public_subnet_cidrs = ["10.20.1.0/24", "10.20.2.0/24"]
+private_subnet_cidrs = ["10.20.11.0/24", "10.20.12.0/24"]
+postgres_username = "ticket_admin"
+postgres_password = "replace-me"
+postgres_db_name = "ticket_platform"
+object_storage_bucket_name = "staging-ticket-platform-objects"
+service_names = [
+  "api-gateway",
+  "auth-service",
+  "user-service",
+  "kyc-service",
+  "event-service",
+  "ticketing-service",
+  "payment-orchestrator",
+  "worker-mint",
+  "marketplace-service",
+  "checkin-service",
+  "refund-service",
+  "recovery-service",
+  "dispute-service",
+  "notification-service",
+  "contract-sync-service"
+]
+domain_name = "staging-api.example.com"
+api_origin_domain = "staging-api.internal.example.com"
+initial_secret_payload = {
+  INTERNAL_API_KEY = "replace-me"
+  MOMO_WEBHOOK_SECRET = "replace-me"
+  VNPAY_WEBHOOK_SECRET = "replace-me"
+}

@@ -1,0 +1,18 @@
+{
+  "primary": "vnpt",
+  "fallback": "fptai",
+  "sandbox": {
+    "vnpt": {
+      "endpoint": "https://sandbox-ekyc.vnpt.vn",
+      "apiKeyRef": "secrets://staging/kyc/vnpt"
+    },
+    "fptai": {
+      "endpoint": "https://sandbox.fpt.ai/vision/ekyc",
+      "apiKeyRef": "secrets://staging/kyc/fptai"
+    }
+  },
+  "quotaMonitoring": {
+    "dailyWarningThreshold": 0.8,
+    "dailyCriticalThreshold": 0.95
+  }
+}

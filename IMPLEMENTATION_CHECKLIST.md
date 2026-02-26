@@ -77,15 +77,15 @@ Verification evidence:
 
 ## Phase 7 - Infrastructure and Platform Foundation
 
-- [ ] Provision cloud base with IaC (VPC, subnets, NAT, security groups).
-- [ ] Provision PostgreSQL 15 + Redis + queue (Kafka/SQS) + object storage.
-- [ ] Provision API gateway/WAF/CDN and TLS certificates.
-- [ ] Provision observability stack (metrics, tracing, centralized logs, alerts).
-- [ ] Setup secrets management (KMS + Secrets Manager), key rotation policy.
-- [ ] Setup blockchain connectivity (Base RPC primary + fallback).
-- [ ] Setup wallet provider project (Privy or selected provider) for all environments.
-- [ ] Setup payment gateway sandbox accounts (Momo primary, VNPAY backup).
-- [ ] Setup eKYC sandbox (VNPT/FPT.AI) and quota monitoring.
+- [x] Provision cloud base with IaC (VPC, subnets, NAT, security groups).
+- [x] Provision PostgreSQL 15 + Redis + queue (Kafka/SQS) + object storage.
+- [x] Provision API gateway/WAF/CDN and TLS certificates.
+- [x] Provision observability stack (metrics, tracing, centralized logs, alerts).
+- [x] Setup secrets management (KMS + Secrets Manager), key rotation policy.
+- [x] Setup blockchain connectivity (Base RPC primary + fallback).
+- [x] Setup wallet provider project (Privy or selected provider) for all environments.
+- [x] Setup payment gateway sandbox accounts (Momo primary, VNPAY backup).
+- [x] Setup eKYC sandbox (VNPT/FPT.AI) and quota monitoring.
 
 ## Phase 8 - Database and Data Contracts
 

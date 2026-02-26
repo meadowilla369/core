@@ -1,0 +1,13 @@
+{
+  "network": "base",
+  "primaryRpcUrl": "https://base-mainnet.g.alchemy.com/v2/replace-me",
+  "fallbackRpcUrls": [
+    "https://mainnet.base.org",
+    "https://base.blockpi.network/v1/rpc/public"
+  ],
+  "healthcheckIntervalSec": 30,
+  "failoverPolicy": {
+    "maxConsecutiveFailures": 3,
+    "switchBackCooldownSec": 300
+  }
+}

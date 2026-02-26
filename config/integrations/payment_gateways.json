@@ -1,0 +1,16 @@
+{
+  "primary": "momo",
+  "backup": "vnpay",
+  "sandbox": {
+    "momo": {
+      "merchantId": "replace-me",
+      "endpoint": "https://test-payment.momo.vn",
+      "webhookUrl": "https://staging-api.example.com/v1/webhooks/momo"
+    },
+    "vnpay": {
+      "tmnCode": "replace-me",
+      "endpoint": "https://sandbox.vnpayment.vn",
+      "webhookUrl": "https://staging-api.example.com/v1/webhooks/vnpay"
+    }
+  }
+}

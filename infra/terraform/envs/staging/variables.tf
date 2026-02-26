@@ -1,0 +1,13 @@
+variable "aws_region" { type = string }
+variable "environment" { type = string }
+variable "vpc_cidr" { type = string }
+variable "public_subnet_cidrs" { type = list(string) }
+variable "private_subnet_cidrs" { type = list(string) }
+variable "postgres_username" { type = string }
+variable "postgres_password" { type = string }
+variable "postgres_db_name" { type = string }
+variable "object_storage_bucket_name" { type = string }
+variable "service_names" { type = list(string) }
+variable "domain_name" { type = string }
+variable "api_origin_domain" { type = string }
+variable "initial_secret_payload" { type = map(string) }

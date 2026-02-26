@@ -1,0 +1,22 @@
+{
+  "provider": "privy",
+  "environments": {
+    "dev": {
+      "appId": "replace-me",
+      "clientId": "replace-me"
+    },
+    "staging": {
+      "appId": "replace-me",
+      "clientId": "replace-me"
+    },
+    "prod": {
+      "appId": "replace-me",
+      "clientId": "replace-me"
+    }
+  },
+  "requiredFeatures": [
+    "embedded_wallet",
+    "otp_login",
+    "session_management"
+  ]
+}

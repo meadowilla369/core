@@ -35,6 +35,7 @@
 - infra/k8s: Kubernetes manifests skeleton.
 - infra/docker: Dockerfile templates.
 - infra/db: SQL migrations and local/dev seed fixtures.
+- config/integrations: Third-party provider and RPC configuration contracts.
 
 ## Scripts
 - scripts/bootstrap.sh: Local setup helper.
@@ -48,3 +49,4 @@
 - docs/ci: CI pipeline and migration policy documentation.
 - docs/product: MVP scope and requirement decision records.
 - docs/testing: Unit targets and UAT checklists.
+- docs/infra: Infrastructure/integration setup and secrets rotation policy.

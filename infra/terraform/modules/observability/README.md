@@ -1,6 +1,7 @@
 # observability module
 
-TODO:
-- metrics pipeline
-- centralized logging
-- alert routing
+Creates observability baseline:
+
+- CloudWatch log groups per service
+- CloudWatch alarms for gateway error/latency
+- SNS alert topic for on-call routing

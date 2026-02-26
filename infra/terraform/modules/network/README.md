@@ -1,8 +1,9 @@
 # network module
 
-TODO:
+Creates core networking components:
+
 - VPC
-- subnets
-- NAT
-- routing
-- security groups baseline
+- Public/private subnets across two AZs
+- Internet gateway + NAT gateway
+- Public/private route tables
+- App and DB security groups
