@@ -165,13 +165,13 @@ Verification evidence:
 
 ## Phase 13 - Quality Engineering and Verification
 
-- [ ] Unit test targets agreed per service and FE module.
+- [x] Unit test targets agreed per service and FE module.
 - [ ] Backend integration test suite with sandbox mocks for payment/KYC/wallet.
 - [ ] Contract test suite in CI (`forge test --offline` + fuzz/property jobs).
 - [ ] End-to-end tests for mobile and staff critical paths.
 - [ ] Load tests for event release and gate check-in peaks.
 - [ ] Chaos tests: RPC outage, payment webhook delay, KYC provider outage.
-- [ ] UAT checklist with product + operations + support teams.
+- [x] UAT checklist with product + operations + support teams.
 
 ## Phase 14 - Security, Compliance, and Risk Controls
 
