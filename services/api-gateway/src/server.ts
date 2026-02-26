@@ -140,7 +140,8 @@ export function createGatewayServer(config: GatewayConfig) {
           refundReady,
           recoveryReady,
           disputeReady,
-          notificationReady
+          notificationReady,
+          contractSyncReady
         ] = await Promise.all([
             checkServiceReady(config, "auth-service", config.authServiceBaseUrl),
             checkServiceReady(config, "user-service", config.userServiceBaseUrl),
@@ -153,7 +154,8 @@ export function createGatewayServer(config: GatewayConfig) {
             checkServiceReady(config, "refund-service", config.refundServiceBaseUrl),
             checkServiceReady(config, "recovery-service", config.recoveryServiceBaseUrl),
             checkServiceReady(config, "dispute-service", config.disputeServiceBaseUrl),
-            checkServiceReady(config, "notification-service", config.notificationServiceBaseUrl)
+            checkServiceReady(config, "notification-service", config.notificationServiceBaseUrl),
+            checkServiceReady(config, "contract-sync-service", config.contractSyncServiceBaseUrl)
           ]);
 
         const ready =
@@ -168,7 +170,8 @@ export function createGatewayServer(config: GatewayConfig) {
           refundReady &&
           recoveryReady &&
           disputeReady &&
-          notificationReady;
+          notificationReady &&
+          contractSyncReady;
         return sendJson(res, ready ? 200 : 503, {
           success: ready,
           data: {
@@ -184,7 +187,8 @@ export function createGatewayServer(config: GatewayConfig) {
             refundReady,
             recoveryReady,
             disputeReady,
-            notificationReady
+            notificationReady,
+            contractSyncReady
           }
         });
       }
@@ -352,6 +356,18 @@ export function createGatewayServer(config: GatewayConfig) {
           config,
           config.disputeServiceBaseUrl,
           "dispute-service",
+          url.pathname,
+          url.search
+        );
+      }
+
+      if (url.pathname.startsWith("/v1/internal/contracts/")) {
+        return proxyRequest(
+          req,
+          res,
+          config,
+          config.contractSyncServiceBaseUrl,
+          "contract-sync-service",
           url.pathname,
           url.search
         );

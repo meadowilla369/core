@@ -14,6 +14,7 @@ export interface GatewayConfig {
   recoveryServiceBaseUrl: string;
   disputeServiceBaseUrl: string;
   notificationServiceBaseUrl: string;
+  contractSyncServiceBaseUrl: string;
   requestTimeoutMs: number;
 }
 
@@ -44,6 +45,8 @@ export function loadConfig(): GatewayConfig {
     disputeServiceBaseUrl: process.env.DISPUTE_SERVICE_BASE_URL ?? "http://127.0.0.1:3012",
     notificationServiceBaseUrl:
       process.env.NOTIFICATION_SERVICE_BASE_URL ?? "http://127.0.0.1:3013",
+    contractSyncServiceBaseUrl:
+      process.env.CONTRACT_SYNC_SERVICE_BASE_URL ?? "http://127.0.0.1:3014",
     requestTimeoutMs: parseNumber(process.env.REQUEST_TIMEOUT_MS, 2000)
   };
 }

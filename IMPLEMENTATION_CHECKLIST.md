@@ -154,7 +154,7 @@ Verification evidence:
 - [x] Implement idempotency-key support for critical mutating endpoints.
 - [x] Implement webhook signature verification middleware.
 - [x] Build FE typed SDK/client from OpenAPI for consistency.
-- [ ] Build contract-event consumer pipeline for ownership/status sync.
+- [x] Build contract-event consumer pipeline for ownership/status sync.
 - [ ] Add integration tests for each critical journey:
 - [ ] Registration + wallet provisioning.
 - [ ] Purchase + payment webhook + mint.

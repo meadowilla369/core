@@ -19,6 +19,7 @@
 - services/recovery-service
 - services/dispute-service
 - services/notification-service
+- services/contract-sync-service
 - services/worker-mint
 
 ## Shared Packages
@@ -37,3 +38,4 @@
 ## Scripts
 - scripts/bootstrap.sh: Local setup helper.
 - scripts/checklist-status.sh: Quick checklist status helper.
+- scripts/check-error-codes.sh: Validate service error codes against shared dictionary.

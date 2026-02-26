@@ -25,6 +25,7 @@ tags:
   - name: Notifications
   - name: Payments
   - name: Webhooks
+  - name: Contracts
 
 paths:
   /healthz:
@@ -1308,6 +1309,69 @@ paths:
           description: Invalid internal API key
         "404":
           description: Dispute not found
+
+  /v1/internal/contracts/events:
+    post:
+      tags: [Contracts]
+      summary: Ingest on-chain contract events and sync ticket ownership/status
+      parameters:
+        - $ref: "#/components/parameters/InternalApiKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContractEventBatchInput"
+      responses:
+        "200":
+          description: Batch processed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContractEventBatchResponse"
+        "400":
+          description: Invalid payload
+        "401":
+          description: Invalid internal API key
+
+  /v1/internal/contracts/tokens/{tokenId}:
+    get:
+      tags: [Contracts]
+      summary: Get synchronized ownership and status for one token
+      parameters:
+        - $ref: "#/components/parameters/InternalApiKey"
+        - name: tokenId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Token sync state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContractTokenStateResponse"
+        "401":
+          description: Invalid internal API key
+        "404":
+          description: Token not found
+
+  /v1/internal/contracts/sync-status:
+    get:
+      tags: [Contracts]
+      summary: Get consumer lag and sync counters
+      parameters:
+        - $ref: "#/components/parameters/InternalApiKey"
+      responses:
+        "200":
+          description: Sync status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContractSyncStatusResponse"
+        "401":
+          description: Invalid internal API key
 
   /v1/notifications/templates:
     get:
@@ -2934,6 +2998,134 @@ components:
         resolutionAmount:
           type: number
       required: [action]
+
+    ContractEventInput:
+      type: object
+      properties:
+        chainId:
+          type: integer
+        blockNumber:
+          type: integer
+        transactionHash:
+          type: string
+        logIndex:
+          type: integer
+        eventName:
+          type: string
+        contractAddress:
+          type: string
+        occurredAt:
+          type: string
+          format: date-time
+        payload:
+          type: object
+          additionalProperties: true
+      required: [transactionHash, logIndex, eventName, payload]
+
+    ContractEventBatchInput:
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContractEventInput"
+      required: [events]
+
+    ContractEventProcessResult:
+      type: object
+      properties:
+        eventKey:
+          type: string
+        status:
+          type: string
+          enum: [processed, duplicate, rejected]
+        reason:
+          type: string
+
+    ContractEventBatchResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            accepted:
+              type: integer
+            duplicates:
+              type: integer
+            rejected:
+              type: integer
+            results:
+              type: array
+              items:
+                $ref: "#/components/schemas/ContractEventProcessResult"
+
+    ContractTokenState:
+      type: object
+      properties:
+        tokenId:
+          type: string
+        ownerWalletAddress:
+          type: string
+        ownerUserId:
+          type: string
+        listingStatus:
+          type: string
+          enum: [none, active, cancelled, completed]
+        isUsed:
+          type: boolean
+        isRefunded:
+          type: boolean
+        usedAt:
+          type: string
+          format: date-time
+        refundedAt:
+          type: string
+          format: date-time
+        lastEventName:
+          type: string
+        lastTransactionHash:
+          type: string
+        lastLogIndex:
+          type: integer
+        lastSyncedBlock:
+          type: integer
+        updatedAt:
+          type: string
+          format: date-time
+
+    ContractTokenStateResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/ContractTokenState"
+
+    ContractSyncStatusResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            lastProcessedBlock:
+              type: integer
+            totalEventsProcessed:
+              type: integer
+            totalEventsDuplicate:
+              type: integer
+            totalEventsRejected:
+              type: integer
+            trackedTokens:
+              type: integer
+            processedEventCount:
+              type: integer
+            timestamp:
+              type: string
+              format: date-time
 
     NotificationTemplate:
       type: object

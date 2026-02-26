@@ -18,6 +18,7 @@ REFUND_SERVICE_BASE_URL=http://127.0.0.1:3009 \
 RECOVERY_SERVICE_BASE_URL=http://127.0.0.1:3011 \
 DISPUTE_SERVICE_BASE_URL=http://127.0.0.1:3012 \
 NOTIFICATION_SERVICE_BASE_URL=http://127.0.0.1:3013 \
+CONTRACT_SYNC_SERVICE_BASE_URL=http://127.0.0.1:3014 \
 node --experimental-strip-types src/index.ts
 ```
 
@@ -39,6 +40,7 @@ node --experimental-strip-types src/index.ts
 - `* /v1/disputes/*` -> proxied to dispute service `/disputes/*`
 - `* /v1/internal/marketplace/*` -> proxied to marketplace service `/internal/marketplace/*`
 - `* /v1/internal/disputes/*` -> proxied to dispute service `/internal/disputes/*`
+- `* /v1/internal/contracts/*` -> proxied to contract sync service `/internal/contracts/*`
 - `* /v1/notifications/*` -> proxied to notification service `/notifications/*`
 
 ## Environment Variables
@@ -58,4 +60,5 @@ node --experimental-strip-types src/index.ts
 - `RECOVERY_SERVICE_BASE_URL` (default: `http://127.0.0.1:3011`)
 - `DISPUTE_SERVICE_BASE_URL` (default: `http://127.0.0.1:3012`)
 - `NOTIFICATION_SERVICE_BASE_URL` (default: `http://127.0.0.1:3013`)
+- `CONTRACT_SYNC_SERVICE_BASE_URL` (default: `http://127.0.0.1:3014`)
 - `REQUEST_TIMEOUT_MS` (default: `2000`)

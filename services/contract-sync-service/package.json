@@ -1,0 +1,16 @@
+{
+  "name": "@ticket-platform/svc-contract-sync-service",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Contract event consumer and ownership sync service skeleton",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "node --watch --experimental-strip-types src/index.ts",
+    "start": "node dist/index.js",
+    "test": "echo 'TODO: add tests for svc-contract-sync-service'",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "format": "prettier src --check"
+  }
+}
