@@ -4,6 +4,8 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
@@ -13,6 +15,8 @@ import "../interfaces/ITicketNFT.sol";
 /// @title Marketplace
 /// @notice Custodial resale marketplace enforcing markup caps and escrow replay protection.
 contract Marketplace is AccessControlEnumerable, Pausable, ReentrancyGuard, IERC721Receiver, IMarketplace {
+    using ECDSA for bytes32;
+
     bytes32 public constant ESCROW_ROLE = keccak256("ESCROW_ROLE");
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
@@ -115,6 +119,22 @@ contract Marketplace is AccessControlEnumerable, Pausable, ReentrancyGuard, IERC
         whenNotPaused
         nonReentrant
     {
+        _completeSale(tokenId, buyer, escrowData, bytes(""));
+    }
+
+    function completeSaleWithSignature(
+        uint256 tokenId,
+        address buyer,
+        bytes calldata escrowData,
+        bytes calldata escrowSignature
+    ) external override onlyRole(ESCROW_ROLE) whenNotPaused nonReentrant {
+        require(escrowSignature.length != 0, "Marketplace: signature required");
+        _completeSale(tokenId, buyer, escrowData, escrowSignature);
+    }
+
+    function _completeSale(uint256 tokenId, address buyer, bytes calldata escrowData, bytes memory escrowSignature)
+        internal
+    {
         require(buyer != address(0), "Marketplace: buyer required");
         require(escrowData.length > 0, "Marketplace: escrowData required");
 
@@ -124,6 +144,15 @@ contract Marketplace is AccessControlEnumerable, Pausable, ReentrancyGuard, IERC
 
         bytes32 escrowHash = keccak256(escrowData);
         require(!consumedEscrowHashes[escrowHash], "Marketplace: escrow replay");
+
+        if (escrowSignature.length != 0) {
+            require(escrowHook != address(0), "Marketplace: escrowHook not set");
+            bytes32 digest = MessageHashUtils.toEthSignedMessageHash(escrowHash);
+            address recovered = digest.recover(escrowSignature);
+            require(recovered == escrowHook, "Marketplace: bad escrow signature");
+            emit EscrowSignatureVerified(escrowHash, recovered);
+        }
+
         consumedEscrowHashes[escrowHash] = true;
 
         _validateEscrowPayload(tokenId, buyer, current, escrowData);

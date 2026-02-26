@@ -21,6 +21,7 @@ interface IMarketplace {
     );
     event MaxMarkupUpdated(uint16 previousMaxMarkupBps, uint16 newMaxMarkupBps);
     event EscrowHookUpdated(address indexed previousHook, address indexed newHook);
+    event EscrowSignatureVerified(bytes32 indexed escrowHash, address indexed signer);
 
     function listForSale(
         uint256 tokenId,
@@ -34,6 +35,13 @@ interface IMarketplace {
         uint256 tokenId,
         address buyer,
         bytes calldata escrowData
+    ) external;
+
+    function completeSaleWithSignature(
+        uint256 tokenId,
+        address buyer,
+        bytes calldata escrowData,
+        bytes calldata escrowSignature
     ) external;
 
     function setMaxMarkupBps(uint16 newMaxMarkupBps) external;

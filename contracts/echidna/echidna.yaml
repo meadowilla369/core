@@ -1,0 +1,6 @@
+testMode: property
+coverage: true
+corpusDir: corpus
+seqLen: 50
+workers: 4
+contract: MarketplaceProperties

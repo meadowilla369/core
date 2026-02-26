@@ -101,14 +101,14 @@ Verification evidence:
 
 ## Phase 9 - Smart Contract Completion and Production Readiness
 
-- [ ] Add escrow payload signature verification path aligned with `escrowHook` model.
-- [ ] Finalize admin governance model (Safe multi-sig + timelock config).
-- [ ] Add pause/emergency runbook coverage for critical contract functions.
-- [ ] Add property tests (Echidna) for price cap, replay, recovery delay invariants.
-- [ ] Add fuzz tests for race conditions (`completeSale` vs `cancelListing`, replay variants).
-- [ ] Prepare deployment scripts for Base testnet/mainnet with deterministic config artifacts.
+- [x] Add escrow payload signature verification path aligned with `escrowHook` model.
+- [x] Finalize admin governance model (Safe multi-sig + timelock config).
+- [x] Add pause/emergency runbook coverage for critical contract functions.
+- [x] Add property tests (Echidna) for price cap, replay, recovery delay invariants.
+- [x] Add fuzz tests for race conditions (`completeSale` vs `cancelListing`, replay variants).
+- [x] Prepare deployment scripts for Base testnet/mainnet with deterministic config artifacts.
 - [ ] Execute external security audit and remediate findings.
-- [ ] Generate ABI + contract address registry for FE/BE consumption.
+- [x] Generate ABI + contract address registry for FE/BE consumption.
 
 ## Phase 10 - Backend Core Services (Node.js/TypeScript)
 

@@ -32,6 +32,8 @@ contract MarketplaceTest is Test {
     address internal admin = address(0xA11CE);
     address internal minter = address(0xBEEF);
     address internal escrow = address(0xE5C0);
+    uint256 internal escrowHookPk = uint256(keccak256("escrow-hook-key"));
+    address internal escrowHookSigner;
     address internal seller = address(0xCAFE);
     address internal secondSeller = address(0xD00D);
     address internal buyer = address(0xB0B);
@@ -49,7 +51,8 @@ contract MarketplaceTest is Test {
         ticket.setMinter(minter);
         ticket.configureEvent(EVENT_ID, 100);
         ticket.configureTicketType(TICKET_TYPE_ID, ORIGINAL_PRICE);
-        marketplace = new Marketplace(address(ticket), admin, address(0));
+        escrowHookSigner = vm.addr(escrowHookPk);
+        marketplace = new Marketplace(address(ticket), admin, escrowHookSigner);
         marketplace.grantRole(marketplace.ESCROW_ROLE(), escrow);
         vm.stopPrank();
     }
@@ -145,6 +148,45 @@ contract MarketplaceTest is Test {
         vm.prank(escrow);
         vm.expectRevert("Marketplace: escrow replay");
         marketplace.completeSale(tokenTwo, buyer, escrowData);
+    }
+
+    function testCompleteSaleWithEscrowSignature() public {
+        uint256 tokenId = _mintTicketTo(seller, "SIG1");
+        _approveMarketplace(seller);
+
+        uint256 price = _maxAllowedPrice(tokenId);
+        vm.prank(seller);
+        marketplace.listForSale(tokenId, price, uint64(block.timestamp + 1 days));
+
+        bytes memory escrowData = _validEscrowData(tokenId, seller, buyer, price, bytes32("sig-payment"));
+        bytes32 escrowHash = keccak256(escrowData);
+        bytes32 digest = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", escrowHash));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(escrowHookPk, digest);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        vm.prank(escrow);
+        marketplace.completeSaleWithSignature(tokenId, buyer, escrowData, signature);
+
+        assertEq(ticket.ownerOf(tokenId), buyer);
+    }
+
+    function testCompleteSaleWithEscrowSignatureRevertsWhenInvalid() public {
+        uint256 tokenId = _mintTicketTo(seller, "SIG2");
+        _approveMarketplace(seller);
+
+        uint256 price = _maxAllowedPrice(tokenId);
+        vm.prank(seller);
+        marketplace.listForSale(tokenId, price, uint64(block.timestamp + 1 days));
+
+        bytes memory escrowData = _validEscrowData(tokenId, seller, buyer, price, bytes32("bad-sig"));
+        bytes32 escrowHash = keccak256(escrowData);
+        bytes32 digest = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", escrowHash));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(uint256(keccak256("wrong-key")), digest);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        vm.prank(escrow);
+        vm.expectRevert("Marketplace: bad escrow signature");
+        marketplace.completeSaleWithSignature(tokenId, buyer, escrowData, signature);
     }
 
     function testListForSaleRevertsWhenTicketAlreadyUsed() public {

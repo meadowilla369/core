@@ -50,3 +50,5 @@
 - docs/product: MVP scope and requirement decision records.
 - docs/testing: Unit targets and UAT checklists.
 - docs/infra: Infrastructure/integration setup and secrets rotation policy.
+- docs/contracts: Governance model, contract emergency runbooks.
+- docs/security: Security review and remediation trackers.
