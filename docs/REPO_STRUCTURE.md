@@ -40,3 +40,6 @@
 - scripts/bootstrap.sh: Local setup helper.
 - scripts/checklist-status.sh: Quick checklist status helper.
 - scripts/check-error-codes.sh: Validate service error codes against shared dictionary.
+
+## Operational Docs
+- docs/ops: Observability alerts and incident runbooks.

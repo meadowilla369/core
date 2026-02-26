@@ -62,7 +62,7 @@ Verification evidence:
 - [x] Event cancellation/refund workflow service.
 - [x] Wallet recovery service orchestration.
 - [x] Dispute management service.
-- [ ] Observability and operations runbooks.
+- [x] Observability and operations runbooks.
 - [x] Decomposed backlog into detailed execution phases (Phase 6-17).
 
 ## Phase 6 - Program Setup and Monorepo Foundation (BE + FE + Contracts)
