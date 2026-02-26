@@ -134,18 +134,18 @@ Verification evidence:
 
 ## Phase 11 - Frontend Delivery (Mobile + Staff + Organizer)
 
-- [ ] Mobile buyer app foundation (auth shell, state management, secure storage).
-- [ ] Registration/wallet onboarding flow (phone OTP + invisible wallet creation UX).
-- [ ] Event discovery flow (list/filter/detail/ticket type availability).
-- [ ] Purchase flow (reserve → pay → success/fail/pending states).
-- [ ] My Tickets flow (ticket list/detail + rotating QR every 3s).
-- [ ] Marketplace flow (list for sale, browse listings, purchase resale).
-- [ ] Refund/cancellation visibility in ticket timeline.
-- [ ] Recovery UX (lost device flow, hold status, security messaging).
-- [ ] Dispute UX (create case, message thread, status timeline).
-- [ ] Staff scanner app (scan QR, success/fail reason, gate metrics).
-- [ ] Organizer web portal MVP (event CRUD, ticket type setup, cancellation trigger, basic analytics).
-- [ ] Accessibility and localization baseline (VN first, i18n-ready structure).
+- [x] Mobile buyer app foundation (auth shell, state management, secure storage).
+- [x] Registration/wallet onboarding flow (phone OTP + invisible wallet creation UX).
+- [x] Event discovery flow (list/filter/detail/ticket type availability).
+- [x] Purchase flow (reserve → pay → success/fail/pending states).
+- [x] My Tickets flow (ticket list/detail + rotating QR every 3s).
+- [x] Marketplace flow (list for sale, browse listings, purchase resale).
+- [x] Refund/cancellation visibility in ticket timeline.
+- [x] Recovery UX (lost device flow, hold status, security messaging).
+- [x] Dispute UX (create case, message thread, status timeline).
+- [x] Staff scanner app (scan QR, success/fail reason, gate metrics).
+- [x] Organizer web portal MVP (event CRUD, ticket type setup, cancellation trigger, basic analytics).
+- [x] Accessibility and localization baseline (VN first, i18n-ready structure).
 
 ## Phase 12 - API Contracts and Integration
 

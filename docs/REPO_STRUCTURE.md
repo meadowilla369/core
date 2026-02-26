@@ -52,3 +52,4 @@
 - docs/infra: Infrastructure/integration setup and secrets rotation policy.
 - docs/contracts: Governance model, contract emergency runbooks.
 - docs/security: Security review and remediation trackers.
+- docs/frontend: Mobile/staff/organizer frontend foundations and UX flow mapping.
