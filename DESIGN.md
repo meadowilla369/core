@@ -510,7 +510,7 @@ Gas optimizations: use OZ ERC721A-style sequential token IDs; pack `TicketInfo` 
 
 ### Marketplace Contract
 
-Responsibilities: custody NFT during listing, enforce markup cap (110-120%), trigger escrow release.
+Responsibilities: custody NFT during listing, enforce markup cap (110-120%), enforce resale cutoff/count/KYC policy, trigger escrow release.
 
 Key storage:
 ```solidity
@@ -526,9 +526,17 @@ address public escrowHook; // backend webhook signer
 ```
 
 Flow summary:
-1. `listForSale(tokenId, price)` requires caller = owner, price ≤ `originalPrice * maxMarkupBps / 10000`. Transfers NFT to contract and records listing.
+1. `listForSale(tokenId, price, expiresAt)` requires caller = owner, price ≤ `originalPrice * maxMarkupBps / 10000`, and valid expiry. Transfers NFT to contract and records listing.
 2. `cancelListing(tokenId)` returns NFT if `msg.sender` = seller or backend (e.g., event cancellation).
 3. `completeSale(tokenId, buyer, bytes calldata escrowData)` callable by `ESCROW_ROLE` after fiat confirmation; transfers NFT to buyer and emits payout splits consumed by backend.
+
+Policy overlay (see `docs/product/POLICY_MATRIX.md`):
+- Resale create/purchase cutoff at `T-30 minutes` before event start (`Asia/Ho_Chi_Minh`).
+- Active listings auto-cancel at cutoff.
+- Seller-provided `expiresAt` cannot exceed cutoff.
+- Maximum 2 resale cycles per ticket.
+- KYC enforced for acting user when resale amount >= `5,000,000 VND`.
+- Payout split fixed at seller/platform/organizer = `90/5/5`.
 
 #### EscrowData Payload Specification (V1)
 
@@ -597,9 +605,9 @@ Request contract:
   "seller": "0x...",
   "buyer": "0x...",
   "grossAmount": "120000",
-  "sellerAmount": "110000",
-  "platformFee": "8000",
-  "organizerRoyalty": "2000",
+  "sellerAmount": "108000",
+  "platformFee": "6000",
+  "organizerRoyalty": "6000",
   "currency": "VND",
   "gateway": 1,
   "gatewayReference": "gateway-ref",
@@ -633,7 +641,7 @@ Security controls:
 - Reentrancy guard on state mutating functions.
 - `escrowData` uses canonical ABI v1 payload and hash-based replay prevention.
 - Backend signature is out-of-band and validated against `escrowHook` before submit.
-- Optional `max listings per wallet` gating via modifier calling attestations.
+- Resale policy matrix enforcement for cutoff, payout split, transfer count, and KYC threshold.
 
 ### Paymaster / Bundler
 

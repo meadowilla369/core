@@ -44,7 +44,8 @@ User Journey:
 |-------|---------------|---------|
 | Registration | No | Phone + OTP only (low friction) |
 | Purchase | No | Limit 4 tickets per phone per event |
-| Resale (List for sale) | **Yes** | VNeID verification required to list ticket |
+| Resale (< 5,000,000 VND) | No | Threshold policy applies |
+| Resale (>= 5,000,000 VND) | **Yes** | Acting user must pass eKYC before listing/purchase action |
 | Future (v2) | Incentivized | "Verified Buyer" badge, priority queue for hot events |
 
 **Rationale**: Balance user acquisition (low friction) with anti-scalping (can't profit without KYC)
@@ -62,7 +63,8 @@ User Journey:
 | Measure | Implementation |
 |---------|----------------|
 | Purchase limit | 4 tickets per phone number per event |
-| Resale gate | Must complete eKYC to list ticket for resale |
+| Resale gate | eKYC required when resale amount >= 5,000,000 VND |
+| Resale count limit | Max 2 resale cycles per ticket |
 | Future enhancement | VNeID-verified users get priority queue |
 
 ---
@@ -167,6 +169,12 @@ Payment Confirmed
 | **Resale Currency** | VND only (Phase 1) | Familiar for mainstream users |
 | **Payment Security** | Platform Escrow | Platform holds VND until NFT transferred |
 | **Listing Mechanism** | Lock NFT in contract | Prevents double-selling, ensures availability |
+| **Create Cutoff** | Stop new listings at T-30 minutes | Reduce gate-side fraud/operational churn |
+| **Purchase Cutoff** | Stop resale purchase at T-30 minutes | Avoid last-minute transfer race near check-in |
+| **Listing Expiry Source** | Seller chooses `expiresAt` | Must not exceed system cutoff |
+| **Timezone** | Asia/Ho_Chi_Minh | Uniform policy evaluation |
+| **Resale Count Limit** | 2 times per ticket | Limits abusive transfer loops |
+| **KYC Threshold** | >= 5,000,000 VND | KYC required for acting user in resale action |
 
 #### Resale Flow Diagram
 
@@ -259,6 +267,9 @@ function listForSale(uint256 tokenId, uint256 price) external {
 | Seller wants to cancel listing | Call `cancelListing()` → NFT returned to seller |
 | Event starts while ticket listed | Auto-delist expired listings (cron job) |
 | Buyer payment fails/times out | Order expires after 15 min, listing remains active |
+| Event reaches T-30 minutes | Block new listings/purchases, auto-cancel active listings |
+| Seller sets listing expiry past cutoff | Reject listing create/update request |
+| Ticket already resold 2 times | Reject new listing with transfer-limit error |
 | Platform escrow failure | Manual support intervention + refund |
 
 ---
@@ -2022,6 +2033,10 @@ function validatePaymasterUserOp(...) {
 - [x] Fee structure ✅ Seller pays 10% (5% platform + 5% organizer)
 - [x] Escrow mechanism ✅ Platform escrow for VND
 - [x] Currency for resale ✅ VND only (Phase 1)
+- [x] Resale cutoff ✅ T-30 minutes (create + purchase blocked, active listings auto-cancelled)
+- [x] Listing expiry source ✅ Seller-supplied `expiresAt`, capped by cutoff
+- [x] Resale count limit ✅ Maximum 2 resale cycles per ticket
+- [x] KYC threshold ✅ Required for acting user at resale amount >= 5,000,000 VND
 
 ### Check-in
 - [x] QR code content and signing mechanism ✅ Token ID + timestamp + nonce + signature, 3-second rotating QR
