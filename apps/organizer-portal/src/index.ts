@@ -1,5 +1,6 @@
 import { cancelEvent, createOrganizerEvent, setTicketTypes, type OrganizerEvent, type OrganizerEventInput, type OrganizerTicketTypeInput } from "./features/events.js";
 import { summarizeAnalytics, type EventSalesSnapshot, type OrganizerAnalytics } from "./features/analytics.js";
+export { toEventSalesSnapshots, toOrganizerEventInputs } from "./integrations/ui-adapter.js";
 
 export class OrganizerPortalApp {
   private readonly events = new Map<string, OrganizerEvent>();

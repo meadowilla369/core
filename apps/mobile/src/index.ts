@@ -3,6 +3,7 @@ import { InMemorySecureStorage, type SecureStorage } from "./core/secure-storage
 import { dictionary, type Locale } from "./i18n/index.js";
 import { createReservation, markPaymentPending, markPurchaseResult, type PurchaseSession } from "./features/purchase.js";
 import { requestOtp, verifyOtp, type AuthState } from "./features/auth.js";
+export { toMobileEventSummaries, toMobileListings, toMobileTickets } from "./integrations/ui-adapter.js";
 
 export interface MobileAppState {
   locale: Locale;

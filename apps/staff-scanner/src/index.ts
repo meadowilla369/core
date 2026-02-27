@@ -1,4 +1,5 @@
 import { evaluateQrPayload, nextGateMetrics, type GateMetrics, type ScanInput, type ScanResult } from "./core/scanner.js";
+export { toStaffScanInput, toStaffScanLabel } from "./integrations/ui-adapter.js";
 
 export class StaffScannerApp {
   private readonly metricsByGate = new Map<string, GateMetrics>();

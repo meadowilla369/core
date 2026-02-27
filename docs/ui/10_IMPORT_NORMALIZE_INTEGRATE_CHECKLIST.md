@@ -20,17 +20,18 @@ Goal: bring Figma AI generated UI code in `tmp/Event Ticketing Marketplace UI` i
 
 ## Phase 3 - Integrate
 
-- [ ] Create app-level adapters for `mobile`, `staff-scanner`, `organizer-portal`
-- [ ] Wire adapters into each app public API surface
-- [ ] Add integration tests for adapter outputs
-- [ ] Run typecheck/tests for changed workspaces
-- [ ] Commit Phase 3 changes
+- [x] Create app-level adapters for `mobile`, `staff-scanner`, `organizer-portal`
+- [x] Wire adapters into each app public API surface
+- [x] Add integration tests for adapter outputs
+- [x] Run typecheck/tests for changed workspaces
+- [x] Commit Phase 3 changes
 
 ## Validation Commands
 
 - `node scripts/ui/generate-import-manifest.mjs`
 - `npm run typecheck`
 - `npm run ui:normalize:test`
+- `npm run ui:adapters:test`
 
 ## Commit Plan
 
