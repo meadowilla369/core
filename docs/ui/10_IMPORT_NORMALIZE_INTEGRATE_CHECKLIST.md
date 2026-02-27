@@ -12,11 +12,11 @@ Goal: bring Figma AI generated UI code in `tmp/Event Ticketing Marketplace UI` i
 
 ## Phase 2 - Normalize
 
-- [ ] Define raw UI mock data contracts (based on Figma drop shape)
-- [ ] Define normalized contracts mapped to existing monorepo types
-- [ ] Implement mapper functions (raw -> normalized)
-- [ ] Add fixture data and mapper smoke tests
-- [ ] Commit Phase 2 changes
+- [x] Define raw UI mock data contracts (based on Figma drop shape)
+- [x] Define normalized contracts mapped to existing monorepo types
+- [x] Implement mapper functions (raw -> normalized)
+- [x] Add fixture data and mapper smoke tests
+- [x] Commit Phase 2 changes
 
 ## Phase 3 - Integrate
 
@@ -30,7 +30,7 @@ Goal: bring Figma AI generated UI code in `tmp/Event Ticketing Marketplace UI` i
 
 - `node scripts/ui/generate-import-manifest.mjs`
 - `npm run typecheck`
-- `node --test packages/ui-integration/tests/*.test.mjs`
+- `npm run ui:normalize:test`
 
 ## Commit Plan
 

@@ -9,6 +9,7 @@
     "dev": "turbo run dev --parallel",
     "ui:dev": "node apps/ui-simulator/server.mjs",
     "ui:manifest": "node scripts/ui/generate-import-manifest.mjs",
+    "ui:normalize:test": "cd packages/ui-integration && npm run test",
     "test": "turbo run test",
     "test:integration-suite": "cd packages/integration-suite && npm run test",
     "lint": "turbo run lint",
