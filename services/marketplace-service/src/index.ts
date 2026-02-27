@@ -12,6 +12,10 @@ server.listen(config.port, config.host, () => {
     maxMarkupBps: config.maxMarkupBps,
     platformFeeBps: config.platformFeeBps,
     organizerRoyaltyBps: config.organizerRoyaltyBps,
+    resaleCutoffMinutes: config.resaleCutoffMinutes,
+    resaleKycThresholdVnd: config.resaleKycThresholdVnd,
+    maxResaleCount: config.maxResaleCount,
+    policyTimezone: config.policyTimezone,
     internalApiKeyConfigured: Boolean(config.internalApiKey)
   });
 });

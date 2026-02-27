@@ -775,7 +775,7 @@ paths:
                 $ref: "#/components/schemas/MarketplaceListingListResponse"
     post:
       tags: [Marketplace]
-      summary: Create resale listing (requires KYC)
+      summary: Create resale listing (KYC required for high-value resale threshold)
       parameters:
         - $ref: "#/components/parameters/XUserId"
         - $ref: "#/components/parameters/XKycStatus"
@@ -798,7 +798,7 @@ paths:
         "401":
           description: Missing user context
         "403":
-          description: KYC not approved
+          description: KYC required by policy threshold
         "409":
           description: Token already listed
 
@@ -833,6 +833,7 @@ paths:
       summary: Purchase resale listing and build escrow settlement payload
       parameters:
         - $ref: "#/components/parameters/XUserId"
+        - $ref: "#/components/parameters/XKycStatus"
         - $ref: "#/components/parameters/IdempotencyKey"
         - name: listingId
           in: path
@@ -856,6 +857,8 @@ paths:
           description: Invalid payload or listing not active
         "401":
           description: Missing user context
+        "403":
+          description: KYC required by policy threshold
         "404":
           description: Listing not found
 
@@ -1600,7 +1603,7 @@ components:
       required: false
       schema:
         type: string
-      description: Simulated KYC status header. Listing creation requires `approved`.
+      description: Simulated KYC status header. Required as `approved` when resale amount is >= 5,000,000 VND.
     IdempotencyKey:
       name: idempotency-key
       in: header
@@ -2282,7 +2285,13 @@ components:
           type: number
         sellerWalletAddress:
           type: string
-      required: [tokenId, eventId, originalPrice, askPrice, sellerWalletAddress]
+        eventStartAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+      required: [tokenId, eventId, originalPrice, askPrice, sellerWalletAddress, eventStartAt, expiresAt]
 
     MarketplaceListing:
       type: object
@@ -2307,6 +2316,14 @@ components:
         status:
           type: string
           enum: [active, cancelled, completed]
+        eventStartAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        resaleCount:
+          type: integer
         createdAt:
           type: string
           format: date-time

@@ -116,12 +116,19 @@ export interface MarketplaceListing {
   tokenId: string;
   eventId: string;
   sellerUserId: string;
+  sellerWalletAddress: string;
   originalPrice: number;
   askPrice: number;
   currency: "VND";
   status: "active" | "cancelled" | "completed";
+  eventStartAt: string;
+  expiresAt: string;
+  resaleCount: number;
   createdAt: string;
   updatedAt: string;
+  buyerUserId?: string;
+  paymentId?: string;
+  settlementId?: string;
 }
 
 interface RequestOptions {
@@ -245,6 +252,8 @@ export class ApiClient {
       originalPrice: number;
       askPrice: number;
       sellerWalletAddress: string;
+      eventStartAt: string;
+      expiresAt: string;
     },
     ctx: { userId: string; kycStatus: string; idempotencyKey?: string }
   ): Promise<ApiSuccessResponse<MarketplaceListing>> {
@@ -261,14 +270,15 @@ export class ApiClient {
 
   async purchaseMarketplaceListing(
     listingId: string,
-    input: { buyerWalletAddress: string },
-    ctx: { userId: string; idempotencyKey?: string }
+    input: { paymentId: string; gateway: "momo" | "vnpay"; gatewayReference: string; buyerWalletAddress: string },
+    ctx: { userId: string; kycStatus?: string; idempotencyKey?: string }
   ): Promise<ApiSuccessResponse<Record<string, unknown>>> {
     return this.request(`/v1/marketplace/listings/${listingId}/purchase`, {
       method: "POST",
       body: input,
       headers: {
         "x-user-id": ctx.userId,
+        ...(ctx.kycStatus ? { "x-kyc-status": ctx.kycStatus } : {}),
         ...(ctx.idempotencyKey ? { "idempotency-key": ctx.idempotencyKey } : {})
       }
     });

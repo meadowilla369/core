@@ -12,6 +12,8 @@ interface CreateListingBody {
   originalPrice?: number;
   askPrice?: number;
   sellerWalletAddress?: string;
+  eventStartAt?: string;
+  expiresAt?: string;
 }
 
 interface PurchaseListingBody {
@@ -31,6 +33,9 @@ interface Listing {
   askPrice: number;
   currency: "VND";
   status: ListingStatus;
+  eventStartAt: string;
+  expiresAt: string;
+  resaleCount: number;
   createdAt: string;
   updatedAt: string;
   buyerUserId?: string;
@@ -154,17 +159,79 @@ function calculateFee(amount: number, bps: number): number {
   return Math.floor((amount * bps) / 10000);
 }
 
+function hasTimezoneOffset(value: string): boolean {
+  return /(?:[zZ]|[+-]\d{2}:\d{2})$/.test(value);
+}
+
+function parsePolicyTimeMs(raw: string | undefined, timezone: string): number | null {
+  const input = raw?.trim();
+  if (!input) {
+    return null;
+  }
+
+  const normalized = hasTimezoneOffset(input) ? input : timezone === "Asia/Ho_Chi_Minh" ? `${input}+07:00` : input;
+  const parsed = Date.parse(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function computeCutoffMs(eventStartAtMs: number, cutoffMinutes: number): number {
+  return eventStartAtMs - cutoffMinutes * 60_000;
+}
+
+function requiresKyc(amount: number, threshold: number): boolean {
+  return amount >= threshold;
+}
+
+function autoCancelActiveListings(
+  listingsById: Map<string, Listing>,
+  nowMs: number,
+  cutoffMinutes: number,
+  timezone: string
+): void {
+  for (const listing of listingsById.values()) {
+    if (listing.status !== "active") {
+      continue;
+    }
+
+    const expiresAtMs = parsePolicyTimeMs(listing.expiresAt, timezone);
+    if (expiresAtMs !== null && nowMs >= expiresAtMs) {
+      listing.status = "cancelled";
+      listing.updatedAt = toIso(nowMs);
+      continue;
+    }
+
+    const eventStartAtMs = parsePolicyTimeMs(listing.eventStartAt, timezone);
+    if (eventStartAtMs === null) {
+      continue;
+    }
+
+    if (nowMs >= computeCutoffMs(eventStartAtMs, cutoffMinutes)) {
+      listing.status = "cancelled";
+      listing.updatedAt = toIso(nowMs);
+    }
+  }
+}
+
 export function createMarketplaceServer(config: MarketplaceConfig) {
   const listingsById = new Map<string, Listing>();
   const listingIdByTokenId = new Map<string, string>();
+  const resaleCountByTokenId = new Map<string, number>();
   const completedSales: CompletedSale[] = [];
   const settlementLedgerById = new Map<string, SettlementLedgerRecord>();
   const idempotencyResponses = new Map<string, unknown>();
+  const policyTimezone = config.policyTimezone || "Asia/Ho_Chi_Minh";
+  const resaleCutoffMinutes = Number.isFinite(config.resaleCutoffMinutes) && config.resaleCutoffMinutes > 0 ? config.resaleCutoffMinutes : 30;
+  const resaleKycThresholdVnd =
+    Number.isFinite(config.resaleKycThresholdVnd) && config.resaleKycThresholdVnd > 0 ? config.resaleKycThresholdVnd : 5_000_000;
+  const maxResaleCount = Number.isFinite(config.maxResaleCount) && config.maxResaleCount > 0 ? config.maxResaleCount : 2;
 
   return createServer(async (req, res) => {
     try {
       const method = req.method ?? "GET";
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+      const nowMs = Date.now();
+
+      autoCancelActiveListings(listingsById, nowMs, resaleCutoffMinutes, policyTimezone);
 
       if (method === "GET" && url.pathname === "/healthz") {
         const active = Array.from(listingsById.values()).filter((listing) => listing.status === "active").length;
@@ -178,6 +245,10 @@ export function createMarketplaceServer(config: MarketplaceConfig) {
             chainId: config.chainId,
             marketplaceContractAddress: config.marketplaceContractAddress,
             ticketNftAddress: config.ticketNftAddress,
+            policyTimezone,
+            resaleCutoffMinutes,
+            resaleKycThresholdVnd,
+            maxResaleCount,
             activeListings: active,
             completedSales: completedSales.length
           }
@@ -220,17 +291,6 @@ export function createMarketplaceServer(config: MarketplaceConfig) {
           });
         }
 
-        const kycStatus = extractSingleHeader(req, "x-kyc-status")?.toLowerCase() ?? "pending";
-        if (kycStatus !== "approved") {
-          return sendJson(res, 403, {
-            success: false,
-            error: {
-              code: "KYC_REQUIRED",
-              message: "KYC approval is required before creating listing"
-            }
-          });
-        }
-
         const idempotencyScope = createIdempotencyScope(method, url.pathname, extractIdempotencyKey(req));
         if (idempotencyScope && idempotencyResponses.has(idempotencyScope)) {
           return sendJson(res, 200, idempotencyResponses.get(idempotencyScope));
@@ -240,15 +300,17 @@ export function createMarketplaceServer(config: MarketplaceConfig) {
         const tokenId = body.tokenId?.trim() ?? "";
         const eventId = body.eventId?.trim() ?? "";
         const sellerWalletAddress = body.sellerWalletAddress?.trim() ?? "";
+        const eventStartAt = body.eventStartAt?.trim() ?? "";
+        const expiresAt = body.expiresAt?.trim() ?? "";
         const originalPrice = body.originalPrice;
         const askPrice = body.askPrice;
 
-        if (!tokenId || !eventId || !sellerWalletAddress || !originalPrice || !askPrice) {
+        if (!tokenId || !eventId || !sellerWalletAddress || !eventStartAt || !expiresAt || !originalPrice || !askPrice) {
           return sendJson(res, 400, {
             success: false,
             error: {
               code: "INVALID_LISTING_PAYLOAD",
-              message: "tokenId, eventId, sellerWalletAddress, originalPrice, askPrice are required"
+              message: "tokenId, eventId, sellerWalletAddress, eventStartAt, expiresAt, originalPrice, askPrice are required"
             }
           });
         }
@@ -263,6 +325,60 @@ export function createMarketplaceServer(config: MarketplaceConfig) {
           });
         }
 
+        const resaleCount = resaleCountByTokenId.get(tokenId) ?? 0;
+        if (resaleCount >= maxResaleCount) {
+          return sendJson(res, 400, {
+            success: false,
+            error: {
+              code: "RESALE_LIMIT_REACHED",
+              message: `Ticket reached maximum resale count (${maxResaleCount})`
+            }
+          });
+        }
+
+        const eventStartAtMs = parsePolicyTimeMs(eventStartAt, policyTimezone);
+        const expiresAtMs = parsePolicyTimeMs(expiresAt, policyTimezone);
+        if (eventStartAtMs === null || expiresAtMs === null) {
+          return sendJson(res, 400, {
+            success: false,
+            error: {
+              code: "INVALID_LISTING_PAYLOAD",
+              message: "eventStartAt and expiresAt must be valid date-time values"
+            }
+          });
+        }
+
+        const cutoffAtMs = computeCutoffMs(eventStartAtMs, resaleCutoffMinutes);
+        if (nowMs >= cutoffAtMs) {
+          return sendJson(res, 400, {
+            success: false,
+            error: {
+              code: "LISTING_CUTOFF_REACHED",
+              message: `Listing is blocked within ${resaleCutoffMinutes} minutes before event start`
+            }
+          });
+        }
+
+        if (expiresAtMs <= nowMs) {
+          return sendJson(res, 400, {
+            success: false,
+            error: {
+              code: "LISTING_EXPIRY_INVALID",
+              message: "Listing expiry must be in the future"
+            }
+          });
+        }
+
+        if (expiresAtMs > cutoffAtMs) {
+          return sendJson(res, 400, {
+            success: false,
+            error: {
+              code: "LISTING_EXPIRY_INVALID",
+              message: "Listing expiry cannot exceed event cutoff window"
+            }
+          });
+        }
+
         const priceCap = Math.floor((originalPrice * config.maxMarkupBps) / 10000);
         if (askPrice > priceCap) {
           return sendJson(res, 400, {
@@ -272,6 +388,19 @@ export function createMarketplaceServer(config: MarketplaceConfig) {
               message: `askPrice exceeds max allowed cap ${priceCap}`
             }
           });
+        }
+
+        if (requiresKyc(askPrice, resaleKycThresholdVnd)) {
+          const kycStatus = extractSingleHeader(req, "x-kyc-status")?.toLowerCase() ?? "pending";
+          if (kycStatus !== "approved") {
+            return sendJson(res, 403, {
+              success: false,
+              error: {
+                code: "KYC_REQUIRED",
+                message: `KYC approval is required for resale amount >= ${resaleKycThresholdVnd} VND`
+              }
+            });
+          }
         }
 
         const existingListingId = listingIdByTokenId.get(tokenId);
@@ -299,6 +428,9 @@ export function createMarketplaceServer(config: MarketplaceConfig) {
           askPrice,
           currency: "VND",
           status: "active",
+          eventStartAt: toIso(eventStartAtMs),
+          expiresAt: toIso(expiresAtMs),
+          resaleCount,
           createdAt: nowIso,
           updatedAt: nowIso
         };
@@ -420,6 +552,20 @@ export function createMarketplaceServer(config: MarketplaceConfig) {
           });
         }
 
+        const eventStartAtMs = parsePolicyTimeMs(listing.eventStartAt, policyTimezone);
+        if (eventStartAtMs !== null && nowMs >= computeCutoffMs(eventStartAtMs, resaleCutoffMinutes)) {
+          listing.status = "cancelled";
+          listing.updatedAt = toIso(nowMs);
+
+          return sendJson(res, 400, {
+            success: false,
+            error: {
+              code: "LISTING_CUTOFF_REACHED",
+              message: `Resale purchase is blocked within ${resaleCutoffMinutes} minutes before event start`
+            }
+          });
+        }
+
         const body = await readJson<PurchaseListingBody>(req);
         const paymentId = body.paymentId?.trim() ?? "";
         const buyerWalletAddress = body.buyerWalletAddress?.trim() ?? "";
@@ -445,6 +591,19 @@ export function createMarketplaceServer(config: MarketplaceConfig) {
               message: "gateway must be momo or vnpay"
             }
           });
+        }
+
+        if (requiresKyc(listing.askPrice, resaleKycThresholdVnd)) {
+          const kycStatus = extractSingleHeader(req, "x-kyc-status")?.toLowerCase() ?? "pending";
+          if (kycStatus !== "approved") {
+            return sendJson(res, 403, {
+              success: false,
+              error: {
+                code: "KYC_REQUIRED",
+                message: `KYC approval is required for resale amount >= ${resaleKycThresholdVnd} VND`
+              }
+            });
+          }
         }
 
         const grossAmount = listing.askPrice;
@@ -495,6 +654,9 @@ export function createMarketplaceServer(config: MarketplaceConfig) {
         listing.buyerUserId = userId;
         listing.paymentId = paymentId;
         listing.settlementId = settlementId;
+        const nextResaleCount = (resaleCountByTokenId.get(listing.tokenId) ?? listing.resaleCount) + 1;
+        resaleCountByTokenId.set(listing.tokenId, nextResaleCount);
+        listing.resaleCount = nextResaleCount;
 
         completedSales.push({
           listingId: listing.id,

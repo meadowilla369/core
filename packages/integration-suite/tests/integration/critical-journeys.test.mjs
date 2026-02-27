@@ -263,9 +263,16 @@ test("critical journey: resale listing + purchase + escrow settlement", async ()
     serviceName: "marketplace-service",
     host: "127.0.0.1",
     port: 3007,
+    chainId: 31337,
+    marketplaceContractAddress: "0xmarket",
+    ticketNftAddress: "0xticket",
     maxMarkupBps: 12000,
     platformFeeBps: 500,
-    organizerRoyaltyBps: 200,
+    organizerRoyaltyBps: 500,
+    resaleCutoffMinutes: 30,
+    resaleKycThresholdVnd: 5_000_000,
+    maxResaleCount: 2,
+    policyTimezone: "Asia/Ho_Chi_Minh",
     internalApiKey: "internal_dev_key"
   });
 
@@ -283,7 +290,9 @@ test("critical journey: resale listing + purchase + escrow settlement", async ()
           eventId: "evt_rockfest_2026",
           sellerWalletAddress: "0xsellerwallet",
           originalPrice: 1_000_000,
-          askPrice: 1_100_000
+          askPrice: 1_100_000,
+          eventStartAt: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
+          expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()
         }
       })
     );

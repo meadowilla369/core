@@ -8,6 +8,10 @@ export interface MarketplaceConfig {
   maxMarkupBps: number;
   platformFeeBps: number;
   organizerRoyaltyBps: number;
+  resaleCutoffMinutes: number;
+  resaleKycThresholdVnd: number;
+  maxResaleCount: number;
+  policyTimezone: string;
   internalApiKey: string;
 }
 
@@ -31,7 +35,11 @@ export function loadConfig(): MarketplaceConfig {
     ticketNftAddress: process.env.TICKET_NFT_ADDRESS ?? "0x5fbdb2315678afecb367f032d93f642f64180aa3",
     maxMarkupBps: parseNumber(process.env.MAX_MARKUP_BPS, 12000),
     platformFeeBps: parseNumber(process.env.PLATFORM_FEE_BPS, 500),
-    organizerRoyaltyBps: parseNumber(process.env.ORGANIZER_ROYALTY_BPS, 200),
+    organizerRoyaltyBps: parseNumber(process.env.ORGANIZER_ROYALTY_BPS, 500),
+    resaleCutoffMinutes: parseNumber(process.env.RESALE_CUTOFF_MINUTES, 30),
+    resaleKycThresholdVnd: parseNumber(process.env.RESALE_KYC_THRESHOLD_VND, 5_000_000),
+    maxResaleCount: parseNumber(process.env.MAX_RESALE_COUNT, 2),
+    policyTimezone: process.env.POLICY_TIMEZONE ?? "Asia/Ho_Chi_Minh",
     internalApiKey: process.env.INTERNAL_API_KEY ?? "internal_dev_key"
   };
 }
