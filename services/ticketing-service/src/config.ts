@@ -3,6 +3,7 @@ export interface TicketingConfig {
   host: string;
   port: number;
   reservationTtlSec: number;
+  qrSignatureSecret: string;
   internalApiKey: string;
 }
 
@@ -21,6 +22,7 @@ export function loadConfig(): TicketingConfig {
     host: process.env.HOST ?? "127.0.0.1",
     port: parseNumber(process.env.PORT, 3005),
     reservationTtlSec: parseNumber(process.env.RESERVATION_TTL_SEC, 900),
+    qrSignatureSecret: process.env.QR_SIGNATURE_SECRET ?? "checkin_dev_secret",
     internalApiKey: process.env.INTERNAL_API_KEY ?? "internal-dev-key"
   };
 }

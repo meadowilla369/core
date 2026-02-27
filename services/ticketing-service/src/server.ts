@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 
 import type { TicketingConfig } from "./config.js";
@@ -225,6 +225,20 @@ function reservationResponse(reservation: Reservation): Record<string, unknown> 
     paymentInitiatedAt: reservation.paymentInitiatedAt,
     paidAt: reservation.paidAt
   };
+}
+
+function createQrSignature(
+  secret: string,
+  payload: {
+    tokenId: string;
+    eventId: string;
+    timestamp: number;
+    nonce: string;
+    walletAddress: string;
+  }
+): string {
+  const raw = `${payload.tokenId}.${payload.eventId}.${payload.timestamp}.${payload.nonce}.${payload.walletAddress}`;
+  return createHmac("sha256", secret).update(raw, "utf8").digest("hex");
 }
 
 export function createTicketingServer(config: TicketingConfig) {
@@ -665,15 +679,26 @@ export function createTicketingServer(config: TicketingConfig) {
           });
         }
 
+        const timestamp = Date.now();
+        const nonce = randomUUID();
+        const walletAddress = `mock-wallet-${ticket.ownerUserId}`;
+        const signature = createQrSignature(config.qrSignatureSecret, {
+          tokenId: ticket.tokenId,
+          eventId: ticket.eventId,
+          timestamp,
+          nonce,
+          walletAddress
+        });
+
         const response = {
           success: true,
           data: {
             tokenId: ticket.tokenId,
             eventId: ticket.eventId,
-            timestamp: Date.now(),
-            nonce: randomUUID(),
-            walletAddress: `mock-wallet-${ticket.ownerUserId}`,
-            signature: `0x${randomUUID().replace(/-/g, "")}${randomUUID().replace(/-/g, "")}`
+            timestamp,
+            nonce,
+            walletAddress,
+            signature: `0x${signature}`
           }
         };
 
