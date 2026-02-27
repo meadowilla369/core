@@ -1,0 +1,120 @@
+{
+  "generatedAt": "2026-02-27T09:04:43.720Z",
+  "sourceDrop": "tmp/Event Ticketing Marketplace UI",
+  "sourceRoot": "/Users/nguyentruong/Documents/proof-of-concept/vibe-coding/core/tmp/Event Ticketing Marketplace UI",
+  "outputFile": "docs/ui/import-manifest.json",
+  "summary": {
+    "totalFiles": 93,
+    "pageFiles": 22,
+    "componentFiles": 54,
+    "libFiles": 3,
+    "styleFiles": 4,
+    "filesUsingMockData": 13
+  },
+  "pages": {
+    "buyer": [
+      "src/app/pages/buyer/Checkout.tsx",
+      "src/app/pages/buyer/EventDetail.tsx",
+      "src/app/pages/buyer/Explore.tsx",
+      "src/app/pages/buyer/KYCStepper.tsx",
+      "src/app/pages/buyer/MyTickets.tsx",
+      "src/app/pages/buyer/Profile.tsx",
+      "src/app/pages/buyer/ResaleCreate.tsx",
+      "src/app/pages/buyer/TicketDetail.tsx"
+    ],
+    "staff": [
+      "src/app/pages/staff/Dashboard.tsx",
+      "src/app/pages/staff/Scan.tsx",
+      "src/app/pages/staff/ScanResult.tsx"
+    ],
+    "organizer": [
+      "src/app/pages/organizer/Dashboard.tsx",
+      "src/app/pages/organizer/EventDetail.tsx",
+      "src/app/pages/organizer/EventEditor.tsx",
+      "src/app/pages/organizer/EventManagement.tsx"
+    ],
+    "platform": [
+      "src/app/pages/platform/Analytics.tsx",
+      "src/app/pages/platform/DisputeDetail.tsx",
+      "src/app/pages/platform/DisputeQueue.tsx",
+      "src/app/pages/platform/UserManagement.tsx"
+    ],
+    "shared": [
+      "src/app/pages/Home.tsx",
+      "src/app/pages/NotFound.tsx",
+      "src/app/pages/RoleSelector.tsx"
+    ]
+  },
+  "libs": [
+    "src/app/lib/mockData.ts",
+    "src/app/lib/types.ts",
+    "src/app/lib/utils.ts"
+  ],
+  "styles": [
+    "src/styles/fonts.css",
+    "src/styles/index.css",
+    "src/styles/tailwind.css",
+    "src/styles/theme.css"
+  ],
+  "mockDataConsumers": [
+    "src/app/pages/buyer/Checkout.tsx",
+    "src/app/pages/buyer/EventDetail.tsx",
+    "src/app/pages/buyer/Explore.tsx",
+    "src/app/pages/buyer/MyTickets.tsx",
+    "src/app/pages/buyer/Profile.tsx",
+    "src/app/pages/buyer/ResaleCreate.tsx",
+    "src/app/pages/buyer/TicketDetail.tsx",
+    "src/app/pages/organizer/Dashboard.tsx",
+    "src/app/pages/organizer/EventDetail.tsx",
+    "src/app/pages/organizer/EventEditor.tsx",
+    "src/app/pages/organizer/EventManagement.tsx",
+    "src/app/pages/platform/DisputeDetail.tsx",
+    "src/app/pages/platform/DisputeQueue.tsx"
+  ],
+  "p0Coverage": [
+    {
+      "fileName": "Explore.tsx",
+      "exists": true
+    },
+    {
+      "fileName": "EventDetail.tsx",
+      "exists": true
+    },
+    {
+      "fileName": "Checkout.tsx",
+      "exists": true
+    },
+    {
+      "fileName": "TicketDetail.tsx",
+      "exists": true
+    },
+    {
+      "fileName": "ResaleCreate.tsx",
+      "exists": true
+    },
+    {
+      "fileName": "KYCStepper.tsx",
+      "exists": true
+    },
+    {
+      "fileName": "Scan.tsx",
+      "exists": true
+    },
+    {
+      "fileName": "ScanResult.tsx",
+      "exists": true
+    },
+    {
+      "fileName": "Dashboard.tsx",
+      "exists": true
+    },
+    {
+      "fileName": "DisputeQueue.tsx",
+      "exists": true
+    },
+    {
+      "fileName": "DisputeDetail.tsx",
+      "exists": true
+    }
+  ]
+}

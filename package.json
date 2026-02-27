@@ -8,6 +8,7 @@
     "build": "turbo run build",
     "dev": "turbo run dev --parallel",
     "ui:dev": "node apps/ui-simulator/server.mjs",
+    "ui:manifest": "node scripts/ui/generate-import-manifest.mjs",
     "test": "turbo run test",
     "test:integration-suite": "cd packages/integration-suite && npm run test",
     "lint": "turbo run lint",

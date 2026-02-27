@@ -4,11 +4,11 @@ Goal: bring Figma AI generated UI code in `tmp/Event Ticketing Marketplace UI` i
 
 ## Phase 1 - Import
 
-- [ ] Confirm source drop location and branch strategy (`feat/ui` only)
-- [ ] Add safe ignore rules for temporary imported UI source
-- [ ] Create import manifest generator from the `tmp` drop
-- [ ] Generate first manifest snapshot (`docs/ui/import-manifest.json`)
-- [ ] Commit Phase 1 changes
+- [x] Confirm source drop location and branch strategy (`feat/ui` only)
+- [x] Add safe ignore rules for temporary imported UI source
+- [x] Create import manifest generator from the `tmp` drop
+- [x] Generate first manifest snapshot (`docs/ui/import-manifest.json`)
+- [x] Commit Phase 1 changes
 
 ## Phase 2 - Normalize
 
