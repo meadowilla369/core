@@ -209,6 +209,9 @@ export function createWorkerMintServer(config: WorkerMintConfig) {
             service: config.serviceName,
             status: "ok",
             timestamp: new Date().toISOString(),
+            chainId: config.chainId,
+            baseRpcUrl: config.baseRpcUrl,
+            ticketNftAddress: config.ticketNftAddress,
             queue: {
               queued: queuedCount,
               retrying: retryingCount,

@@ -6,6 +6,8 @@ Runnable mint worker skeleton with paid-job queue, retry policy, and support que
 
 ```bash
 PORT=3010 HOST=127.0.0.1 \
+BASE_CHAIN_ID=31337 BASE_RPC_URL=http://127.0.0.1:8545 \
+TICKET_NFT_ADDRESS=0x5fbdb2315678afecb367f032d93f642f64180aa3 \
 MAX_MINT_ATTEMPTS=5 MAX_MINT_BATCH_SIZE=10 \
 RETRY_BASE_DELAY_SEC=20 TOKEN_ID_SEED=100000 \
 node --experimental-strip-types src/index.ts

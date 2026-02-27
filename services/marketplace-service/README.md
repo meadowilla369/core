@@ -6,6 +6,9 @@ Runnable resale marketplace skeleton with KYC-gated listing creation, listing pu
 
 ```bash
 PORT=3007 HOST=127.0.0.1 \
+BASE_CHAIN_ID=31337 \
+MARKETPLACE_CONTRACT_ADDRESS=0xe7f1725e7734ce288f8367e1bb143e90bb3f0512 \
+TICKET_NFT_ADDRESS=0x5fbdb2315678afecb367f032d93f642f64180aa3 \
 MAX_MARKUP_BPS=12000 PLATFORM_FEE_BPS=500 ORGANIZER_ROYALTY_BPS=200 \
 node --experimental-strip-types src/index.ts
 ```

@@ -17,6 +17,8 @@
     "prepare": "husky",
     "contracts:test": "cd contracts && forge test --offline",
     "contracts:quality": "./scripts/run-contract-quality-gates.sh",
+    "contracts:anvil": "anvil --chain-id 31337",
+    "contracts:deploy:local": "cd contracts && ./script/deploy-local.sh",
     "staging:parity": "./scripts/check-staging-parity.sh",
     "release:gate": "./scripts/release-candidate-gate.sh",
     "rollback:gate": "./scripts/incident-rollback-gate.sh"

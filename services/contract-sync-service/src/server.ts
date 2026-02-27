@@ -136,6 +136,8 @@ export function createContractSyncServer(config: ContractSyncConfig) {
     const transactionHash = event.transactionHash?.trim() ?? "";
     const logIndex = typeof event.logIndex === "number" ? event.logIndex : -1;
     const eventName = event.eventName?.trim() ?? "";
+    const contractAddress = event.contractAddress?.trim().toLowerCase() ?? "";
+    const eventChainId = typeof event.chainId === "number" ? event.chainId : null;
 
     if (!transactionHash || logIndex < 0 || !eventName) {
       totalEventsRejected += 1;
@@ -143,6 +145,33 @@ export function createContractSyncServer(config: ContractSyncConfig) {
         eventKey: `${transactionHash || "missing-tx"}:${logIndex}`,
         status: "rejected",
         reason: "transactionHash, logIndex, eventName are required"
+      };
+    }
+
+    if (!contractAddress) {
+      totalEventsRejected += 1;
+      return {
+        eventKey: `${transactionHash}:${logIndex}`,
+        status: "rejected",
+        reason: "contractAddress is required"
+      };
+    }
+
+    if (!config.trackedContractAddresses.has(contractAddress)) {
+      totalEventsRejected += 1;
+      return {
+        eventKey: `${transactionHash}:${logIndex}`,
+        status: "rejected",
+        reason: `Unknown contract address: ${contractAddress}`
+      };
+    }
+
+    if (eventChainId !== null && eventChainId !== config.chainId) {
+      totalEventsRejected += 1;
+      return {
+        eventKey: `${transactionHash}:${logIndex}`,
+        status: "rejected",
+        reason: `Unexpected chainId: ${eventChainId}`
       };
     }
 
@@ -240,7 +269,9 @@ export function createContractSyncServer(config: ContractSyncConfig) {
           data: {
             service: config.serviceName,
             status: "ok",
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            chainId: config.chainId,
+            trackedContracts: Array.from(config.trackedContractAddresses.values())
           }
         });
       }

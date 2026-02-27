@@ -175,6 +175,9 @@ export function createMarketplaceServer(config: MarketplaceConfig) {
             service: config.serviceName,
             status: "ok",
             timestamp: new Date().toISOString(),
+            chainId: config.chainId,
+            marketplaceContractAddress: config.marketplaceContractAddress,
+            ticketNftAddress: config.ticketNftAddress,
             activeListings: active,
             completedSales: completedSales.length
           }

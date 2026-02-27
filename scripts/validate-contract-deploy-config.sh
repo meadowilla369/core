@@ -25,8 +25,19 @@ required_vars=(
 )
 
 missing=0
+
+if command -v rg >/dev/null 2>&1; then
+  has_var() {
+    rg -q "^${1}=" "$2"
+  }
+else
+  has_var() {
+    grep -q "^${1}=" "$2"
+  }
+fi
+
 for var in "${required_vars[@]}"; do
-  if ! rg -q "^${var}=" "$ENV_FILE"; then
+  if ! has_var "$var" "$ENV_FILE"; then
     echo "Missing required var: ${var}"
     missing=1
   fi
