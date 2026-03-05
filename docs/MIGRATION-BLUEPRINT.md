@@ -26,22 +26,29 @@
 
 **On-Chain Execution:**
 
-1. Frontend: Load user's EOA private key from secure storage
-2. Frontend: Build TX = `TicketLedger.purchaseWithHash(eventId, ticketTypeId, quantity, payment_hash)`
-3. Frontend: Sign TX with private key
-4. Frontend → RPC: `eth_sendRawTransaction(signedTx)`
-5. RPC → Contract: Execute `purchaseWithHash()`
-6. Contract: Verify payment_hash not used
-7. Contract: Mint tickets to `msg.sender` (user's EOA)
-8. Contract: Emit `TicketPurchased(ticketId, buyer, eventId, price)`
-9. Contract-Sync Service: Listen `TicketPurchased` event
-10. Contract-Sync → Database: Update ticket status = MINTED, owner = userAddress
+1. Backend: Sign purchase authorization off-chain using EIP-712
+   - `signature = signTypedData(domain, PURCHASE_TYPE, {eventId, ticketTypeId, quantity, paymentHash, buyer})`
+2. Backend → Frontend: Send `{paymentHash, signature}`
+3. Frontend: Load user's EOA private key from secure storage
+4. Frontend: Build TX = `TicketLedger.purchaseWithSignature(eventId, ticketTypeId, quantity, paymentHash, signature)`
+5. Frontend: Sign TX with private key
+6. Frontend → RPC: `eth_sendRawTransaction(signedTx)`
+7. RPC → Contract: Execute `purchaseWithSignature()`
+8. Contract: Recover signer from EIP-712 signature using `ECDSA.recover()`
+9. Contract: Verify signer has `PAYMENT_HASH_ROLE`
+10. Contract: Verify paymentHash not used
+11. Contract: Mint tickets to `msg.sender` (user's EOA)
+12. Contract: Emit `TicketPurchased(ticketId, buyer, eventId, price)`
+13. Contract-Sync Service: Listen `TicketPurchased` event
+14. Contract-Sync → Database: Update ticket status = MINTED, owner = userAddress
 
 **Key Changes:**
 
-- Backend issues `payment_hash` instead of minting NFT
-- Frontend calls contract directly with signed TX
-- Contract verifies hash and mints tickets atomically
+- Backend signs purchase authorization off-chain using EIP-712 (no on-chain tx required)
+- Backend issues `payment_hash` and signature to frontend
+- Frontend submits single on-chain transaction with signature
+- Contract verifies EIP-712 signature using ECDSA.recover()
+- **Efficiency gain**: 1 on-chain tx instead of 2, eliminates admin bottleneck
 
 ---
 
@@ -64,15 +71,19 @@
 4. Backend → Payment Gateway: Create order
 5. [Payment flow same as Purchase]
 6. Backend: Generate `payment_hash` for resale
-7. Backend → Frontend: `{payment_hash}`
-8. Frontend: Build TX = `Marketplace.buyWithHash(listingId, payment_hash)`
-9. Frontend: Sign + submit TX
-10. Contract: Verify payment_hash
-11. Contract: Transfer ticket from escrow to buyer
-12. Contract: Record seller payout = `price * 0.95` (5% platform fee)
-13. Contract: Emit `TicketSold(listingId, buyer, seller, price)`
-14. Contract-Sync → Database: Update ticket owner, listing status = SOLD
-15. Contract-Sync → Database: Create payout_pending record for seller
+7. Backend: Sign resale authorization using EIP-712
+   - `signature = signTypedData(domain, BUY_TYPE, {listingId, paymentHash, buyer})`
+8. Backend → Frontend: `{paymentHash, signature}`
+9. Frontend: Build TX = `Marketplace.buyWithSignature(listingId, paymentHash, signature)`
+10. Frontend: Sign + submit TX
+11. Contract: Recover signer from EIP-712 signature
+12. Contract: Verify signer has `PAYMENT_HASH_ROLE`
+13. Contract: Verify payment_hash
+14. Contract: Transfer ticket from escrow to buyer
+15. Contract: Record seller payout = `price * 0.95` (5% platform fee)
+16. Contract: Emit `TicketSold(listingId, buyer, seller, price)`
+17. Contract-Sync → Database: Update ticket owner, listing status = SOLD
+18. Contract-Sync → Database: Create payout_pending record for seller
 
 ---
 
@@ -226,13 +237,21 @@ mapping(bytes32 => bool) public usedPaymentHashes;
 mapping(address => uint256[]) public ownerTickets; // owner => ticketIds
 uint256 public ticketCounter;
 
+// EIP-712 domain separator (immutable for signature verification)
+bytes32 private immutable DOMAIN_SEPARATOR;
+
+// Type hashes for EIP-712
+bytes32 private constant PURCHASE_TYPEHASH =
+keccak256("Purchase(uint256 eventId,uint256 ticketTypeId,uint256 quantity,bytes32 paymentHash,address buyer)");
+
 **Functions:**
 solidity
-function purchaseWithHash(
+function purchaseWithSignature(
 uint256 eventId,
 uint256 ticketTypeId,
 uint256 quantity,
-bytes32 paymentHash
+bytes32 paymentHash,
+bytes calldata signature
 ) external returns (uint256[] memory ticketIds);
 
 function transferTicket(uint256 ticketId, address to) external;
@@ -251,6 +270,21 @@ event TicketPurchased(uint256 indexed ticketId, address indexed buyer, uint256 e
 event TicketTransferred(uint256 indexed ticketId, address indexed from, address indexed to);
 event TicketUsed(uint256 indexed ticketId, address indexed owner, uint256 eventId, uint256 timestamp);
 event TicketCancelled(uint256 indexed ticketId, uint256 refundAmount);
+
+**Signature Verification Logic:**
+solidity
+// Inside purchaseWithSignature()
+bytes32 digest = \_hashTypedDataV4(keccak256(abi.encode(
+PURCHASE_TYPEHASH,
+eventId,
+ticketTypeId,
+quantity,
+paymentHash,
+msg.sender
+)));
+
+address signer = ECDSA.recover(digest, signature);
+require(hasRole(PAYMENT_HASH_ROLE, signer), "TicketLedger: invalid signature");
 
 **Invariants:**
 
@@ -299,7 +333,11 @@ function listTicket(uint256 ticketId, uint256 price) external returns (uint256 l
 
 function cancelListing(uint256 listingId) external;
 
-function buyWithHash(uint256 listingId, bytes32 paymentHash) external;
+function buyWithSignature(
+uint256 listingId,
+bytes32 paymentHash,
+bytes calldata signature
+) external;
 
 function placeLimitOrder(uint256 eventId, uint256 ticketTypeId, uint256 maxPrice, uint256 quantity)
 external returns (uint256 orderId);
@@ -436,8 +474,14 @@ Response: {payment_hash, ticketIds, status}
 1. Verify payment webhook signature
 2. Check idempotency (orderId already processed?)
 3. Generate `payment_hash = keccak256(orderId, userId, ticketIds, amount, nonce)`
-4. Store in DB: `payment_hashes` table
-5. Emit SSE event or allow polling
+4. Sign using EIP-712:
+   - `domain = {name: "TicketLedger", version: "1", chainId: CHAIN_ID, verifyingContract: TICKET_LEDGER_ADDRESS}`
+   - `typeHash = keccak256("Purchase(uint256 eventId,uint256 ticketTypeId,uint256 quantity,bytes32 paymentHash,address buyer)")`
+   - `digest = hashTypedData(domain, typeHash, {eventId, ticketTypeId, quantity, paymentHash, buyer})`
+   - `signature = sign(digest, backendPrivateKey)` (where backend has PAYMENT_HASH_ROLE)
+5. Store in DB: `payment_hashes` table with signature
+6. Return to frontend: `{paymentHash, signature, ticketIds}`
+7. Emit SSE event or allow polling
 
 ---
 
@@ -675,14 +719,17 @@ const message = ethers.solidityPackedKeccak256(
 
 **Scope:**
 
-- Create `TicketLedger.sol` with storage schema
-- Implement `purchaseWithHash()`, `transferTicket()`, `getTicketsByOwner()`
-- Write Foundry tests (10 tests)
+- Create `TicketLedger.sol` with EIP-712 domain separator
+- Implement `purchaseWithSignature()`, `transferTicket()`, `getTicketsByOwner()`
+- Support EIP-712 signature verification for purchase authorization
+- Write Foundry tests (11 tests)
 
 **Definition of Done:**
 
 - [ ] Contract compiles without warnings
 - [ ] All functions have NatSpec comments
+- [ ] EIP-712 domain separator correctly configured (immutable)
+- [ ] ECDSA signature recovery works correctly
 - [ ] Test coverage ≥ 90%
 - [ ] Tests pass: `forge test --match-contract TicketLedgerTest`
 - [ ] Gas snapshot generated: `forge snapshot`
@@ -690,9 +737,10 @@ const message = ethers.solidityPackedKeccak256(
 **Tests:**
 solidity
 // test/TicketLedger.t.sol
-function testPurchaseWithHash() // happy path
-function testPurchaseWithHash_RevertIfHashUsed() // double-spend
-function testPurchaseWithHash_RevertIfInvalidHash() // unauthorized hash
+function testPurchaseWithSignature() // happy path with valid signature
+function testPurchaseWithSignature_RevertIfInvalidSignature() // bad signature
+function testPurchaseWithSignature_RevertIfHashUsed() // double-spend protection
+function testPurchaseWithSignature_RevertIfSignerUnauthorized() // signer not PAYMENT_HASH_ROLE
 function testTransferTicket() // ownership change
 function testTransferTicket_RevertIfNotOwner() // unauthorized transfer
 function testGetTicketsByOwner() // query tickets
@@ -724,16 +772,16 @@ function testCancelTicket_RevertIfUsed() // cannot refund used ticket
 solidity
 function testListTicket() // create listing
 function testListTicket_RevertIfNotOwner() // unauthorized list
-function testBuyWithHash() // purchase listed ticket
-function testBuyWithHash_RevertIfHashUsed() // double-spend
-function testBuyWithHash_UpdatesPendingPayouts() // seller balance
+function testBuyWithSignature() // purchase listed ticket with EIP-712 signature
+function testBuyWithSignature_RevertIfInvalidSignature() // bad signature
+function testBuyWithSignature_RevertIfHashUsed() // double-spend protection
+function testBuyWithSignature_UpdatesPendingPayouts() // seller balance
 function testCancelListing() // delist ticket
 function testPlaceLimitOrder() // create limit order
 function testPlaceLimitOrder_RevertIfInvalidPrice() // validation
 function testCancelLimitOrder() // cancel order
 function testPlatformFee() // 5% fee calculation
 function testEscrowTransfer() // ticket custody
-function testGetPendingPayout() // query seller balance
 
 ---
 
@@ -792,30 +840,34 @@ function testDuplicateBadge_RevertIfExists() // one badge per event
 
 ---
 
-### PR #5: Backend - Payment Hash Issuance
+### PR #5: Backend - Payment Hash & Signature Issuance
 
 **Scope:**
 
-- Update `payment-orchestrator` to generate payment hashes
-- Add `/api/payment/hash/:orderId` endpoint
+- Update `payment-orchestrator` to generate payment hashes AND EIP-712 signatures
+- Add `/api/payment/hash/:orderId` endpoint that returns both hash and signature
 - Store hashes in `payment_hashes` table
-- Write integration tests (5 tests)
+- Implement backend signer with PAYMENT_HASH_ROLE
+- Write integration tests (6 tests)
 
 **Definition of Done:**
 
 - [ ] Webhook signature verification works for Momo + VNPAY
 - [ ] Payment hash generated correctly: `keccak256(orderId, userId, ticketIds, amount, nonce)`
+- [ ] EIP-712 signature generated using domain separator and PURCHASE_TYPEHASH
+- [ ] Signature recovers to authorized backend signer
 - [ ] Idempotency check prevents duplicate processing
 - [ ] Tests pass: `pnpm test:integration payment-orchestrator`
 - [ ] API documented in Swagger
 
 **Tests:**
 typescript
-describe('Payment Hash Issuance', () => {
+describe('Payment Hash & Signature Issuance', () => {
 it('should generate payment hash after webhook', async () => {});
+it('should sign payment hash using EIP-712', async () => {});
+it('should recover backend signer from signature', async () => {});
 it('should reject invalid webhook signature', async () => {});
 it('should handle idempotent webhook calls', async () => {});
-it('should return payment hash via polling', async () => {});
 it('should expire payment hash after 24h', async () => {});
 });
 
