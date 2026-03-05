@@ -726,13 +726,13 @@ const message = ethers.solidityPackedKeccak256(
 
 **Definition of Done:**
 
-- [ ] Contract compiles without warnings
-- [ ] All functions have NatSpec comments
-- [ ] EIP-712 domain separator correctly configured (immutable)
-- [ ] ECDSA signature recovery works correctly
-- [ ] Test coverage ≥ 90%
-- [ ] Tests pass: `forge test --match-contract TicketLedgerTest`
-- [ ] Gas snapshot generated: `forge snapshot`
+- [x] Contract compiles without warnings
+- [x] All functions have NatSpec comments
+- [x] EIP-712 domain separator correctly configured (immutable)
+- [x] ECDSA signature recovery works correctly
+- [x] Test coverage ≥ 90%
+- [x] Tests pass: `forge test --match-contract TicketLedgerTest`
+- [x] Gas snapshot generated: `forge snapshot`
 
 **Tests:**
 solidity

@@ -189,6 +189,10 @@ contract TicketLedger is AccessControlEnumerable {
         return _eventTickets[eventId];
     }
 
+    /// @notice Removes a ticket id from an owner's reverse index in O(n).
+    /// @dev Reverts if the ticket id is not found in the owner's array.
+    /// @param owner Ticket owner being updated.
+    /// @param ticketId Ticket id to remove.
     function _removeOwnerTicket(address owner, uint256 ticketId) internal {
         uint256[] storage ticketIds = ownerTickets[owner];
         for (uint256 i = 0; i < ticketIds.length; ++i) {
@@ -203,6 +207,9 @@ contract TicketLedger is AccessControlEnumerable {
         revert("TicketLedger: owner index missing");
     }
 
+    /// @notice Returns the final EIP-712 digest for a provided struct hash.
+    /// @param structHash Keccak256 hash of an encoded EIP-712 struct.
+    /// @return digest Fully encoded EIP-712 digest used for signature recovery.
     function _hashTypedDataV4(bytes32 structHash) internal view returns (bytes32 digest) {
         return keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, structHash));
     }
