@@ -1,6 +1,40 @@
 # Migration Blueprint: NFT-based → Contract Ledger Architecture
 
+## 0. GAS SPONSORSHIP MODEL
+
+**Principles:**
+
+1. User creates an account and frontend creates a local EOA wallet.
+2. Backend sends a one-time native-token prefund to that wallet so the first user transaction has gas.
+3. Every user-initiated on-chain transaction is sent as an EIP-7702 delegated transaction pointing the EOA to `Handler.sol`.
+4. `Handler.executeBatch()` performs the business call (`TicketLedger` or `Marketplace`) and then calls `Paymaster.refillGas()` in the same transaction.
+5. Gas is refilled after the business state change succeeds, so the wallet is replenished automatically without another backend round-trip.
+6. This model does not require a third-party bundler. The user still sends a normal transaction from their EOA; EIP-7702 only changes the execution logic for that transaction.
+
+**Why this model exists:**
+
+- A normal EOA can only target one contract call at a time.
+- Delegating to `Handler.sol` via EIP-7702 gives the EOA batched smart-account behavior while keeping the same address.
+- The one-time prefund solves the bootstrap problem for the very first transaction.
+
 ## 1. NEW CANONICAL FLOWS
+
+### Flow 0: Wallet Bootstrap + Initial Gas Prefund
+
+1. User → Frontend: Create account
+2. Frontend: Create local EOA wallet
+3. Frontend → Backend: Register wallet address `{userId, walletAddress}`
+4. Backend: Check wallet has not been prefunded before
+5. Backend → User EOA: Send one-time native-token prefund
+6. Backend → Database: Store `{walletAddress, prefundTxHash, prefundAmount, fundedAt}`
+7. Backend → Frontend: Return `{prefunded: true, prefundTxHash}`
+8. Frontend: Wait for prefund confirmation before enabling the first delegated transaction
+
+**Key Changes:**
+
+- Backend participates in gas only once during wallet bootstrap
+- The initial prefund is just enough to get the first user transaction mined
+- All later gas replenishment is handled on-chain by `Handler + Paymaster`
 
 ### Flow 1: Payment & Purchase
 
@@ -24,31 +58,38 @@
 5. Backend → Database: Store `{payment_hash, orderId, userId, ticketIds}`
 6. Backend → Frontend (SSE/polling): `{payment_hash, ticketIds}`
 
-**On-Chain Execution:**
+**On-Chain Execution (Delegated + Same-TX Refill):**
 
 1. Backend: Sign purchase authorization off-chain using EIP-712
    - `signature = signTypedData(domain, PURCHASE_TYPE, {eventId, ticketTypeId, quantity, paymentHash, buyer})`
 2. Backend → Frontend: Send `{paymentHash, signature}`
 3. Frontend: Load user's EOA private key from secure storage
-4. Frontend: Build TX = `TicketLedger.purchaseWithSignature(eventId, ticketTypeId, quantity, paymentHash, signature)`
-5. Frontend: Sign TX with private key
-6. Frontend → RPC: `eth_sendRawTransaction(signedTx)`
-7. RPC → Contract: Execute `purchaseWithSignature()`
-8. Contract: Recover signer from EIP-712 signature using `ECDSA.recover()`
-9. Contract: Verify signer has `PAYMENT_HASH_ROLE`
-10. Contract: Verify paymentHash not used
-11. Contract: Mint tickets to `msg.sender` (user's EOA)
-12. Contract: Emit `TicketPurchased(ticketId, buyer, eventId, price)`
-13. Contract-Sync Service: Listen `TicketPurchased` event
-14. Contract-Sync → Database: Update ticket status = MINTED, owner = userAddress
+4. Frontend: Encode business call = `TicketLedger.purchaseWithSignature(eventId, ticketTypeId, quantity, paymentHash, signature)`
+5. Frontend: Encode delegated call = `Handler.executeBatch([{target: TicketLedger, value: 0, data: purchaseCall}])`
+6. Frontend: Build EIP-7702 transaction:
+   - `authorizationList` delegates the user's EOA to `Handler.sol` for this tx
+   - `to` = user's EOA
+   - `data` = encoded `Handler.executeBatch(...)`
+7. Frontend: Sign delegated transaction with the user's private key
+8. Frontend → RPC: Submit signed delegated transaction directly
+9. Handler: Execute batched business call against `TicketLedger`
+10. TicketLedger: Recover signer from EIP-712 signature using `ECDSA.recover()`
+11. TicketLedger: Verify signer has `PAYMENT_HASH_ROLE`
+12. TicketLedger: Verify paymentHash not used
+13. TicketLedger: Mint tickets to `msg.sender` (user's EOA)
+14. Handler: Measure gas used and call `Paymaster.refillGas(user, gasCostWei)` in the same tx
+15. Paymaster: Transfer refill amount back to the user's EOA
+16. TicketLedger: Emit `TicketPurchased(ticketId, buyer, eventId, price)`
+17. Contract-Sync Service: Listen `TicketPurchased` event
+18. Contract-Sync → Database: Update ticket status = MINTED, owner = userAddress
 
 **Key Changes:**
 
-- Backend signs purchase authorization off-chain using EIP-712 (no on-chain tx required)
-- Backend issues `payment_hash` and signature to frontend
-- Frontend submits single on-chain transaction with signature
-- Contract verifies EIP-712 signature using ECDSA.recover()
-- **Efficiency gain**: 1 on-chain tx instead of 2, eliminates admin bottleneck
+- Backend signs purchase authorization off-chain using EIP-712 but is not in the per-tx gas loop
+- User wallet receives gas from backend only once during wallet bootstrap
+- Every user tx attaches an EIP-7702 delegation to `Handler.sol`
+- `Handler.executeBatch()` performs the business call and triggers `Paymaster.refillGas()` in the same tx
+- No third-party bundler is required for gas sponsorship
 
 ---
 
@@ -57,11 +98,13 @@
 **Seller Lists Ticket:**
 
 1. User → Frontend: List ticket for resale `{ticketId, price}`
-2. Frontend: Build TX = `Marketplace.listTicket(ticketId, price)`
-3. Frontend: Sign + submit TX
-4. Contract: Transfer ticket to escrow
-5. Contract: Emit `TicketListed(listingId, seller, ticketId, price)`
-6. Contract-Sync → Database: Create listing record
+2. Frontend: Encode business call = `Marketplace.listTicket(ticketId, price)`
+3. Frontend: Build delegated tx = `Handler.executeBatch([{target: Marketplace, value: 0, data: listCall}])`
+4. Frontend: Sign + submit delegated tx
+5. Handler: Call `Marketplace.listTicket()` then `Paymaster.refillGas()` in the same tx
+6. Marketplace: Transfer ticket to escrow
+7. Marketplace: Emit `TicketListed(listingId, seller, ticketId, price)`
+8. Contract-Sync → Database: Create listing record
 
 **Buyer Purchases:**
 
@@ -74,16 +117,18 @@
 7. Backend: Sign resale authorization using EIP-712
    - `signature = signTypedData(domain, BUY_TYPE, {listingId, paymentHash, buyer})`
 8. Backend → Frontend: `{paymentHash, signature}`
-9. Frontend: Build TX = `Marketplace.buyWithSignature(listingId, paymentHash, signature)`
-10. Frontend: Sign + submit TX
-11. Contract: Recover signer from EIP-712 signature
-12. Contract: Verify signer has `PAYMENT_HASH_ROLE`
-13. Contract: Verify payment_hash
-14. Contract: Transfer ticket from escrow to buyer
-15. Contract: Record seller payout = `price * 0.95` (5% platform fee)
-16. Contract: Emit `TicketSold(listingId, buyer, seller, price)`
-17. Contract-Sync → Database: Update ticket owner, listing status = SOLD
-18. Contract-Sync → Database: Create payout_pending record for seller
+9. Frontend: Encode business call = `Marketplace.buyWithSignature(listingId, paymentHash, signature)`
+10. Frontend: Build delegated tx = `Handler.executeBatch([{target: Marketplace, value: 0, data: buyCall}])`
+11. Frontend: Sign + submit delegated tx
+12. Handler: Call `Marketplace.buyWithSignature()` then `Paymaster.refillGas()` in the same tx
+13. Marketplace: Recover signer from EIP-712 signature
+14. Marketplace: Verify signer has `PAYMENT_HASH_ROLE`
+15. Marketplace: Verify payment_hash
+16. Marketplace: Transfer ticket from escrow to buyer
+17. Marketplace: Record seller payout = `price * 0.95` (5% platform fee)
+18. Marketplace: Emit `TicketSold(listingId, buyer, seller, price)`
+19. Contract-Sync → Database: Update ticket owner, listing status = SOLD
+20. Contract-Sync → Database: Create payout_pending record for seller
 
 ---
 
@@ -108,9 +153,12 @@
 
 1. Buyer → Frontend: Confirm match
 2. [Payment flow same as Market Buy]
-3. Frontend: Build TX = `Marketplace.buyWithHash(listingId, payment_hash)`
-4. Contract: Execute trade
-5. Contract-Sync → Database: Update limit_order status = FILLED
+3. Frontend: Encode business call = `Marketplace.buyWithSignature(listingId, paymentHash, signature)`
+4. Frontend: Build delegated tx = `Handler.executeBatch([{target: Marketplace, value: 0, data: buyCall}])`
+5. Frontend: Sign + submit delegated tx
+6. Handler: Call `Marketplace.buyWithSignature()` then `Paymaster.refillGas()` in the same tx
+7. Marketplace: Execute trade
+8. Contract-Sync → Database: Update limit_order status = FILLED
 
 ---
 
@@ -363,55 +411,93 @@ event LimitOrderFilled(uint256 indexed orderId, uint256 listingId);
 
 ---
 
-### C. Handler.sol (EIP-7702 Delegation)
+### C. Handler.sol (EIP-7702 Delegated Executor)
 
 **Storage Schema:**
 solidity
-mapping(address => bool) public authorizedPaymasters;
+struct Call {
+address target;
+uint256 value;
+bytes data;
+}
+
+address public paymaster;
+mapping(address => bool) public allowedTargets;
 
 **Functions:**
 solidity
-function executeWithPaymaster(
-address target,
-bytes calldata data,
-address paymaster
-) external returns (bytes memory);
+function executeBatch(Call[] calldata calls) external returns (bytes[] memory results);
 
-function addPaymaster(address paymaster) external onlyOwner;
+function setPaymaster(address paymaster_) external onlyOwner;
+
+function addAllowedTarget(address target) external onlyOwner;
+
+function removeAllowedTarget(address target) external onlyOwner;
 
 **Events:**
 solidity
-event PaymasterUsed(address indexed user, address indexed paymaster, uint256 gasUsed);
+event BatchExecuted(address indexed user, uint256 callCount, uint256 gasCostWei);
+event GasRefillRequested(address indexed user, uint256 gasCostWei);
+
+**Execution Logic:**
+solidity
+function executeBatch(Call[] calldata calls) external returns (bytes[] memory results) {
+uint256 gasStart = gasleft();
+
+// Execute business calls first (TicketLedger / Marketplace)
+for (uint256 i = 0; i < calls.length; i++) {
+require(allowedTargets[calls[i].target], "Handler: target not allowed");
+}
+
+// After successful state changes, refill the user's gas in the same tx
+uint256 gasUsed = (gasStart - gasleft()) + HANDLER_OVERHEAD;
+uint256 gasCostWei = gasUsed * tx.gasprice;
+IPaymaster(paymaster).refillGas(payable(msg.sender), gasCostWei);
+}
 
 **Invariants:**
 
-- Only authorized paymasters can sponsor gas
-- User's EOA delegates to Handler via EIP-7702
-- Handler forwards call to target contract
+- User's EOA delegates to `Handler` via EIP-7702 on every tx
+- `Handler.executeBatch()` solves the EOA single-target limitation by batching multiple calls atomically
+- Only whitelisted business targets (`TicketLedger`, `Marketplace`) can be called
+- `Handler` always requests `Paymaster.refillGas()` after successful business execution
+- This flow does not rely on `EntryPoint` or any third-party bundler
 
 ---
 
-### D. Paymaster.sol
+### D. Paymaster.sol (Same-TX Gas Refill Treasury)
 
 **Storage Schema:**
 solidity
-mapping(address => uint256) public gasCredits; // user => wei balance
+mapping(address => bool) public authorizedHandlers;
+mapping(address => uint256) public totalGasSponsored; // user => cumulative wei refunded
+uint256 public maxRefillPerTx;
 
 **Functions:**
 solidity
-function refillGas(address user) external payable onlyRole(REFILL_ROLE);
+function refillGas(address payable user, uint256 gasCostWei)
+external returns (uint256 refunded);
 
-function sponsorTransaction(address user, uint256 gasEstimate) external returns (bool);
+function addHandler(address handler) external onlyOwner;
+
+function removeHandler(address handler) external onlyOwner;
+
+function deposit() external payable onlyOwner;
+
+function withdraw(address payable to, uint256 amount) external onlyOwner;
 
 **Events:**
 solidity
-event GasRefilled(address indexed user, uint256 amount);
-event TransactionSponsored(address indexed user, uint256 gasCost);
+event GasRefilled(address indexed user, uint256 gasCostWei, uint256 refunded);
+event HandlerAuthorizationUpdated(address indexed handler, bool allowed);
 
 **Invariants:**
 
-- `gasCredits[user]` decremented per TX
-- Backend refills gas before user submits TX
+- Backend/team funds the Paymaster treasury, but backend only prefunds the user wallet once during onboarding
+- Only authorized `Handler` contracts can call `refillGas()`
+- Gas refill happens in the same transaction immediately after the business call succeeds
+- Subsequent user transactions do not require another backend top-up
+- Paymaster reimburses gas after-the-fact; it does not use a bundler-based sponsorship model
 
 ---
 
@@ -452,7 +538,31 @@ event BadgeMinted(address indexed owner, uint256 eventId, uint256 badgeId, uint2
 
 ## 3. BACKEND RESPONSIBILITIES
 
-### A. Payment Hash Issuance
+### A. Wallet Bootstrap + Initial Gas Prefund
+
+**Service:** `wallet-bootstrap-service`
+
+**API Endpoints:**
+typescript
+POST /api/wallet/register
+Body: {walletAddress}
+Response: {prefunded: boolean, prefundTxHash?: string}
+
+GET /api/wallet/prefund/:walletAddress
+Response: {funded: boolean, txHash?: string, amount?: string}
+
+**Logic:**
+
+1. Frontend creates an EOA locally and registers the address with backend
+2. Backend checks whether that wallet has already received the bootstrap prefund
+3. Backend sends a small native-token balance directly to the user's EOA
+4. Backend stores `prefund_tx_hash`, funded amount, and timestamp
+5. Frontend waits for confirmation before allowing the first delegated transaction
+6. This bootstrap transfer happens once only; later gas refill is handled on-chain by `Handler + Paymaster`
+
+---
+
+### B. Payment Hash Issuance
 
 **Service:** `payment-orchestrator`
 
@@ -482,10 +592,11 @@ Response: {payment_hash, ticketIds, status}
 5. Store in DB: `payment_hashes` table with signature
 6. Return to frontend: `{paymentHash, signature, ticketIds}`
 7. Emit SSE event or allow polling
+8. Do not perform per-tx gas top-ups here; gas refill after onboarding is handled in the delegated transaction itself
 
 ---
 
-### B. Contract Verification
+### C. Contract Verification
 
 **Service:** `contract-sync-service`
 
@@ -514,7 +625,7 @@ CREATE INDEX idx_block_number ON indexed_events(block_number);
 
 ---
 
-### C. Withdrawal Review
+### D. Withdrawal Review
 
 **Service:** `payout-service`
 
@@ -542,7 +653,7 @@ Response: {success: true}
 
 ---
 
-### D. Limit Order Matching
+### E. Limit Order Matching
 
 **Service:** `marketplace-service`
 
@@ -575,7 +686,7 @@ price: listing.price
 
 ## 4. FRONTEND RESPONSIBILITIES
 
-### A. EOA Creation + Key Storage
+### A. EOA Creation + Delegation Readiness
 
 **Module:** `wallet-manager` (new)
 
@@ -583,15 +694,16 @@ price: listing.price
 typescript
 interface WalletManager {
 createWallet(): Promise<{address: string, mnemonic: string}>;
-storePrivateKey(privateKey: string): Promise<void>;
 loadPrivateKey(): Promise<string>;
-signTransaction(tx: Transaction): Promise<string>;
+waitForInitialPrefund(address: string): Promise<void>;
+build7702Authorization(handlerAddress: string): Promise<unknown>;
+signDelegatedTransaction(tx: Transaction): Promise<string>;
 }
 
 **Implementation:**
 typescript
 import { Wallet } from 'ethers';
-import as SecureStore from 'expo-secure-store'; // React Native
+import * as SecureStore from 'expo-secure-store'; // React Native
 
 export class WalletManager {
 async createWallet() {
@@ -608,7 +720,21 @@ async loadPrivateKey() {
 return await SecureStore.getItemAsync('privateKey');
 }
 
-async signTransaction(tx: Transaction) {
+async waitForInitialPrefund(address: string) {
+// Poll backend/RPC until the one-time bootstrap transfer is confirmed
+}
+
+async build7702Authorization(handlerAddress: string) {
+const privateKey = await this.loadPrivateKey();
+const wallet = new Wallet(privateKey);
+
+return await sign7702Authorization(wallet, {
+chainId: CHAIN_ID,
+contractAddress: handlerAddress
+});
+}
+
+async signDelegatedTransaction(tx: Transaction) {
 const privateKey = await this.loadPrivateKey();
 const wallet = new Wallet(privateKey);
 return await wallet.signTransaction(tx);
@@ -619,17 +745,21 @@ return await wallet.signTransaction(tx);
 
 - Private key stored in device secure enclave (iOS Keychain / Android Keystore)
 - Backup mnemonic encrypted + stored on backend (optional recovery)
+- Backend only sends the bootstrap prefund once after wallet registration
+- Every later tx is still signed by the user's EOA; delegation does not transfer key custody
 
 ---
 
-### B. TX Signing + Submission
+### B. Delegated TX Building + Submission
 
-**Module:** `transaction-service` (new)
+**Module:** `delegated-transaction-service` (new)
 
 **API:**
 typescript
-interface TransactionService {
-buildPurchaseTx(eventId: number, quantity: number, paymentHash: string): Promise<Transaction>;
+interface DelegatedTransactionService {
+buildPurchaseTx(eventId: number, ticketTypeId: number, quantity: number, paymentHash: string, signature: string): Promise<Transaction>;
+buildListTicketTx(ticketId: number, price: number): Promise<Transaction>;
+buildBuyListingTx(listingId: number, paymentHash: string, signature: string): Promise<Transaction>;
 submitTransaction(signedTx: string): Promise<{txHash: string}>;
 waitForConfirmation(txHash: string): Promise<Receipt>;
 }
@@ -638,28 +768,59 @@ waitForConfirmation(txHash: string): Promise<Receipt>;
 typescript
 import { ethers } from 'ethers';
 
-export class TransactionService {
-private provider = new ethers.JsonRpcProvider(RPCURL);
+type Call = {
+target: string;
+value: bigint;
+data: string;
+};
 
-async buildPurchaseTx(eventId: number, quantity: number, paymentHash: string) {
-const contract = new ethers.Contract(TICKET_LEDGER_ADDRESS, ABI, this.provider);
-const data = contract.interface.encodeFunctionData('purchaseWithHash', [
-eventId, 1, quantity, paymentHash
+export class DelegatedTransactionService {
+private provider = new ethers.JsonRpcProvider(RPC_URL);
+private handler = new ethers.Interface(HANDLER_ABI);
+private ticketLedger = new ethers.Interface(TICKET_LEDGER_ABI);
+
+async buildPurchaseTx(
+eventId: number,
+ticketTypeId: number,
+quantity: number,
+paymentHash: string,
+signature: string
+) {
+const purchaseCall = this.ticketLedger.encodeFunctionData('purchaseWithSignature', [
+eventId,
+ticketTypeId,
+quantity,
+paymentHash,
+signature
 ]);
 
-       const gasEstimate = await this.provider.estimateGas({
-           to: TICKET_LEDGER_ADDRESS,
-           data
-       });
+const batchedCalls: Call[] = [{
+target: TICKET_LEDGER_ADDRESS,
+value: 0n,
+data: purchaseCall
+}];
 
-       return {
-           to: TICKET_LEDGER_ADDRESS,
-           data,
-           gasLimit: gasEstimate,
-           gasPrice: await this.provider.getFeeData().gasPrice
-       };
+const handlerCall = this.handler.encodeFunctionData('executeBatch', [batchedCalls]);
+const authorization = await walletManager.build7702Authorization(HANDLER_ADDRESS);
 
+return {
+type: 4,
+to: userEOAAddress,
+data: handlerCall,
+authorizationList: [authorization],
+gasLimit: await this.provider.estimateGas({
+from: userEOAAddress,
+to: userEOAAddress,
+data: handlerCall
+})
+};
 }
+
+// Listing and resale use the same pattern:
+// 1. encode Marketplace call
+// 2. wrap it in Handler.executeBatch(...)
+// 3. attach EIP-7702 authorization
+// 4. let Handler trigger Paymaster.refillGas() after execution
 
 async submitTransaction(signedTx: string) {
 const tx = await this.provider.broadcastTransaction(signedTx);
@@ -756,7 +917,7 @@ function testCancelTicket_RevertIfUsed() // cannot refund used ticket
 **Scope:**
 
 - Create `Marketplace.sol`
-- Implement `listTicket()`, `buyWithHash()`, `placeLimitOrder()`
+- Implement `listTicket()`, `buyWithSignature()`, `placeLimitOrder()`
 - Integrate with TicketLedger (ticket escrow)
 - Write Foundry tests (12 tests)
 
@@ -785,32 +946,38 @@ function testEscrowTransfer() // ticket custody
 
 ---
 
-### PR #3: Contract - Handler + Paymaster (EIP-7702)
+### PR #3: Contract - Handler + Paymaster Gas Sponsorship (EIP-7702)
 
 **Scope:**
 
-- Create `Handler.sol` for delegation
-- Update `Paymaster.sol` for per-tx refill
-- Implement `refillGas()`, `sponsorTransaction()`
-- Write Foundry tests (8 tests)
+- Create `Handler.sol` as the delegated executor for EIP-7702
+- Implement `executeBatch()` so one EOA tx can call business contracts and then trigger gas refill
+- Update `Paymaster.sol` to reimburse gas in the same tx
+- Whitelist allowed business targets (`TicketLedger`, `Marketplace`)
+- Write Foundry tests (9 tests)
 
 **Definition of Done:**
 
-- [ ] Handler can forward calls to TicketLedger
-- [ ] Paymaster deducts gas credits correctly
+- [ ] User EOA can delegate to `Handler.sol` on every tx via EIP-7702
+- [ ] `Handler.executeBatch()` can execute business calls atomically
+- [ ] `Handler` triggers `Paymaster.refillGas()` after the state change in the same tx
+- [ ] First user tx works after one-time backend prefund
+- [ ] Subsequent user txs do not require backend gas top-up
+- [ ] No third-party bundler is required for this flow
 - [ ] Test coverage ≥ 85%
 - [ ] Tests pass: `forge test --match-contract HandlerTest --match-contract PaymasterTest`
 
 **Tests:**
 solidity
-function testExecuteWithPaymaster() // delegated call
-function testExecuteWithPaymaster_RevertIfUnauthorized() // paymaster not whitelisted
-function testRefillGas() // add gas credits
-function testSponsorTransaction() // deduct gas credits
-function testSponsorTransaction_RevertIfInsufficientCredits() // out of gas
-function testPaymasterAuthorization() // add/remove paymaster
-function testGasAccounting() // credits balance
-function testMultipleTransactions() // sequential gas usage
+function testExecuteBatch() // delegated batch call
+function testExecuteBatch_RevertIfTargetNotAllowed() // target whitelist
+function testRefillGas() // same-tx reimbursement
+function testRefillGas_RevertIfUnauthorizedHandler() // only handler can refill
+function testInitialPrefundBootstrap() // first tx works after one-time prefund
+function testSequentialTransactionsWithoutBackendTopUp() // later txs self-replenish
+function testPaymasterAuthorization() // add/remove handler
+function testGasAccounting() // reimbursement tracking
+function testMultipleCallsInSingleBatch() // one tx, multiple state changes
 
 ---
 
@@ -844,6 +1011,7 @@ function testDuplicateBadge_RevertIfExists() // one badge per event
 
 **Scope:**
 
+- Add wallet bootstrap endpoint/worker for one-time gas prefund
 - Update `payment-orchestrator` to generate payment hashes AND EIP-712 signatures
 - Add `/api/payment/hash/:orderId` endpoint that returns both hash and signature
 - Store hashes in `payment_hashes` table
@@ -852,6 +1020,7 @@ function testDuplicateBadge_RevertIfExists() // one badge per event
 
 **Definition of Done:**
 
+- [ ] Wallet bootstrap prefund is sent only once per wallet
 - [ ] Webhook signature verification works for Momo + VNPAY
 - [ ] Payment hash generated correctly: `keccak256(orderId, userId, ticketIds, amount, nonce)`
 - [ ] EIP-712 signature generated using domain separator and PURCHASE_TYPEHASH
@@ -863,6 +1032,7 @@ function testDuplicateBadge_RevertIfExists() // one badge per event
 **Tests:**
 typescript
 describe('Payment Hash & Signature Issuance', () => {
+it('should prefund wallet only once', async () => {});
 it('should generate payment hash after webhook', async () => {});
 it('should sign payment hash using EIP-712', async () => {});
 it('should recover backend signer from signature', async () => {});
@@ -949,4 +1119,15 @@ it('should mark order filled after purchase', async () => {});
 - [ ] Payout requests stored in `payout_requests` table
 - [ ] Admin approval flow works
 - [ ] On-chain balance verified before payout
-- [ ] Tests pass: `pnpm test:integration
+- [ ] Tests pass: `pnpm test:integration payout-service`
+- [ ] API documented in Swagger
+
+**Tests:**
+typescript
+describe('Payout Service', () => {
+it('should create payout request', async () => {});
+it('should reject payout when on-chain balance is insufficient', async () => {});
+it('should approve payout request', async () => {});
+it('should mark payout completed after bank transfer', async () => {});
+it('should prevent duplicate payout approval', async () => {});
+});
