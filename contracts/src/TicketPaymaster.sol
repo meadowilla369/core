@@ -2,124 +2,96 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
-import "@openzeppelin/contracts/utils/Pausable.sol";
-import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import "@openzeppelin/contracts/account/utils/EIP7702Utils.sol";
 
 import "../interfaces/ITicketPaymaster.sol";
 
 /// @title TicketPaymaster
-/// @notice Minimal ERC-4337-style paymaster with signed session policy and per-user daily gas budgets.
-contract TicketPaymaster is AccessControlEnumerable, Pausable, ITicketPaymaster {
-    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
-    uint256 private constant DAY = 1 days;
+/// @notice Same-tx reimbursement treasury for EIP-7702 delegated EOAs.
+contract TicketPaymaster is AccessControlEnumerable, ITicketPaymaster {
+    mapping(address => bool) public override authorizedHandlers;
+    mapping(address => bool) public override allowedTargets;
+    mapping(address => uint256) public override totalGasSponsored;
 
-    address public immutable entryPoint;
-    address public override sessionSigner;
+    uint256 public override maxRefillPerTx;
 
-    mapping(address => uint256) public dailyGasBudget;
-    mapping(address => uint256) public spentDayIndex;
-    mapping(address => uint256) public spentToday;
-    mapping(address => mapping(bytes32 => uint256)) public policyExpiresAt;
-
-    event DailyGasBudgetUpdated(address indexed user, uint256 previousBudget, uint256 newBudget);
-
-    constructor(address admin, address entryPointAddress, address initialSessionSigner) {
+    constructor(address admin, uint256 initialMaxRefillPerTx) {
         require(admin != address(0), "TicketPaymaster: admin required");
-        require(entryPointAddress != address(0), "TicketPaymaster: entrypoint required");
-        require(initialSessionSigner != address(0), "TicketPaymaster: signer required");
+        require(initialMaxRefillPerTx != 0, "TicketPaymaster: max refill required");
 
-        entryPoint = entryPointAddress;
-        sessionSigner = initialSessionSigner;
-
+        maxRefillPerTx = initialMaxRefillPerTx;
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
-        _grantRole(PAUSER_ROLE, admin);
     }
 
-    function pause() external onlyRole(PAUSER_ROLE) {
-        _pause();
-    }
-
-    function unpause() external onlyRole(PAUSER_ROLE) {
-        _unpause();
-    }
-
-    function setSessionSigner(address newSigner) external override onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(newSigner != address(0), "TicketPaymaster: signer required");
-        address previous = sessionSigner;
-        sessionSigner = newSigner;
-        emit SessionSignerUpdated(previous, newSigner);
-    }
-
-    function setDailyGasBudget(address user, uint256 maxCost) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+    function refillGas(address payable user, uint256 gasCostWei) external override returns (uint256 refunded) {
         require(user != address(0), "TicketPaymaster: user required");
-        uint256 previous = dailyGasBudget[user];
-        dailyGasBudget[user] = maxCost;
-        emit DailyGasBudgetUpdated(user, previous, maxCost);
-    }
+        require(user == payable(msg.sender), "TicketPaymaster: user mismatch");
+        require(gasCostWei != 0, "TicketPaymaster: gas cost required");
 
-    function setSessionPolicy(address user, bytes32 policyHash, uint256 expiresAt)
-        external
-        onlyRole(DEFAULT_ADMIN_ROLE)
-    {
-        require(user != address(0), "TicketPaymaster: user required");
-        require(policyHash != bytes32(0), "TicketPaymaster: policy required");
-        require(expiresAt > block.timestamp, "TicketPaymaster: expiry required");
-        policyExpiresAt[user][policyHash] = expiresAt;
-        emit SessionPolicySet(user, policyHash, expiresAt);
-    }
+        address delegatedImplementation = EIP7702Utils.fetchDelegate(msg.sender);
+        require(authorizedHandlers[delegatedImplementation], "TicketPaymaster: unauthorized handler");
 
-    function validatePaymasterUserOp(UserOperation calldata userOp, bytes32 userOpHash, uint256 maxCost)
-        external
-        view
-        override
-        whenNotPaused
-        returns (bytes memory context, uint256 validationData)
-    {
-        require(msg.sender == entryPoint, "TicketPaymaster: only entrypoint");
-        require(userOp.sender != address(0), "TicketPaymaster: sender required");
-
-        (uint256 expiresAt, bytes32 policyHash, bytes memory signature) =
-            abi.decode(userOp.paymasterAndData, (uint256, bytes32, bytes));
-        require(expiresAt > block.timestamp, "TicketPaymaster: session expired");
-
-        uint256 registeredExpiry = policyExpiresAt[userOp.sender][policyHash];
-        require(registeredExpiry == expiresAt, "TicketPaymaster: unknown policy");
-
-        uint256 dayIndex = block.timestamp / DAY;
-        uint256 budget = dailyGasBudget[userOp.sender];
-        require(budget != 0, "TicketPaymaster: budget not set");
-        require(_spentForDay(userOp.sender, dayIndex) + maxCost <= budget, "TicketPaymaster: budget exceeded");
-
-        bytes32 digest = keccak256(
-            abi.encode(address(this), block.chainid, userOpHash, userOp.sender, policyHash, expiresAt, maxCost)
-        );
-        bytes32 signedDigest = MessageHashUtils.toEthSignedMessageHash(digest);
-        address recoveredSigner = ECDSA.recover(signedDigest, signature);
-        require(recoveredSigner == sessionSigner, "TicketPaymaster: bad signature");
-
-        return (abi.encode(userOp.sender, dayIndex), 0);
-    }
-
-    function postOp(PostOpMode, bytes calldata context, uint256 actualGasCost) external override whenNotPaused {
-        require(msg.sender == entryPoint, "TicketPaymaster: only entrypoint");
-        (address user, uint256 dayIndex) = abi.decode(context, (address, uint256));
-        require(user != address(0), "TicketPaymaster: user required");
-
-        if (spentDayIndex[user] != dayIndex) {
-            spentDayIndex[user] = dayIndex;
-            spentToday[user] = 0;
+        refunded = gasCostWei;
+        if (refunded > maxRefillPerTx) {
+            refunded = maxRefillPerTx;
         }
 
-        uint256 newSpent = spentToday[user] + actualGasCost;
-        require(newSpent <= dailyGasBudget[user], "TicketPaymaster: postOp budget exceeded");
-        spentToday[user] = newSpent;
+        require(address(this).balance >= refunded, "TicketPaymaster: insufficient balance");
+
+        totalGasSponsored[user] += refunded;
+
+        (bool success,) = user.call{value: refunded}("");
+        require(success, "TicketPaymaster: refund failed");
+
+        emit GasRefilled(user, gasCostWei, refunded);
     }
 
-    function _spentForDay(address user, uint256 dayIndex) internal view returns (uint256) {
-        if (spentDayIndex[user] != dayIndex) {
-            return 0;
-        }
-        return spentToday[user];
+    function addHandler(address handler) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(handler != address(0), "TicketPaymaster: handler required");
+        require(!authorizedHandlers[handler], "TicketPaymaster: handler already added");
+        authorizedHandlers[handler] = true;
+        emit HandlerAuthorizationUpdated(handler, true);
     }
+
+    function removeHandler(address handler) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(authorizedHandlers[handler], "TicketPaymaster: handler not added");
+        authorizedHandlers[handler] = false;
+        emit HandlerAuthorizationUpdated(handler, false);
+    }
+
+    function addAllowedTarget(address target) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(target != address(0), "TicketPaymaster: target required");
+        require(!allowedTargets[target], "TicketPaymaster: target already added");
+        allowedTargets[target] = true;
+        emit AllowedTargetUpdated(target, true);
+    }
+
+    function removeAllowedTarget(address target) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(allowedTargets[target], "TicketPaymaster: target not added");
+        allowedTargets[target] = false;
+        emit AllowedTargetUpdated(target, false);
+    }
+
+    function setMaxRefillPerTx(uint256 newMaxRefillPerTx) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(newMaxRefillPerTx != 0, "TicketPaymaster: max refill required");
+        uint256 previous = maxRefillPerTx;
+        maxRefillPerTx = newMaxRefillPerTx;
+        emit MaxRefillPerTxUpdated(previous, newMaxRefillPerTx);
+    }
+
+    function isAllowedTarget(address target) external view override returns (bool) {
+        return allowedTargets[target];
+    }
+
+    function deposit() external payable override onlyRole(DEFAULT_ADMIN_ROLE) {}
+
+    function withdraw(address payable to, uint256 amount) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(to != address(0), "TicketPaymaster: recipient required");
+        require(address(this).balance >= amount, "TicketPaymaster: insufficient balance");
+
+        (bool success,) = to.call{value: amount}("");
+        require(success, "TicketPaymaster: withdraw failed");
+    }
+
+    receive() external payable {}
 }

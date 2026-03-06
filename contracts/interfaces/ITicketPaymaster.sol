@@ -2,42 +2,36 @@
 pragma solidity ^0.8.20;
 
 /// @title ITicketPaymaster
-/// @notice Minimal ERC-4337 paymaster surface used by backend bundlers.
+/// @notice Same-tx gas reimbursement treasury used by delegated EOAs executing through `Handler.sol`.
 interface ITicketPaymaster {
-    struct UserOperation {
-        address sender;
-        uint256 nonce;
-        bytes initCode;
-        bytes callData;
-        uint256 callGasLimit;
-        uint256 verificationGasLimit;
-        uint256 preVerificationGas;
-        uint256 maxFeePerGas;
-        uint256 maxPriorityFeePerGas;
-        bytes paymasterAndData;
-        bytes signature;
-    }
+    event GasRefilled(address indexed user, uint256 gasCostWei, uint256 refunded);
+    event HandlerAuthorizationUpdated(address indexed handler, bool allowed);
+    event AllowedTargetUpdated(address indexed target, bool allowed);
+    event MaxRefillPerTxUpdated(uint256 previousMaxRefillPerTx, uint256 newMaxRefillPerTx);
 
-    enum PostOpMode {
-        opSucceeded,
-        opReverted,
-        postOpReverted
-    }
+    function maxRefillPerTx() external view returns (uint256);
 
-    event SessionPolicySet(address indexed user, bytes32 policyHash, uint256 expiresAt);
-    event SessionSignerUpdated(address indexed previousSigner, address indexed newSigner);
+    function totalGasSponsored(address user) external view returns (uint256);
 
-    function validatePaymasterUserOp(
-        UserOperation calldata userOp,
-        bytes32 userOpHash,
-        uint256 maxCost
-    ) external returns (bytes memory context, uint256 validationData);
+    function authorizedHandlers(address handler) external view returns (bool);
 
-    function postOp(PostOpMode mode, bytes calldata context, uint256 actualGasCost) external;
+    function allowedTargets(address target) external view returns (bool);
 
-    function sessionSigner() external view returns (address);
+    function refillGas(address payable user, uint256 gasCostWei) external returns (uint256 refunded);
 
-    function setSessionSigner(address newSigner) external;
+    function addHandler(address handler) external;
 
-    function setDailyGasBudget(address user, uint256 maxCost) external;
+    function removeHandler(address handler) external;
+
+    function addAllowedTarget(address target) external;
+
+    function removeAllowedTarget(address target) external;
+
+    function setMaxRefillPerTx(uint256 newMaxRefillPerTx) external;
+
+    function isAllowedTarget(address target) external view returns (bool);
+
+    function deposit() external payable;
+
+    function withdraw(address payable to, uint256 amount) external;
 }
