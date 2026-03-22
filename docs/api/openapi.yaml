@@ -1488,6 +1488,26 @@ paths:
         "404":
           description: Payment not found
 
+  /v1/payments/hash/{orderId}:
+    get:
+      tags: [Payments]
+      summary: Poll backend-issued payment hash and signature by order ID
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Payment hash lookup result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentHashResponse"
+        "404":
+          description: Payment not found
+
   /v1/payments/reconciliation/jobs:
     get:
       tags: [Payments]
@@ -1577,6 +1597,52 @@ paths:
           description: Invalid payload
         "401":
           description: Signature verification failed
+
+  /v1/wallet/register:
+    post:
+      tags: [Wallet]
+      summary: Register a buyer wallet and simulate one-time bootstrap prefund
+      parameters:
+        - $ref: "#/components/parameters/XUserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WalletRegisterInput"
+      responses:
+        "200":
+          description: Wallet registered and prefund state returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletRegisterResponse"
+        "400":
+          description: Invalid wallet address
+        "401":
+          description: Missing user context
+        "409":
+          description: Wallet already registered to another user
+
+  /v1/wallet/prefund/{walletAddress}:
+    get:
+      tags: [Wallet]
+      summary: Get bootstrap prefund status for a wallet address
+      parameters:
+        - name: walletAddress
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Wallet prefund status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletPrefundStatusResponse"
+        "400":
+          description: Invalid wallet address
 
 components:
   parameters:
@@ -3242,6 +3308,8 @@ components:
     PaymentIntentInput:
       type: object
       properties:
+        orderId:
+          type: string
         reservationId:
           type: string
         amount:
@@ -3252,12 +3320,26 @@ components:
         gateway:
           type: string
           enum: [momo, vnpay]
-      required: [reservationId, amount, gateway]
+        eventId:
+          type: integer
+        ticketTypeId:
+          type: integer
+        quantity:
+          type: integer
+        ticketIds:
+          type: array
+          items:
+            type: string
+        buyerWalletAddress:
+          type: string
+      required: [amount, gateway]
 
     PaymentRecord:
       type: object
       properties:
         paymentId:
+          type: string
+        orderId:
           type: string
         reservationId:
           type: string
@@ -3275,6 +3357,18 @@ components:
           type: string
           enum: [pending, confirmed, failed, cancelled]
         gatewayTransactionId:
+          type: string
+        eventId:
+          type: integer
+        ticketTypeId:
+          type: integer
+        quantity:
+          type: integer
+        ticketIds:
+          type: array
+          items:
+            type: string
+        buyerWalletAddress:
           type: string
         createdAt:
           type: string
@@ -3311,7 +3405,7 @@ components:
           type: string
         eventKey:
           type: string
-        paymentId:
+        paymentReference:
           type: string
         gateway:
           type: string
@@ -3358,6 +3452,8 @@ components:
           type: string
         paymentId:
           type: string
+        orderId:
+          type: string
         gatewayTransactionId:
           type: string
         status:
@@ -3366,7 +3462,7 @@ components:
           type: number
         currency:
           type: string
-      required: [paymentId, status]
+      required: [status]
 
     PaymentWebhookResponse:
       type: object
@@ -3382,8 +3478,148 @@ components:
               type: string
             paymentId:
               type: string
+              nullable: true
+            orderId:
+              type: string
+              nullable: true
+            paymentHashIssued:
+              type: boolean
             retryJobId:
+              type: string
+            paymentReference:
               type: string
             nextRetryAt:
               type: string
               format: date-time
+
+    PaymentHashDomain:
+      type: object
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        chainId:
+          type: integer
+        verifyingContract:
+          type: string
+
+    PaymentHashRecord:
+      type: object
+      properties:
+        orderId:
+          type: string
+        paymentId:
+          type: string
+        paymentStatus:
+          type: string
+          enum: [pending, confirmed, failed, cancelled]
+        status:
+          type: string
+          enum: [pending, ready, expired, failed, cancelled, unavailable]
+        paymentHash:
+          type: string
+          nullable: true
+        signature:
+          type: string
+          nullable: true
+        nonce:
+          type: string
+          nullable: true
+        signerAddress:
+          type: string
+          nullable: true
+        buyer:
+          type: string
+          nullable: true
+        eventId:
+          type: integer
+          nullable: true
+        ticketTypeId:
+          type: integer
+          nullable: true
+        quantity:
+          type: integer
+          nullable: true
+        amount:
+          type: number
+        ticketIds:
+          type: array
+          items:
+            type: string
+        domain:
+          allOf:
+            - $ref: "#/components/schemas/PaymentHashDomain"
+          nullable: true
+        issuedAt:
+          type: string
+          format: date-time
+          nullable: true
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+
+    PaymentHashResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/PaymentHashRecord"
+
+    WalletRegisterInput:
+      type: object
+      properties:
+        walletAddress:
+          type: string
+      required: [walletAddress]
+
+    WalletPrefundRecord:
+      type: object
+      properties:
+        walletAddress:
+          type: string
+        prefunded:
+          type: boolean
+        prefundTxHash:
+          type: string
+        amountWei:
+          type: string
+        fundedAt:
+          type: string
+          format: date-time
+
+    WalletRegisterResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/WalletPrefundRecord"
+
+    WalletPrefundStatusResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            walletAddress:
+              type: string
+            funded:
+              type: boolean
+            txHash:
+              type: string
+              nullable: true
+            amountWei:
+              type: string
+              nullable: true
+            fundedAt:
+              type: string
+              format: date-time
+              nullable: true

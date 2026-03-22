@@ -428,7 +428,7 @@ mapping(address => bool) public allowedTargets;
 solidity
 function executeBatch(Call[] calldata calls) external returns (bytes[] memory results);
 
-function setPaymaster(address paymaster_) external onlyOwner;
+function setPaymaster(address paymaster\_) external onlyOwner;
 
 function addAllowedTarget(address target) external onlyOwner;
 
@@ -451,7 +451,7 @@ require(allowedTargets[calls[i].target], "Handler: target not allowed");
 
 // After successful state changes, refill the user's gas in the same tx
 uint256 gasUsed = (gasStart - gasleft()) + HANDLER_OVERHEAD;
-uint256 gasCostWei = gasUsed * tx.gasprice;
+uint256 gasCostWei = gasUsed \* tx.gasprice;
 IPaymaster(paymaster).refillGas(payable(msg.sender), gasCostWei);
 }
 
@@ -703,7 +703,7 @@ signDelegatedTransaction(tx: Transaction): Promise<string>;
 **Implementation:**
 typescript
 import { Wallet } from 'ethers';
-import * as SecureStore from 'expo-secure-store'; // React Native
+import \* as SecureStore from 'expo-secure-store'; // React Native
 
 export class WalletManager {
 async createWallet() {
@@ -1016,18 +1016,18 @@ function testDuplicateBadge_RevertIfExists() // one badge per event
 - Add `/api/payment/hash/:orderId` endpoint that returns both hash and signature
 - Store hashes in `payment_hashes` table
 - Implement backend signer with PAYMENT_HASH_ROLE
-- Write integration tests (6 tests)
+- Write integration tests (7 tests)
 
 **Definition of Done:**
 
-- [ ] Wallet bootstrap prefund is sent only once per wallet
-- [ ] Webhook signature verification works for Momo + VNPAY
-- [ ] Payment hash generated correctly: `keccak256(orderId, userId, ticketIds, amount, nonce)`
-- [ ] EIP-712 signature generated using domain separator and PURCHASE_TYPEHASH
-- [ ] Signature recovers to authorized backend signer
-- [ ] Idempotency check prevents duplicate processing
-- [ ] Tests pass: `pnpm test:integration payment-orchestrator`
-- [ ] API documented in Swagger
+- [x] Wallet bootstrap prefund is sent only once per wallet
+- [x] Webhook signature verification works for Momo + VNPAY
+- [x] Payment hash generated correctly: `keccak256(orderId, userId, ticketIds, amount, nonce)`
+- [x] EIP-712 signature generated using domain separator and PURCHASE_TYPEHASH
+- [x] Signature recovers to authorized backend signer
+- [x] Idempotency check prevents duplicate processing
+- [x] Tests pass: `pnpm test:integration payment-orchestrator`
+- [x] API documented in Swagger
 
 **Tests:**
 typescript
