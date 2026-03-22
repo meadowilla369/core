@@ -6,6 +6,14 @@ export interface MarketplaceConfig {
   platformFeeBps: number;
   organizerRoyaltyBps: number;
   internalApiKey: string;
+  /** Private key used to sign EIP-712 BUY_TYPE authorizations for resale purchases. */
+  backendSignerPrivateKey?: string;
+  /** Chain ID for MarketplaceV2 EIP-712 domain. */
+  marketplaceChainId?: number;
+  /** Deployed MarketplaceV2 contract address for EIP-712 domain. */
+  marketplaceAddress?: string;
+  /** TTL in seconds for issued buy-hash records. */
+  buyHashTtlSec?: number;
 }
 
 function parseNumber(value: string | undefined, fallback: number): number {

@@ -1,7 +1,14 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 
 import type { MarketplaceConfig } from "./config.js";
+import {
+  buildBuyTypedData,
+  computeBuyPaymentHash,
+  deriveAddressFromPrivateKey,
+  signBuyTypedData,
+  type BuyTypedData
+} from "./ethereum.js";
 import { log } from "./logger.js";
 
 type ListingStatus = "active" | "cancelled" | "completed";
@@ -74,6 +81,33 @@ interface SettlementLedgerRecord {
   submitTxHash: string;
   status: "submitted";
   submittedAt: string;
+}
+
+interface InitiateBuyBody {
+  orderId?: string;
+  amount?: number;
+  gateway?: string;
+  buyerWalletAddress?: string;
+  /** On-chain uint256 listingId from MarketplaceV2 (required for EIP-712 signing). */
+  onChainListingId?: number | string;
+}
+
+interface BuyHashRecord {
+  orderId: string;
+  listingId: string;
+  buyerUserId: string;
+  buyerWalletAddress: string;
+  amount: number;
+  nonce: string;
+  paymentHash: string;
+  signature: string;
+  signerAddress: string;
+  status: "issued" | "expired";
+  issuedAt: string;
+  expiresAt: string;
+  chainId: number;
+  verifyingContract: string;
+  typedData: BuyTypedData;
 }
 
 function sendJson(res: ServerResponse, statusCode: number, payload: unknown): void {
@@ -161,13 +195,55 @@ export function createMarketplaceServer(config: MarketplaceConfig) {
   const settlementLedgerById = new Map<string, SettlementLedgerRecord>();
   const idempotencyResponses = new Map<string, unknown>();
 
+  // Resale buy-hash state
+  const buyHashByOrderId = new Map<string, BuyHashRecord>();
+  const buyOrderIdByListingAndUser = new Map<string, string>(); // `${listingId}:${userId}` → orderId
+
+  const buyHashTtlSec = config.buyHashTtlSec ?? 900; // 15 minutes default
+  const marketplaceChainId = config.marketplaceChainId ?? 31337;
+  const marketplaceAddress = config.marketplaceAddress?.trim().toLowerCase();
+  const backendSignerPrivateKey = config.backendSignerPrivateKey;
+
+  let cachedSignerAddress: string | null = null;
+  const getSignerAddress = (): string => {
+    if (!cachedSignerAddress && backendSignerPrivateKey) {
+      cachedSignerAddress = deriveAddressFromPrivateKey(backendSignerPrivateKey);
+    }
+    return cachedSignerAddress ?? "";
+  };
+
+  function _buildBuyHashResponse(record: BuyHashRecord): Record<string, unknown> {
+    return {
+      orderId: record.orderId,
+      listingId: record.listingId,
+      buyerUserId: record.buyerUserId,
+      buyerWalletAddress: record.buyerWalletAddress,
+      amount: record.amount,
+      nonce: record.nonce,
+      paymentHash: record.paymentHash,
+      signature: record.signature,
+      signerAddress: record.signerAddress,
+      status: record.status,
+      issuedAt: record.issuedAt,
+      expiresAt: record.expiresAt,
+      domain: {
+        name: record.typedData.domain.name,
+        version: record.typedData.domain.version,
+        chainId: record.chainId,
+        verifyingContract: record.verifyingContract
+      }
+    };
+  }
+
   return createServer(async (req, res) => {
     try {
       const method = req.method ?? "GET";
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
       if (method === "GET" && url.pathname === "/healthz") {
-        const active = Array.from(listingsById.values()).filter((listing) => listing.status === "active").length;
+        const active = Array.from(listingsById.values()).filter(
+          (listing) => listing.status === "active"
+        ).length;
 
         return sendJson(res, 200, {
           success: true,
@@ -228,7 +304,11 @@ export function createMarketplaceServer(config: MarketplaceConfig) {
           });
         }
 
-        const idempotencyScope = createIdempotencyScope(method, url.pathname, extractIdempotencyKey(req));
+        const idempotencyScope = createIdempotencyScope(
+          method,
+          url.pathname,
+          extractIdempotencyKey(req)
+        );
         if (idempotencyScope && idempotencyResponses.has(idempotencyScope)) {
           return sendJson(res, 200, idempotencyResponses.get(idempotencyScope));
         }
@@ -381,7 +461,11 @@ export function createMarketplaceServer(config: MarketplaceConfig) {
           });
         }
 
-        const idempotencyScope = createIdempotencyScope(method, url.pathname, extractIdempotencyKey(req));
+        const idempotencyScope = createIdempotencyScope(
+          method,
+          url.pathname,
+          extractIdempotencyKey(req)
+        );
         if (idempotencyScope && idempotencyResponses.has(idempotencyScope)) {
           return sendJson(res, 200, idempotencyResponses.get(idempotencyScope));
         }
@@ -697,6 +781,179 @@ export function createMarketplaceServer(config: MarketplaceConfig) {
           success: true,
           data: record
         });
+      }
+
+      // ── POST /marketplace/listings/:id/initiate-buy ──────────────────────────
+      const initiateBuyMatch = /^\/marketplace\/listings\/([^/]+)\/initiate-buy$/.exec(
+        url.pathname
+      );
+      if (method === "POST" && initiateBuyMatch) {
+        const userId = extractUserId(req);
+        if (!userId) {
+          return sendJson(res, 401, {
+            success: false,
+            error: { code: "UNAUTHORIZED", message: "Missing x-user-id header" }
+          });
+        }
+
+        const listing = listingsById.get(initiateBuyMatch[1]);
+        if (!listing) {
+          return sendJson(res, 404, {
+            success: false,
+            error: { code: "LISTING_NOT_FOUND", message: "Listing not found" }
+          });
+        }
+
+        if (listing.status !== "active") {
+          return sendJson(res, 400, {
+            success: false,
+            error: { code: "LISTING_NOT_ACTIVE", message: "Listing is no longer active" }
+          });
+        }
+
+        if (listing.sellerUserId === userId) {
+          return sendJson(res, 400, {
+            success: false,
+            error: { code: "SELF_PURCHASE_FORBIDDEN", message: "Seller cannot buy own listing" }
+          });
+        }
+
+        if (!backendSignerPrivateKey || !marketplaceAddress) {
+          return sendJson(res, 503, {
+            success: false,
+            error: {
+              code: "SIGNING_UNAVAILABLE",
+              message: "Marketplace buy-hash signing is not configured"
+            }
+          });
+        }
+
+        const body = await readJson<InitiateBuyBody>(req);
+        const orderId = body.orderId?.trim() || `ord_buy_${randomUUID().replace(/-/g, "")}`;
+        const amount = body.amount ?? listing.askPrice;
+        const buyerWalletAddress = body.buyerWalletAddress?.trim().toLowerCase() ?? "";
+        const rawOnChainId = body.onChainListingId;
+        const onChainListingId =
+          rawOnChainId !== undefined && rawOnChainId !== null
+            ? typeof rawOnChainId === "number"
+              ? rawOnChainId
+              : parseInt(String(rawOnChainId), 10)
+            : NaN;
+
+        if (!buyerWalletAddress || !/^0x[0-9a-f]{40}$/.test(buyerWalletAddress)) {
+          return sendJson(res, 400, {
+            success: false,
+            error: {
+              code: "INVALID_BUYER_WALLET",
+              message: "buyerWalletAddress must be a valid EVM address"
+            }
+          });
+        }
+
+        if (isNaN(onChainListingId) || onChainListingId <= 0) {
+          return sendJson(res, 400, {
+            success: false,
+            error: {
+              code: "INVALID_ON_CHAIN_LISTING_ID",
+              message:
+                "onChainListingId must be a positive integer matching the MarketplaceV2 listingId"
+            }
+          });
+        }
+
+        // Return existing record if already issued for this listing+user
+        const stateKey = `${listing.id}:${userId}`;
+        const existingOrderId = buyOrderIdByListingAndUser.get(stateKey);
+        if (existingOrderId) {
+          const existing = buyHashByOrderId.get(existingOrderId);
+          if (existing && existing.status === "issued") {
+            return sendJson(res, 200, { success: true, data: _buildBuyHashResponse(existing) });
+          }
+        }
+
+        const nowMs = Date.now();
+        const nonce = `0x${randomBytes(32).toString("hex")}`;
+        const paymentHash = computeBuyPaymentHash({
+          orderId,
+          userId,
+          listingId: onChainListingId,
+          amount: BigInt(Math.trunc(amount)),
+          nonce
+        });
+
+        const typedData = buildBuyTypedData({
+          chainId: marketplaceChainId,
+          verifyingContract: marketplaceAddress,
+          listingId: onChainListingId,
+          paymentHash,
+          buyer: buyerWalletAddress
+        });
+
+        const signature = signBuyTypedData({ privateKey: backendSignerPrivateKey, typedData });
+        const issuedAt = new Date(nowMs).toISOString();
+        const expiresAt = new Date(nowMs + buyHashTtlSec * 1000).toISOString();
+
+        const record: BuyHashRecord = {
+          orderId,
+          listingId: listing.id,
+          buyerUserId: userId,
+          buyerWalletAddress,
+          amount,
+          nonce,
+          paymentHash,
+          signature,
+          signerAddress: getSignerAddress(),
+          status: "issued",
+          issuedAt,
+          expiresAt,
+          chainId: marketplaceChainId,
+          verifyingContract: marketplaceAddress,
+          typedData
+        };
+
+        buyHashByOrderId.set(orderId, record);
+        buyOrderIdByListingAndUser.set(stateKey, orderId);
+
+        log(config.serviceName, "info", "Buy hash issued", {
+          orderId,
+          listingId: listing.id,
+          buyerUserId: userId
+        });
+
+        return sendJson(res, 200, { success: true, data: _buildBuyHashResponse(record) });
+      }
+
+      // ── GET /marketplace/listings/:id/buy-hash ────────────────────────────────
+      const buyHashMatch = /^\/marketplace\/listings\/([^/]+)\/buy-hash$/.exec(url.pathname);
+      if (method === "GET" && buyHashMatch) {
+        const userId = extractUserId(req);
+        if (!userId) {
+          return sendJson(res, 401, {
+            success: false,
+            error: { code: "UNAUTHORIZED", message: "Missing x-user-id header" }
+          });
+        }
+
+        const stateKey = `${buyHashMatch[1]}:${userId}`;
+        const orderId = buyOrderIdByListingAndUser.get(stateKey);
+        const record = orderId ? (buyHashByOrderId.get(orderId) ?? null) : null;
+
+        if (!record) {
+          return sendJson(res, 404, {
+            success: false,
+            error: {
+              code: "BUY_HASH_NOT_FOUND",
+              message: "No buy hash initiated for this listing. Call initiate-buy first."
+            }
+          });
+        }
+
+        // Expire check
+        if (record.status === "issued" && new Date(record.expiresAt).getTime() <= Date.now()) {
+          record.status = "expired";
+        }
+
+        return sendJson(res, 200, { success: true, data: _buildBuyHashResponse(record) });
       }
 
       return sendJson(res, 404, {
