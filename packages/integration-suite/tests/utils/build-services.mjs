@@ -13,6 +13,7 @@ const TS_PROJECTS = [
   "services/event-service/tsconfig.json",
   "services/kyc-service/tsconfig.json",
   "services/marketplace-service/tsconfig.json",
+  "services/contract-sync-service/tsconfig.json",
   "services/payment-orchestrator/tsconfig.json",
   "services/recovery-service/tsconfig.json",
   "services/refund-service/tsconfig.json",

@@ -9,6 +9,7 @@
     "test:critical": "npm run build:services && node --test --test-concurrency=1 tests/integration/critical-journeys.test.mjs",
     "test:backend": "npm run build:services && node --test --test-concurrency=1 tests/integration/backend-sandbox.test.mjs",
     "test:flow1": "npm run build:services && node --test --test-concurrency=1 tests/integration/flow1-payment-purchase.test.mjs",
+    "test:contract-sync": "npm run build:services && node --test --test-concurrency=1 tests/integration/contract-sync-service.test.mjs",
     "test:payment-orchestrator": "npm run build:services && node --test --test-concurrency=1 tests/integration/payment-orchestrator.test.mjs",
     "test:e2e": "npm run build:services && node --test --test-concurrency=1 tests/e2e/*.test.mjs",
     "test:load": "npm run build:services && node --test --test-concurrency=1 tests/perf/load.test.mjs",
