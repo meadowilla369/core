@@ -1,11 +1,13 @@
 # Ticket Platform Implementation Checklist
 
 Source:
+
 - REQUIREMENTS.md
 - DESIGN.md
 - ANALYSIS.md
 
 Legend:
+
 - pending
 - [x] completed
 
@@ -49,6 +51,7 @@ Legend:
 - [x] Capture final status and unresolved gaps.
 
 Verification evidence:
+
 - `cd contracts && forge fmt --check` passed.
 - `cd contracts && forge test --offline` passed with 29/29 tests.
 - Foundry online trace mode still crashes in this environment; offline mode is used as stable verification path.
@@ -211,6 +214,44 @@ Verification evidence:
 - [x] Cost/performance optimization review (RPC, queue, database, CDN).
 - [x] Prioritize Phase 1+ backlog (push notifications, search, ticket gifting).
 - [x] Prepare Phase 2 roadmap (VNeID, VNPAY full support, advanced analytics).
+
+## EIP-7702 Migration Workstream (MIGRATION-BLUEPRINT.md)
+
+Tracks the concrete PR-level implementation of the EIP-7702 delegated-EOA architecture
+described in `docs/MIGRATION-BLUEPRINT.md`.
+
+### Contracts
+
+- [x] PR-03: Handler.sol — EIP-7702 delegated batch executor with gas measurement.
+- [x] PR-03: TicketPaymaster.sol — gas sponsorship treasury, authorized handler registry.
+- [x] PR-03: TicketLedger.sol — EIP-712 purchaseWithSignature, replay-safe payment hash.
+- [x] PR-03: Foundry tests (Handler, TicketPaymaster, TicketLedger) — 29/29 passing.
+- [x] PR-03: Flow1PurchaseHarness.s.sol — local end-to-end Foundry script.
+
+### Backend Services
+
+- [x] PR-05: payment-orchestrator — wallet register, prefund tracking, EIP-712 purchase
+      signature issuance, Momo/VNPAY webhook verification (7 unit tests passing).
+- [x] PR-06: contract-sync-service — internal HTTP event ingestion API (Transfer,
+      TicketUsed, ListingStatusChanged), dedup by txHash:logIndex, token state store,
+      sync-status endpoint (15 unit tests + 5 integration tests passing).
+
+### Integration Tests
+
+- [x] PR-05: flow1-payment-purchase.test.mjs — full Flow-1 path: wallet register →
+      payment intent → webhook confirm → payment hash retrieval →
+      Flow1PurchaseHarness (requires Foundry + forge script).
+- [x] PR-06: contract-sync-service.test.mjs — Flow-1/2/4 event ingestion scenarios
+      (no live blockchain required; 5 tests passing).
+- [x] Pre-commit hook: pnpm fallback via `npm exec` for non-login shell environments.
+
+### Pending (next workstreams)
+
+- pending Flow-2 resale: Marketplace.buyWithSignature + EIP-712 BUY_TYPE on-chain.
+- pending Flow-4 check-in: TicketLedger.markUsedBatch + async worker integration.
+- pending Flow-5 refund: TicketLedger.cancelTicket async worker.
+- pending Frontend: EIP-7702 delegated TX builder (EOA → Handler.executeBatch).
+- pending contract-sync-service: live RPC log subscription (viem watchContractEvent).
 
 ## Cross-Phase Exit Criteria (Definition of Done)
 
