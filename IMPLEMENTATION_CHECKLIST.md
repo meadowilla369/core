@@ -245,11 +245,18 @@ described in `docs/MIGRATION-BLUEPRINT.md`.
       (no live blockchain required; 5 tests passing).
 - [x] Pre-commit hook: pnpm fallback via `npm exec` for non-login shell environments.
 
+### Completed workstreams
+
+- [x] Flow-2 resale: MarketplaceV2.sol + EIP-712 BUY_TYPE + Flow2ResaleHarness.s.sol +
+      flow2-resale-purchase.test.mjs (verified locally with anvil/forge --offline).
+- [x] Flow-4 check-in: Flow4CheckinHarness.s.sol (purchase → markUsedBatch CHECKIN_ROLE,
+      asserts ticket.used == true + usedAt > 0) + checkin-service QR verify + background
+      markAsUsed job + flow4-checkin.test.mjs (1/1 pass).
+- [x] Flow-5 refund: Flow5RefundHarness.s.sol (purchase → cancelTicket REFUND_ROLE,
+      asserts owner == address(0) + owner index cleared) + refund-service eligibility + payout sync + idempotency-key dedup + flow5-refund.test.mjs (1/1 pass).
+
 ### Pending (next workstreams)
 
-- pending Flow-2 resale: Marketplace.buyWithSignature + EIP-712 BUY_TYPE on-chain.
-- pending Flow-4 check-in: TicketLedger.markUsedBatch + async worker integration.
-- pending Flow-5 refund: TicketLedger.cancelTicket async worker.
 - pending Frontend: EIP-7702 delegated TX builder (EOA → Handler.executeBatch).
 - pending contract-sync-service: live RPC log subscription (viem watchContractEvent).
 
