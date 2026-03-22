@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { createCheckinSignature, createWebhookSignature } from "../utils/signatures.mjs";
 import { disposeServer, invokeJson } from "../utils/server-harness.mjs";
+import { flow1HarnessDefaults, runFlow1PurchaseHarness } from "../utils/flow1-harness.mjs";
 
 const THIS_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(THIS_DIR, "../../../..");
@@ -79,10 +80,14 @@ test("critical journey: registration + wallet session provisioning", async () =>
   }
 });
 
-test("critical journey: purchase + payment webhook + mint", async () => {
-  const { createTicketingServer } = await importFromRepo("services/ticketing-service/dist/server.js");
-  const { createPaymentOrchestratorServer } = await importFromRepo("services/payment-orchestrator/dist/server.js");
-  const { createWorkerMintServer } = await importFromRepo("services/worker-mint/dist/server.js");
+test("critical journey: purchase + payment webhook + on-chain purchase", async () => {
+  const { createTicketingServer } = await importFromRepo(
+    "services/ticketing-service/dist/server.js"
+  );
+  const { createPaymentOrchestratorServer } = await importFromRepo(
+    "services/payment-orchestrator/dist/server.js"
+  );
+  const flow1 = flow1HarnessDefaults();
 
   const ticketingServer = createTicketingServer({
     serviceName: "ticketing-service",
@@ -101,16 +106,10 @@ test("critical journey: purchase + payment webhook + mint", async () => {
     webhookMaxSkewSec: 300,
     webhookNonceTtlSec: 1800,
     maxWebhookRetries: 5,
-    retryBaseDelaySec: 1
-  });
-  const mintServer = createWorkerMintServer({
-    serviceName: "worker-mint",
-    host: "127.0.0.1",
-    port: 3010,
-    maxAttempts: 3,
-    maxBatchSize: 10,
     retryBaseDelaySec: 1,
-    tokenIdSeed: 100000
+    backendSignerPrivateKey: flow1.adminPrivateKey,
+    ticketLedgerChainId: flow1.chainId,
+    ticketLedgerAddress: flow1.ledgerAddress
   });
 
   try {
@@ -147,24 +146,47 @@ test("critical journey: purchase + payment webhook + mint", async () => {
       })
     );
 
-    const paymentIntent = assertSuccess(
+    assertSuccess(
       await invokeJson(paymentServer, {
         method: "POST",
-        path: "/payments/intents",
+        path: "/api/wallet/register",
         headers: {
           "x-user-id": userId
         },
         body: {
+          walletAddress: flow1.buyerAddress
+        }
+      })
+    );
+
+    const paymentIntent = assertSuccess(
+      await invokeJson(paymentServer, {
+        method: "POST",
+        path: "/api/payment/initiate",
+        headers: {
+          "x-user-id": userId
+        },
+        body: {
+          orderId: "ord_critical_purchase_001",
           reservationId: reservation.reservationId,
           amount: purchase.totalAmount,
           currency: "VND",
-          gateway: "momo"
+          gateway: "momo",
+          eventId: 1,
+          ticketTypeId: 2,
+          quantity: reservation.quantity,
+          ticketIds: Array.from(
+            { length: reservation.quantity },
+            (_, index) => `${reservation.reservationId}:${index + 1}`
+          ),
+          buyerWalletAddress: flow1.buyerAddress
         }
       })
     );
 
     const webhookBody = {
-      eventId: `evt_paid_${paymentIntent.paymentId}`,
+      eventId: `evt_paid_${paymentIntent.orderId}`,
+      orderId: paymentIntent.orderId,
       paymentId: paymentIntent.paymentId,
       status: "success",
       amount: purchase.totalAmount,
@@ -184,7 +206,7 @@ test("critical journey: purchase + payment webhook + mint", async () => {
     assertSuccess(
       await invokeJson(paymentServer, {
         method: "POST",
-        path: "/webhooks/momo",
+        path: "/webhook/payment?gateway=momo",
         headers: {
           "x-webhook-signature": signature,
           "x-webhook-timestamp": timestamp,
@@ -194,71 +216,38 @@ test("critical journey: purchase + payment webhook + mint", async () => {
       })
     );
 
-    const payment = assertSuccess(
+    const paymentHashPayload = assertSuccess(
       await invokeJson(paymentServer, {
         method: "GET",
-        path: `/payments/${paymentIntent.paymentId}`
+        path: `/api/payment/hash/${paymentIntent.orderId}`
       })
     );
-    assert.equal(payment.status, "confirmed");
+    assert.equal(paymentHashPayload.status, "ready");
+    assert.equal(paymentHashPayload.paymentStatus, "confirmed");
+    assert.equal(paymentHashPayload.buyer, flow1.buyerAddress);
+    assert.equal(paymentHashPayload.domain.chainId, flow1.chainId);
+    assert.equal(paymentHashPayload.domain.verifyingContract, flow1.ledgerAddress);
 
-    const confirmed = assertSuccess(
-      await invokeJson(ticketingServer, {
-        method: "POST",
-        path: `/tickets/purchase/${reservation.reservationId}/confirm`,
-        headers: {
-          "x-internal-api-key": "internal-dev-key"
-        },
-        body: {
-          gatewayTransactionId: payment.gatewayTransactionId,
-          status: "paid"
-        }
-      })
-    );
+    const harnessOutput = runFlow1PurchaseHarness({
+      ledgerAddress: paymentHashPayload.domain.verifyingContract,
+      eventId: paymentHashPayload.eventId,
+      ticketTypeId: paymentHashPayload.ticketTypeId,
+      quantity: paymentHashPayload.quantity,
+      paymentHash: paymentHashPayload.paymentHash,
+      signature: paymentHashPayload.signature
+    });
 
-    const mintJob = assertSuccess(
-      await invokeJson(mintServer, {
-        method: "POST",
-        path: "/mint/jobs",
-        body: {
-          paymentId: payment.paymentId,
-          reservationId: reservation.reservationId,
-          userId,
-          walletAddress: "0xbuyerwallet001",
-          eventId: reservation.eventId,
-          ticketTypeId: reservation.ticketTypeId,
-          quantity: reservation.quantity
-        }
-      })
-    );
-
-    const run = assertSuccess(
-      await invokeJson(mintServer, {
-        method: "POST",
-        path: "/mint/run",
-        body: {
-          limit: 5
-        }
-      })
-    );
-    assert.equal(run.minted, 1);
-
-    const minted = assertSuccess(
-      await invokeJson(mintServer, {
-        method: "GET",
-        path: `/mint/jobs/${mintJob.jobId}`
-      })
-    );
-    assert.equal(minted.status, "minted");
+    assert.match(harnessOutput, /FLOW1_HARNESS_OK/);
   } finally {
-    disposeServer(mintServer);
     disposeServer(paymentServer);
     disposeServer(ticketingServer);
   }
 });
 
 test("critical journey: resale listing + purchase + escrow settlement", async () => {
-  const { createMarketplaceServer } = await importFromRepo("services/marketplace-service/dist/server.js");
+  const { createMarketplaceServer } = await importFromRepo(
+    "services/marketplace-service/dist/server.js"
+  );
   const marketplaceServer = createMarketplaceServer({
     serviceName: "marketplace-service",
     host: "127.0.0.1",
