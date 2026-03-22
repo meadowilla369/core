@@ -1,4 +1,10 @@
 #!/usr/bin/env sh
 set -e
 
-pnpm lint-staged
+# Resolve pnpm: prefer PATH, fall back to npm exec (handles missing PATH entry
+# in non-login shells such as CI runners or Claude Code's bash sessions).
+if command -v pnpm > /dev/null 2>&1; then
+  pnpm lint-staged
+else
+  npm exec -- pnpm lint-staged
+fi
