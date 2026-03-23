@@ -42,7 +42,11 @@ importers:
 
   packages/integration-suite: {}
 
-  packages/sdk-client: {}
+  packages/sdk-client:
+    dependencies:
+      viem:
+        specifier: ^2.21.0
+        version: 2.47.6(typescript@5.9.3)
 
   packages/shared-types: {}
 

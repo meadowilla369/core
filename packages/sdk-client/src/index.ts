@@ -1,3 +1,5 @@
+export * from "./tx-builder/index.js";
+
 export interface ApiClientConfig {
   baseUrl: string;
   accessToken?: string;
@@ -141,7 +143,9 @@ export class ApiClient {
     return this.config.baseUrl;
   }
 
-  async requestOtp(input: OtpRequestInput): Promise<ApiSuccessResponse<{ otpSessionId: string; expiresAt: string }>> {
+  async requestOtp(
+    input: OtpRequestInput
+  ): Promise<ApiSuccessResponse<{ otpSessionId: string; expiresAt: string }>> {
     return this.request("/v1/auth/otp/request", { method: "POST", body: input });
   }
 
@@ -153,7 +157,9 @@ export class ApiClient {
     return this.request("/v1/auth/refresh", { method: "POST", body: input });
   }
 
-  async listEvents(query: { city?: string; status?: string; organizerId?: string } = {}): Promise<ApiSuccessResponse<EventSummary[]>> {
+  async listEvents(
+    query: { city?: string; status?: string; organizerId?: string } = {}
+  ): Promise<ApiSuccessResponse<EventSummary[]>> {
     const search = new URLSearchParams();
     if (query.city) {
       search.set("city", query.city);
@@ -225,7 +231,9 @@ export class ApiClient {
     });
   }
 
-  async listMarketplaceListings(query: { eventId?: string; status?: string } = {}): Promise<ApiSuccessResponse<MarketplaceListing[]>> {
+  async listMarketplaceListings(
+    query: { eventId?: string; status?: string } = {}
+  ): Promise<ApiSuccessResponse<MarketplaceListing[]>> {
     const search = new URLSearchParams();
     if (query.eventId) {
       search.set("eventId", query.eventId);

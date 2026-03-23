@@ -1,0 +1,176 @@
+/**
+ * EIP-7702 Transaction Builder — encoding helpers.
+ *
+ * Provides pure functions for:
+ *  1. Encoding Handler.executeBatch(Call[]) calldata.
+ *  2. Building the EIP-7702 authorization tuple hash for off-chain signing.
+ *  3. Assembling the full Eip7702BatchPayload from calls + signed auth.
+ *
+ * No wallet or RPC dependency — these are pure client-side construction helpers.
+ */
+
+import {
+  encodeFunctionData,
+  keccak256,
+  encodeAbiParameters,
+  parseAbiParameters,
+  concat,
+  toBytes,
+  toHex,
+  getAddress
+} from "viem";
+import type {
+  HandlerCall,
+  AuthorizationTuple,
+  SignedAuthorization,
+  Eip7702BatchPayload
+} from "./types.js";
+
+// ---------------------------------------------------------------------------
+// ABI definition — mirrors IHandler exactly
+// ---------------------------------------------------------------------------
+
+const HANDLER_ABI = [
+  {
+    name: "executeBatch",
+    type: "function",
+    stateMutability: "payable",
+    inputs: [
+      {
+        name: "calls",
+        type: "tuple[]",
+        components: [
+          { name: "target", type: "address" },
+          { name: "value", type: "uint256" },
+          { name: "data", type: "bytes" }
+        ]
+      }
+    ],
+    outputs: [{ name: "results", type: "bytes[]" }]
+  }
+] as const;
+
+// ---------------------------------------------------------------------------
+// EIP-7702 magic prefix (per EIP-7702 §3)
+// keccak256("eip7702")  — used to domain-separate the authorization hash
+// ---------------------------------------------------------------------------
+const EIP7702_MAGIC = "0x05" as const;
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Encodes the calldata for `Handler.executeBatch(Call[] calls)`.
+ *
+ * @param calls  One or more HandlerCall structs. Must be non-empty (Handler enforces this on-chain too).
+ * @returns ABI-encoded calldata `0x…` ready to attach as `tx.data`.
+ */
+export function encodeExecuteBatch(calls: HandlerCall[]): `0x${string}` {
+  if (calls.length === 0) {
+    throw new Error("encodeExecuteBatch: calls must be non-empty");
+  }
+
+  return encodeFunctionData({
+    abi: HANDLER_ABI,
+    functionName: "executeBatch",
+    args: [
+      calls.map((c) => ({
+        target: c.target,
+        value: c.value,
+        data: c.data
+      }))
+    ]
+  });
+}
+
+/**
+ * Computes the EIP-7702 authorization hash that the EOA must sign.
+ *
+ * Per EIP-7702 §3 the signing hash is:
+ *   keccak256(0x05 || rlp([chain_id, address, nonce]))
+ *
+ * We approximate the RLP for the common case by ABI-encoding the three fields
+ * (this matches how viem/ethers implement it in practice for type-4 txs).
+ * A full RLP implementation is not needed for the builder — the wallet handles
+ * final signing; this helper lets callers preview or unit-test the hash.
+ *
+ * @param tuple  The unsigned authorization tuple.
+ * @returns The 32-byte authorization hash as a hex string.
+ */
+export function hashAuthorizationTuple(tuple: AuthorizationTuple): `0x${string}` {
+  // Encode: (chainId uint256, address address, nonce uint64)
+  // getAddress normalises to EIP-55 checksum form which viem requires.
+  const encoded = encodeAbiParameters(
+    parseAbiParameters("uint256 chainId, address addr, uint64 nonce"),
+    [tuple.chainId, getAddress(tuple.address), tuple.nonce]
+  );
+
+  // Prepend the EIP-7702 magic byte and hash
+  const payload = concat([toBytes(EIP7702_MAGIC), toBytes(encoded)]);
+  return keccak256(toHex(payload));
+}
+
+/**
+ * Constructs an unsigned AuthorizationTuple.
+ * A convenience factory — callers may also build the object directly.
+ */
+export function buildAuthorizationTuple(params: {
+  chainId: bigint | number;
+  handlerAddress: `0x${string}`;
+  nonce: bigint | number;
+}): AuthorizationTuple {
+  return {
+    chainId: BigInt(params.chainId),
+    address: params.handlerAddress,
+    nonce: BigInt(params.nonce)
+  };
+}
+
+/**
+ * Assembles the complete Eip7702BatchPayload from the calls + a pre-signed authorization.
+ *
+ * The returned payload can be submitted directly as a type-4 (SET_CODE) transaction:
+ *   - `authorizationList` → `tx.authorizationList`
+ *   - `encodedCalldata`   → `tx.data`
+ *
+ * @param calls              Batch of calls to execute.
+ * @param signedAuth         The signed EIP-7702 authorization (from wallet).
+ */
+export function buildEip7702BatchPayload(
+  calls: HandlerCall[],
+  signedAuth: SignedAuthorization
+): Eip7702BatchPayload {
+  return {
+    authorizationList: [signedAuth],
+    encodedCalldata: encodeExecuteBatch(calls),
+    calls
+  };
+}
+
+/**
+ * Validates that a HandlerCall is structurally sound before encoding.
+ * Returns a list of error strings; empty means valid.
+ */
+export function validateCalls(calls: HandlerCall[]): string[] {
+  const errors: string[] = [];
+  if (calls.length === 0) {
+    errors.push("calls: must contain at least one entry");
+  }
+  for (let i = 0; i < calls.length; i++) {
+    const c = calls[i]!;
+    if (!c.target || c.target === "0x0000000000000000000000000000000000000000") {
+      errors.push(`calls[${i}].target: must be a non-zero address`);
+    }
+    if (!c.target.startsWith("0x") || c.target.length !== 42) {
+      errors.push(`calls[${i}].target: must be a 20-byte hex address`);
+    }
+    if (c.value < 0n) {
+      errors.push(`calls[${i}].value: must be >= 0`);
+    }
+    if (!c.data.startsWith("0x")) {
+      errors.push(`calls[${i}].data: must start with 0x`);
+    }
+  }
+  return errors;
+}

@@ -5,9 +5,12 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "echo 'TODO: add tests for sdk-client'",
+    "test": "node --test src/tx-builder/__tests__/encoder.test.mjs",
     "lint": "echo 'TODO: add lint for sdk-client'",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "format": "echo 'TODO: add formatter for sdk-client'"
+  },
+  "dependencies": {
+    "viem": "^2.21.0"
   }
 }
