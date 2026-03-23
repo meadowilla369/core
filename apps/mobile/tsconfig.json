@@ -2,7 +2,13 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "src",
-    "outDir": "dist"
+    "outDir": "dist",
+    "baseUrl": ".",
+    "paths": {
+      "@ticket-platform/sdk-client": ["../../packages/sdk-client/dist/index.d.ts"],
+      "viem": ["../../packages/sdk-client/node_modules/viem/_types/index.d.ts"],
+      "viem/*": ["../../packages/sdk-client/node_modules/viem/_types/*"]
+    }
   },
   "include": ["src"]
 }
