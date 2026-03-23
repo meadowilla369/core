@@ -1,5 +1,12 @@
 export type LogLevel = "info" | "warn" | "error";
 
+export type LogFn = (
+  service: string,
+  level: LogLevel,
+  message: string,
+  meta?: Record<string, unknown>
+) => void;
+
 export interface LogMeta {
   [key: string]: unknown;
 }

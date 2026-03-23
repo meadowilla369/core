@@ -5,6 +5,14 @@ export interface ContractSyncConfig {
   internalApiKey: string;
 }
 
+/** Optional RPC listener configuration — loaded from env, absent when not set. */
+export interface RpcConfig {
+  rpcUrl: string;
+  chainId: number;
+  ticketNftAddress: `0x${string}`;
+  marketplaceAddress: `0x${string}`;
+}
+
 function parseNumber(value: string | undefined, fallback: number): number {
   if (!value) {
     return fallback;
@@ -20,5 +28,26 @@ export function loadConfig(): ContractSyncConfig {
     host: process.env.HOST ?? "127.0.0.1",
     port: parseNumber(process.env.PORT, 3014),
     internalApiKey: process.env.INTERNAL_API_KEY ?? "internal-dev-key"
+  };
+}
+
+/**
+ * Returns RpcConfig when all required env vars are present, otherwise null.
+ * Callers should check for null and skip starting the RPC listener.
+ */
+export function loadRpcConfig(): RpcConfig | null {
+  const rpcUrl = process.env.RPC_URL?.trim();
+  const ticketNft = process.env.TICKET_NFT_ADDRESS?.trim();
+  const marketplace = process.env.MARKETPLACE_ADDRESS?.trim();
+
+  if (!rpcUrl || !ticketNft || !marketplace) {
+    return null;
+  }
+
+  return {
+    rpcUrl,
+    chainId: parseNumber(process.env.CHAIN_ID, 31337),
+    ticketNftAddress: ticketNft as `0x${string}`,
+    marketplaceAddress: marketplace as `0x${string}`
   };
 }

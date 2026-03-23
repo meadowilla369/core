@@ -258,7 +258,11 @@ described in `docs/MIGRATION-BLUEPRINT.md`.
 ### Pending (next workstreams)
 
 - pending Frontend: EIP-7702 delegated TX builder (EOA → Handler.executeBatch).
-- pending contract-sync-service: live RPC log subscription (viem watchContractEvent).
+- [x] contract-sync-service: live RPC log subscription (viem watchContractEvent) — event-mapper.ts
+      (pure mapTransfer/mapTicketUsed/mapTicketRefunded/mapListed/mapListingCancelled/mapSaleCompleted),
+      RpcListener class (watchContractEvent on TicketNFT + Marketplace, HTTP+WS transport),
+      ingestEvents() path shared with HTTP server, conditionally started when RPC_URL env set,
+      11 mapper + round-trip tests passing (no live RPC needed).
 
 ## Cross-Phase Exit Criteria (Definition of Done)
 

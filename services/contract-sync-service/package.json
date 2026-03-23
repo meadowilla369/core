@@ -3,14 +3,17 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Contract event consumer and ownership sync service skeleton",
+  "description": "Contract event consumer and ownership sync service with live RPC listener",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "node --watch --experimental-strip-types src/index.ts",
     "start": "node dist/index.js",
-    "test": "tsc -p tsconfig.json && node --test test/server.test.mjs",
+    "test": "tsc -p tsconfig.json && node --test test/server.test.mjs && node --test test/rpc-listener.test.mjs",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "format": "prettier src --check"
+  },
+  "dependencies": {
+    "viem": "^2.21.0"
   }
 }

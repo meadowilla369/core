@@ -1,4 +1,4 @@
-import { createServer, IncomingMessage, ServerResponse } from "node:http";
+import { createServer, IncomingMessage, ServerResponse, type Server } from "node:http";
 
 import type { ContractSyncConfig } from "./config.js";
 import { log } from "./logger.js";
@@ -83,7 +83,10 @@ function extractSingleHeader(req: IncomingMessage, headerName: string): string |
   return trimmed ? trimmed : null;
 }
 
-function getPayloadString(payload: Record<string, unknown> | undefined, key: string): string | null {
+function getPayloadString(
+  payload: Record<string, unknown> | undefined,
+  key: string
+): string | null {
   if (!payload) {
     return null;
   }
@@ -97,7 +100,17 @@ function getPayloadString(payload: Record<string, unknown> | undefined, key: str
   return trimmed || null;
 }
 
-export function createContractSyncServer(config: ContractSyncConfig) {
+export interface ContractSyncApp {
+  server: Server;
+  /** Directly ingest a batch of pre-mapped events (used by RpcListener). */
+  ingestEvents: (events: ContractEventInput[]) => void;
+}
+
+export function createContractSyncServer(config: ContractSyncConfig): Server {
+  return createContractSyncApp(config).server;
+}
+
+export function createContractSyncApp(config: ContractSyncConfig): ContractSyncApp {
   const processedEventKeys = new Set<string>();
   const tokenStateById = new Map<string, TokenSyncState>();
 
@@ -184,11 +197,14 @@ export function createContractSyncServer(config: ContractSyncConfig) {
       current.ownerUserId = getPayloadString(payload, "toUserId");
     } else if (normalized === "ticketused") {
       current.isUsed = true;
-      current.usedAt = getPayloadString(payload, "usedAt") ?? event.occurredAt?.trim() ?? new Date().toISOString();
+      current.usedAt =
+        getPayloadString(payload, "usedAt") ?? event.occurredAt?.trim() ?? new Date().toISOString();
     } else if (normalized === "ticketrefunded") {
       current.isRefunded = true;
       current.refundedAt =
-        getPayloadString(payload, "refundedAt") ?? event.occurredAt?.trim() ?? new Date().toISOString();
+        getPayloadString(payload, "refundedAt") ??
+        event.occurredAt?.trim() ??
+        new Date().toISOString();
     } else if (normalized === "listingstatuschanged") {
       const status = getPayloadString(payload, "status")?.toLowerCase();
       if (status !== "active" && status !== "cancelled" && status !== "completed") {
@@ -229,7 +245,13 @@ export function createContractSyncServer(config: ContractSyncConfig) {
     };
   };
 
-  return createServer(async (req, res) => {
+  const ingestEvents = (events: ContractEventInput[]): void => {
+    for (const event of events) {
+      applyEvent(event);
+    }
+  };
+
+  const server = createServer(async (req, res) => {
     try {
       const method = req.method ?? "GET";
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
@@ -261,7 +283,7 @@ export function createContractSyncServer(config: ContractSyncConfig) {
 
         const body = await readJson<ContractEventBatchInput | ContractEventInput>(req);
         const events = Array.isArray((body as ContractEventBatchInput).events)
-          ? (body as ContractEventBatchInput).events ?? []
+          ? ((body as ContractEventBatchInput).events ?? [])
           : [body as ContractEventInput];
 
         if (events.length === 0) {
@@ -357,4 +379,6 @@ export function createContractSyncServer(config: ContractSyncConfig) {
       });
     }
   });
+
+  return { server, ingestEvents };
 }
