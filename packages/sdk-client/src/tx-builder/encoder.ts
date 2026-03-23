@@ -23,7 +23,8 @@ import type {
   HandlerCall,
   AuthorizationTuple,
   SignedAuthorization,
-  Eip7702BatchPayload
+  Eip7702BatchPayload,
+  Tx4Request
 } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -145,6 +146,38 @@ export function buildEip7702BatchPayload(
     authorizationList: [signedAuth],
     encodedCalldata: encodeExecuteBatch(calls),
     calls
+  };
+}
+
+/**
+ * Converts a fully-assembled Eip7702BatchPayload into a broadcast-ready Tx4Request.
+ *
+ * The returned object maps onto viem's `sendTransaction` / `eth_sendTransaction` shape.
+ * Fields that require RPC context (nonce, gas, fee data, from) are left `undefined`
+ * so the caller can fill them in from the wallet session + an RPC fee-estimation call.
+ *
+ * @param payload     The assembled EIP-7702 batch payload (from buildEip7702BatchPayload).
+ * @param from        The EOA address that will sign + send (optional — set after wallet auth).
+ * @returns           A Tx4Request ready for fee-estimation and broadcast.
+ */
+export function assembleTx4(payload: Eip7702BatchPayload, from?: `0x${string}`): Tx4Request {
+  if (payload.authorizationList.length === 0) {
+    throw new Error("assembleTx4: authorizationList must not be empty");
+  }
+  const auth = payload.authorizationList[0]!;
+  return {
+    type: 4,
+    from: from,
+    to: auth.address,
+    data: payload.encodedCalldata,
+    value: 0n,
+    authorizationList: payload.authorizationList,
+    chainId: auth.chainId,
+    // RPC-dependent fields — caller must fill these before broadcasting
+    nonce: undefined,
+    gas: undefined,
+    maxFeePerGas: undefined,
+    maxPriorityFeePerGas: undefined
   };
 }
 

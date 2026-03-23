@@ -24,11 +24,14 @@ import { encodeFunctionData } from "viem";
 import {
   buildAuthorizationTuple,
   buildEip7702BatchPayload,
+  assembleTx4,
   hashAuthorizationTuple,
   validateCalls,
   type Eip7702BatchPayload,
   type AuthorizationTuple,
-  type SignedAuthorization
+  type SignedAuthorization,
+  type Tx4Request,
+  type WalletSigner
 } from "@ticket-platform/sdk-client";
 
 // ---------------------------------------------------------------------------
@@ -87,6 +90,29 @@ export interface PurchaseTxUnsigned {
    * Call this with the ECDSA components from the wallet to get the submittable tx.
    */
   assemble(signedAuth: SignedAuthorization): Eip7702BatchPayload;
+}
+
+// ---------------------------------------------------------------------------
+// Orchestrated flow result
+// ---------------------------------------------------------------------------
+
+/**
+ * The result of a complete prepare → sign → assemble cycle.
+ *
+ * `tx4` is broadcast-ready except for the RPC-dependent fields (nonce, gas,
+ * maxFeePerGas, maxPriorityFeePerGas) which are marked `undefined`.  The
+ * caller fills those from an `eth_estimateGas` / `eth_feeHistory` call before
+ * passing to `eth_sendRawTransaction`.
+ */
+export interface PurchaseFlowResult {
+  /** The signed EIP-7702 payload (authorizationList + encodedCalldata + raw calls). */
+  payload: Eip7702BatchPayload;
+  /**
+   * Broadcast-ready type-4 transaction request.
+   * RPC-dependent fields (nonce, gas, maxFeePerGas, maxPriorityFeePerGas) are
+   * `undefined` — fill them from the RPC before broadcast.
+   */
+  tx4: Tx4Request;
 }
 
 // ---------------------------------------------------------------------------
@@ -151,3 +177,57 @@ export function buildPurchaseTx(params: PurchaseTxParams): PurchaseTxUnsigned {
     }
   };
 }
+
+// ---------------------------------------------------------------------------
+// Orchestrated prepare → sign → assemble flow
+// ---------------------------------------------------------------------------
+
+/**
+ * Runs the full client-side prepare → sign → assemble cycle.
+ *
+ * This is the single entry-point the mobile UI calls once the backend has
+ * returned a paymentHash + signature and the user is authenticated.
+ *
+ * Steps:
+ *   1. buildPurchaseTx()     — encode calldata, build authorizationTuple
+ *   2. signer.signAuthorization() — wallet signs the authorization hash
+ *   3. assemble(signedAuth)  — merge signature into final Eip7702BatchPayload
+ *   4. assembleTx4()         — wrap into a broadcast-ready Tx4Request
+ *
+ * The returned tx4 has type=4 and all chain-data fields filled.  The caller
+ * must still fetch nonce / gas / fee data from the RPC before broadcasting.
+ *
+ * REMAINING GAP:
+ *   Broadcast requires a live RPC connection (e.g. viem PublicClient +
+ *   WalletClient pointed at a Pectra-enabled node).  That wiring is out of
+ *   scope for this client-only workstream and is explicitly left undefined in
+ *   tx4.nonce / tx4.gas / tx4.maxFeePerGas / tx4.maxPriorityFeePerGas.
+ *
+ * @param params  Purchase parameters (same as buildPurchaseTx).
+ * @param signer  WalletSigner implementation.  Use MockEOASigner for tests.
+ * @returns       PurchaseFlowResult with fully-assembled payload and Tx4Request.
+ */
+export async function executePurchaseFlow(
+  params: PurchaseTxParams,
+  signer: WalletSigner
+): Promise<PurchaseFlowResult> {
+  // 1. Prepare — pure encoding, no async
+  const unsigned = buildPurchaseTx(params);
+
+  // 2. Sign — async call to wallet (may show UI prompt in real implementation)
+  const signedAuth = await signer.signAuthorization(
+    unsigned.authorizationTuple,
+    unsigned.authorizationHash
+  );
+
+  // 3. Assemble — merge signature into final payload
+  const payload = unsigned.assemble(signedAuth);
+
+  // 4. Wrap into type-4 tx request (from address = signer.address)
+  const tx4 = assembleTx4(payload, signer.address);
+
+  return { payload, tx4 };
+}
+
+// Re-export the types the mobile app layer needs from its public surface
+export type { WalletSigner, Tx4Request, Eip7702BatchPayload, SignedAuthorization };

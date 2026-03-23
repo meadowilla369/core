@@ -51,3 +51,42 @@ export interface Eip7702BatchPayload {
   /** Raw Call structs kept alongside the encoded form for logging/debugging. */
   calls: HandlerCall[];
 }
+
+/**
+ * A broadcast-ready EIP-7702 (type-4, SET_CODE) transaction request.
+ *
+ * Field names match viem's `sendTransaction` / `eth_sendTransaction` shape so
+ * callers can pass this directly to `walletClient.sendTransaction(tx4)` once a
+ * real RPC connection is available.
+ *
+ * Fields left as `undefined` must be filled in by the broadcast layer:
+ *  - `from`    — the EOA address (known after wallet sign-in)
+ *  - `to`      — the Handler address (same as authorizationList[0].address)
+ *  - `nonce`   — transaction nonce (may differ from authorization nonce)
+ *  - `gas`     — estimated gas (requires RPC call to eth_estimateGas)
+ *  - `maxFeePerGas` / `maxPriorityFeePerGas` — requires RPC fee data
+ */
+export interface Tx4Request {
+  /** Always 4 for EIP-7702 SET_CODE transactions. */
+  type: 4;
+  /** The EOA address sending the transaction. Fill in from authenticated wallet. */
+  from: `0x${string}` | undefined;
+  /** Handler contract address (receives the executeBatch call). */
+  to: `0x${string}`;
+  /** ABI-encoded Handler.executeBatch(calls) calldata. */
+  data: `0x${string}`;
+  /** ETH value forwarded with the transaction (in wei). 0n for pure state changes. */
+  value: bigint;
+  /** EIP-7702 authorization list — one entry per delegated EOA. */
+  authorizationList: SignedAuthorization[];
+  /**
+   * Remaining fields that require RPC/wallet context to fill.
+   * They are typed but left undefined here to make the gap explicit.
+   */
+  nonce: number | undefined;
+  gas: bigint | undefined;
+  maxFeePerGas: bigint | undefined;
+  maxPriorityFeePerGas: bigint | undefined;
+  /** Chain ID the transaction targets (from the authorization tuple). */
+  chainId: bigint;
+}

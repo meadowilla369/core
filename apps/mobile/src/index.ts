@@ -139,4 +139,11 @@ export function bootstrap(): MobileBuyerApp {
   return new MobileBuyerApp();
 }
 
-export type { PurchaseTxParams, PurchaseTxUnsigned } from "./features/wallet-tx.js";
+export type {
+  PurchaseTxParams,
+  PurchaseTxUnsigned,
+  PurchaseFlowResult,
+  WalletSigner,
+  Tx4Request
+} from "./features/wallet-tx.js";
+export { executePurchaseFlow } from "./features/wallet-tx.js";
