@@ -13,6 +13,7 @@
     "test:integration": "node scripts/run-integration-test.mjs",
     "test:integration-suite": "cd packages/integration-suite && npm run test",
     "test:integration:payment-orchestrator": "cd packages/integration-suite && npm run test:payment-orchestrator",
+    "test:integration:marketplace-service": "cd packages/integration-suite && npm run test:marketplace-service",
     "lint": "PATH=\"$PWD/bin:$PATH\" turbo run lint",
     "typecheck": "PATH=\"$PWD/bin:$PATH\" turbo run typecheck",
     "format": "PATH=\"$PWD/bin:$PATH\" turbo run format",

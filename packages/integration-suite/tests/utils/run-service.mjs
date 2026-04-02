@@ -76,8 +76,12 @@ async function main() {
 
   const definition = SERVICE_MODULES[serviceKey];
 
-  const configModule = await import(pathToFileURL(path.resolve(REPO_ROOT, definition.configPath)).href);
-  const serverModule = await import(pathToFileURL(path.resolve(REPO_ROOT, definition.serverPath)).href);
+  const configModule = await import(
+    pathToFileURL(path.resolve(REPO_ROOT, definition.configPath)).href
+  );
+  const serverModule = await import(
+    pathToFileURL(path.resolve(REPO_ROOT, definition.serverPath)).href
+  );
 
   const loadConfig = configModule.loadConfig;
   const createServer = serverModule[definition.createExport];
@@ -91,7 +95,7 @@ async function main() {
   }
 
   const config = loadConfig();
-  const server = createServer(config);
+  const server = await createServer(config);
 
   server.listen(config.port, config.host);
 

@@ -5,6 +5,9 @@ import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 
+import { requestJson } from "../utils/http.mjs";
+import { resetPostgresTables } from "../utils/postgres.mjs";
+import { startService, stopService, waitForHealth } from "../utils/process.mjs";
 import { createWebhookSignature } from "../utils/signatures.mjs";
 import { disposeServer, invokeJson } from "../utils/server-harness.mjs";
 
@@ -14,6 +17,26 @@ const BACKEND_SIGNER_PRIVATE_KEY =
   "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 const TICKET_LEDGER_ADDRESS = "0x1000000000000000000000000000000000000001";
 const BUYER_WALLET_ADDRESS = "0x000000000000000000000000000000000000dead";
+const PROCESS_SERVICE_ENV = {
+  HOST: "127.0.0.1",
+  PORT: "3106",
+  MOMO_WEBHOOK_SECRET: "momo_dev_secret",
+  VNPAY_WEBHOOK_SECRET: "vnpay_dev_secret",
+  BACKEND_SIGNER_PRIVATE_KEY,
+  TICKET_LEDGER_CHAIN_ID: "84532",
+  TICKET_LEDGER_ADDRESS,
+  RETRY_BASE_DELAY_SEC: "1"
+};
+const PROCESS_SERVICE_BASE_URL = `http://${PROCESS_SERVICE_ENV.HOST}:${PROCESS_SERVICE_ENV.PORT}`;
+const PAYMENT_TABLES = [
+  "payment_retry_jobs",
+  "payment_webhook_events",
+  "payment_webhook_nonces",
+  "payment_hashes",
+  "payment_idempotency",
+  "payment_wallet_prefunds",
+  "payment_intents"
+];
 
 async function importFromRepo(relativePath) {
   return import(pathToFileURL(path.resolve(REPO_ROOT, relativePath)).href);
@@ -190,6 +213,33 @@ async function confirmPayment(server, paymentIntent, overrides = {}) {
     body: payload
   });
 }
+
+async function startPaymentOrchestratorProcess() {
+  const handle = startService(
+    "payment-orchestrator",
+    "payment-orchestrator",
+    PROCESS_SERVICE_ENV,
+    process.cwd()
+  );
+
+  try {
+    await waitForHealth(PROCESS_SERVICE_BASE_URL);
+    return handle;
+  } catch (error) {
+    await stopService(handle);
+    throw error;
+  }
+}
+
+async function requestProcessJson(path, options = {}) {
+  const result = await requestJson(PROCESS_SERVICE_BASE_URL, path, options);
+  assert.equal(result.payload.success, true, JSON.stringify(result.payload));
+  return result;
+}
+
+test.beforeEach(async () => {
+  await resetPostgresTables(PAYMENT_TABLES);
+});
 
 test("payment-orchestrator prefunds wallet only once", async () => {
   const server = await createServer();
@@ -463,5 +513,124 @@ test("payment-orchestrator expires issued payment hashes after the configured TT
     assert.equal(expired.paymentHash, issued.paymentHash);
   } finally {
     disposeServer(server);
+  }
+});
+
+test("payment-orchestrator persists wallet bootstrap, webhook state, and payment hash across restart", async () => {
+  await resetPostgresTables(PAYMENT_TABLES);
+
+  let service = await startPaymentOrchestratorProcess();
+
+  try {
+    const registeredWallet = (
+      await requestProcessJson("/api/wallet/register", {
+        method: "POST",
+        headers: {
+          "x-user-id": "usr_pr05_restart_001"
+        },
+        body: {
+          walletAddress: BUYER_WALLET_ADDRESS
+        }
+      })
+    ).payload.data;
+
+    const paymentIntent = (
+      await requestProcessJson("/api/payment/initiate", {
+        method: "POST",
+        headers: {
+          "x-user-id": "usr_pr05_restart_001"
+        },
+        body: {
+          orderId: "ord_pr05_restart_001",
+          reservationId: "res_pr05_restart_001",
+          amount: 910000,
+          currency: "VND",
+          gateway: "momo",
+          eventId: 44,
+          ticketTypeId: 8,
+          quantity: 2,
+          ticketIds: ["seat_restart_01", "seat_restart_02"],
+          buyerWalletAddress: BUYER_WALLET_ADDRESS
+        }
+      })
+    ).payload.data;
+
+    const webhookPayload = {
+      eventId: "evt_pr05_restart_001",
+      paymentId: paymentIntent.paymentId,
+      orderId: paymentIntent.orderId,
+      status: "success",
+      amount: paymentIntent.amount,
+      currency: "VND",
+      gatewayTransactionId: "tx_pr05_restart_001"
+    };
+    const rawBody = JSON.stringify(webhookPayload);
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const nonce = "nonce_pr05_restart_001";
+    const signature = createWebhookSignature({
+      timestamp,
+      nonce,
+      rawBody,
+      secret: "momo_dev_secret"
+    });
+
+    const webhook = await requestProcessJson("/webhooks/momo", {
+      method: "POST",
+      headers: {
+        "x-webhook-signature": signature,
+        "x-webhook-timestamp": timestamp,
+        "x-webhook-nonce": nonce
+      },
+      body: webhookPayload
+    });
+    assert.equal(webhook.payload.data.status, "processed");
+    assert.equal(webhook.payload.data.paymentHashIssued, true);
+
+    const issuedHash = (await requestProcessJson(`/api/payment/hash/${paymentIntent.orderId}`))
+      .payload.data;
+    assert.equal(issuedHash.status, "ready");
+
+    await stopService(service);
+    service = await startPaymentOrchestratorProcess();
+
+    const health = (await requestProcessJson("/healthz")).payload.data;
+    assert.equal(health.paymentCount, 1);
+    assert.equal(health.issuedPaymentHashCount, 1);
+    assert.equal(health.prefundedWalletCount, 1);
+
+    const restoredWallet = (await requestProcessJson(`/api/wallet/prefund/${BUYER_WALLET_ADDRESS}`))
+      .payload.data;
+    assert.equal(restoredWallet.funded, true);
+    assert.equal(restoredWallet.txHash, registeredWallet.prefundTxHash);
+    assert.equal(restoredWallet.amountWei, registeredWallet.amountWei);
+
+    const restoredHash = (await requestProcessJson(`/api/payment/hash/${paymentIntent.orderId}`))
+      .payload.data;
+    assert.equal(restoredHash.status, "ready");
+    assert.equal(restoredHash.paymentHash, issuedHash.paymentHash);
+    assert.equal(restoredHash.signature, issuedHash.signature);
+    assert.equal(restoredHash.nonce, issuedHash.nonce);
+    assert.equal(restoredHash.signerAddress, issuedHash.signerAddress);
+
+    const duplicateWebhook = (
+      await requestProcessJson("/webhooks/momo", {
+        method: "POST",
+        headers: {
+          "x-webhook-signature": createWebhookSignature({
+            timestamp: String(Math.floor(Date.now() / 1000)),
+            nonce: "nonce_pr05_restart_002",
+            rawBody,
+            secret: "momo_dev_secret"
+          }),
+          "x-webhook-timestamp": String(Math.floor(Date.now() / 1000)),
+          "x-webhook-nonce": "nonce_pr05_restart_002"
+        },
+        body: webhookPayload
+      })
+    ).payload.data;
+    assert.equal(duplicateWebhook.status, "duplicate");
+    assert.equal(duplicateWebhook.lastProcessedStatus, "processed");
+  } finally {
+    await stopService(service);
   }
 });

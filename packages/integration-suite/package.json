@@ -14,6 +14,7 @@
     "test:flow5": "npm run build:services && node --test --test-concurrency=1 tests/integration/flow5-refund.test.mjs",
     "test:contract-sync": "npm run build:services && node --test --test-concurrency=1 tests/integration/contract-sync-service.test.mjs",
     "test:payment-orchestrator": "npm run build:services && node --test --test-concurrency=1 tests/integration/payment-orchestrator.test.mjs",
+    "test:marketplace-service": "npm run build:services && node --test --test-concurrency=1 tests/integration/marketplace-service.test.mjs",
     "test:e2e": "npm run build:services && node --test --test-concurrency=1 tests/e2e/*.test.mjs",
     "test:load": "npm run build:services && node --test --test-concurrency=1 tests/perf/load.test.mjs",
     "test:chaos": "npm run build:services && node --test --test-concurrency=1 tests/perf/chaos.test.mjs",
