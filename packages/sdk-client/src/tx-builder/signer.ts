@@ -84,7 +84,9 @@ export class MockEOASigner implements WalletSigner {
     const s = `0x${hashHex.split("").reverse().join("").padStart(64, "0")}` as `0x${string}`;
 
     return {
-      ...tuple,
+      address: tuple.address,
+      chainId: Number(tuple.chainId),
+      nonce: Number(tuple.nonce),
       yParity: 0,
       r,
       s

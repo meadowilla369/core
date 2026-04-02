@@ -6,6 +6,8 @@
  * Solidity artefacts directly.
  */
 
+import type { AuthorizationList as ViemAuthorizationList } from "viem";
+
 /** Mirrors IHandler.Call: one atomic call in the batch. */
 export interface HandlerCall {
   /** Contract address to call (must be on paymaster's allowlist). */
@@ -31,13 +33,11 @@ export interface AuthorizationTuple {
 
 /**
  * A signed EIP-7702 authorization tuple ready to include in a type-4 tx.
- * yParity + r + s are the ECDSA components over the authorisation hash.
+ *
+ * Aliased to viem's AuthorizationList element type so this package stays wire-
+ * compatible with `walletClient.sendTransaction({ type: "eip7702", ... })`.
  */
-export interface SignedAuthorization extends AuthorizationTuple {
-  yParity: 0 | 1;
-  r: `0x${string}`;
-  s: `0x${string}`;
-}
+export type SignedAuthorization = ViemAuthorizationList<number, true>[number];
 
 /**
  * Complete EIP-7702 batch payload ready to hand off to a wallet or RPC.
@@ -78,7 +78,7 @@ export interface Tx4Request {
   /** ETH value forwarded with the transaction (in wei). 0n for pure state changes. */
   value: bigint;
   /** EIP-7702 authorization list — one entry per delegated EOA. */
-  authorizationList: SignedAuthorization[];
+  authorizationList: ViemAuthorizationList<number, true>;
   /**
    * Remaining fields that require RPC/wallet context to fill.
    * They are typed but left undefined here to make the gap explicit.
@@ -87,6 +87,6 @@ export interface Tx4Request {
   gas: bigint | undefined;
   maxFeePerGas: bigint | undefined;
   maxPriorityFeePerGas: bigint | undefined;
-  /** Chain ID the transaction targets (from the authorization tuple). */
-  chainId: bigint;
+  /** Chain ID the transaction targets (from the signed authorization). */
+  chainId: number;
 }

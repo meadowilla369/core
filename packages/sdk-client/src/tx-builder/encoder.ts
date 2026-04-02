@@ -9,16 +9,8 @@
  * No wallet or RPC dependency — these are pure client-side construction helpers.
  */
 
-import {
-  encodeFunctionData,
-  keccak256,
-  encodeAbiParameters,
-  parseAbiParameters,
-  concat,
-  toBytes,
-  toHex,
-  getAddress
-} from "viem";
+import { encodeFunctionData, getAddress } from "viem";
+import { hashAuthorization } from "viem/utils";
 import type {
   HandlerCall,
   AuthorizationTuple,
@@ -52,12 +44,6 @@ const HANDLER_ABI = [
 ] as const;
 
 // ---------------------------------------------------------------------------
-// EIP-7702 magic prefix (per EIP-7702 §3)
-// keccak256("eip7702")  — used to domain-separate the authorization hash
-// ---------------------------------------------------------------------------
-const EIP7702_MAGIC = "0x05" as const;
-
-// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -88,28 +74,27 @@ export function encodeExecuteBatch(calls: HandlerCall[]): `0x${string}` {
 /**
  * Computes the EIP-7702 authorization hash that the EOA must sign.
  *
- * Per EIP-7702 §3 the signing hash is:
+ * Uses viem's canonical EIP-7702 helper:
  *   keccak256(0x05 || rlp([chain_id, address, nonce]))
- *
- * We approximate the RLP for the common case by ABI-encoding the three fields
- * (this matches how viem/ethers implement it in practice for type-4 txs).
- * A full RLP implementation is not needed for the builder — the wallet handles
- * final signing; this helper lets callers preview or unit-test the hash.
  *
  * @param tuple  The unsigned authorization tuple.
  * @returns The 32-byte authorization hash as a hex string.
  */
 export function hashAuthorizationTuple(tuple: AuthorizationTuple): `0x${string}` {
-  // Encode: (chainId uint256, address address, nonce uint64)
-  // getAddress normalises to EIP-55 checksum form which viem requires.
-  const encoded = encodeAbiParameters(
-    parseAbiParameters("uint256 chainId, address addr, uint64 nonce"),
-    [tuple.chainId, getAddress(tuple.address), tuple.nonce]
-  );
+  if (!Number.isSafeInteger(Number(tuple.chainId))) {
+    throw new Error(
+      "hashAuthorizationTuple: chainId must be a safe integer for viem compatibility"
+    );
+  }
+  if (!Number.isSafeInteger(Number(tuple.nonce))) {
+    throw new Error("hashAuthorizationTuple: nonce must be a safe integer for viem compatibility");
+  }
 
-  // Prepend the EIP-7702 magic byte and hash
-  const payload = concat([toBytes(EIP7702_MAGIC), toBytes(encoded)]);
-  return keccak256(toHex(payload));
+  return hashAuthorization({
+    chainId: Number(tuple.chainId),
+    address: getAddress(tuple.address),
+    nonce: Number(tuple.nonce)
+  });
 }
 
 /**

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if command -v pnpm >/dev/null 2>&1 && [[ "$(command -v pnpm)" != "$0" ]]; then
+  exec pnpm "$@"
+fi
+
+exec npm exec --yes pnpm@9.0.0 -- "$@"
