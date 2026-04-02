@@ -3,7 +3,7 @@ import { log } from "./logger.js";
 import { createPaymentOrchestratorServer } from "./server.js";
 
 const config = loadConfig();
-const server = createPaymentOrchestratorServer(config);
+const server = await createPaymentOrchestratorServer(config);
 
 server.listen(config.port, config.host, () => {
   log(config.serviceName, "info", "Payment orchestrator listening", {

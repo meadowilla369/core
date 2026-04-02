@@ -35,6 +35,8 @@ Start infra dependencies (Postgres, Redis, MinIO) plus all runnable services and
 - `user-service` persists user profiles, devices, and audit logs in Postgres.
 - `event-service` persists events/ticket types in Postgres (source of truth for inventory).
 - `ticketing-service` persists reservations/tickets/inventory in Postgres and uses Redis for idempotency caching. Inventory is synced from `event-service` on startup; use `POST /tickets/inventory/sync` to re-sync. Local operational state (locked_count) is owned by ticketing-service.
+- `payment-orchestrator` persists payment intents, webhook/reconciliation state, wallet bootstrap records, and payment hashes in Postgres.
+- `marketplace-service` persists listings, sales/settlements, idempotency state, and buy-hash issuance state in Postgres.
 - `kyc-service` persists workflow state in Postgres and archives KYC payload snapshots to MinIO.
 
 ```bash
@@ -72,7 +74,7 @@ cp .env.example .env
 - `.env.example` contains the full local dev baseline, including `DATABASE_URL`, `REDIS_URL`, and MinIO settings.
 - `docker-compose.yml` provides local Postgres, Redis, and MinIO services.
 - `scripts/dev-stack.sh` boots the full host-side app stack.
-- Persistence is wired for `auth-service`, `user-service`, `event-service`, `ticketing-service`, and `kyc-service`; the remaining services still run with in-memory/mock state.
+- Persistence is wired for `auth-service`, `user-service`, `event-service`, `ticketing-service`, `payment-orchestrator`, `marketplace-service`, and `kyc-service`; the remaining services still run with in-memory/mock state.
 - `ticketing-service` syncs its inventory from `event-service` on startup. To manually re-sync: `curl -X POST http://127.0.0.1:3005/tickets/inventory/sync`. View current inventory: `curl http://127.0.0.1:3005/tickets/inventory`.
 
 ## Quality checks

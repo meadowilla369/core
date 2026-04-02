@@ -16,6 +16,12 @@ export interface MarketplaceConfig {
   buyHashTtlSec?: number;
 }
 
+export const DEFAULT_MARKETPLACE_CHAIN_ID = 84532;
+export const DEFAULT_MARKETPLACE_ADDRESS = "0x2000000000000000000000000000000000000002";
+export const DEFAULT_BUY_HASH_TTL_SEC = 24 * 60 * 60;
+export const DEFAULT_BACKEND_SIGNER_PRIVATE_KEY =
+  "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+
 function parseNumber(value: string | undefined, fallback: number): number {
   if (!value) {
     return fallback;
@@ -33,6 +39,11 @@ export function loadConfig(): MarketplaceConfig {
     maxMarkupBps: parseNumber(process.env.MAX_MARKUP_BPS, 12000),
     platformFeeBps: parseNumber(process.env.PLATFORM_FEE_BPS, 500),
     organizerRoyaltyBps: parseNumber(process.env.ORGANIZER_ROYALTY_BPS, 200),
-    internalApiKey: process.env.INTERNAL_API_KEY ?? "internal_dev_key"
+    internalApiKey: process.env.INTERNAL_API_KEY ?? "internal_dev_key",
+    backendSignerPrivateKey:
+      process.env.BACKEND_SIGNER_PRIVATE_KEY ?? DEFAULT_BACKEND_SIGNER_PRIVATE_KEY,
+    marketplaceChainId: parseNumber(process.env.MARKETPLACE_CHAIN_ID, DEFAULT_MARKETPLACE_CHAIN_ID),
+    marketplaceAddress: process.env.MARKETPLACE_ADDRESS ?? DEFAULT_MARKETPLACE_ADDRESS,
+    buyHashTtlSec: parseNumber(process.env.BUY_HASH_TTL_SEC, DEFAULT_BUY_HASH_TTL_SEC)
   };
 }

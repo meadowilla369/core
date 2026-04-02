@@ -3,7 +3,7 @@ import { log } from "./logger.js";
 import { createMarketplaceServer } from "./server.js";
 
 const config = loadConfig();
-const server = createMarketplaceServer(config);
+const server = await createMarketplaceServer(config);
 
 server.listen(config.port, config.host, () => {
   log(config.serviceName, "info", "Marketplace service listening", {

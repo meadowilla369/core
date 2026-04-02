@@ -1,6 +1,9 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 
+import { createPostgresPool, queryMany, queryOne } from "@ticket-platform/local-infra";
+import type { Pool } from "pg";
+
 import {
   DEFAULT_BACKEND_SIGNER_PRIVATE_KEY,
   DEFAULT_PAYMENT_HASH_TTL_SEC,
@@ -143,14 +146,96 @@ interface ProcessWebhookResult {
   paymentHashRecord?: PaymentHashRecord | null;
 }
 
+interface PaymentIntentRow {
+  id: string;
+  order_id: string;
+  reservation_id: string;
+  user_id: string;
+  amount: number | string;
+  currency: "VND";
+  gateway: PaymentGateway;
+  status: PaymentStatus;
+  created_at: string | Date;
+  updated_at: string | Date;
+  gateway_transaction_id: string | null;
+  event_id: number | string | null;
+  ticket_type_id: number | string | null;
+  quantity: number | string | null;
+  ticket_ids: string[];
+  buyer_wallet_address: string | null;
+}
+
+interface WebhookEventRow {
+  id: string;
+  gateway: PaymentGateway;
+  event_key: string;
+  payment_reference: string;
+  payload_digest: string;
+  raw_payload: string;
+  status: WebhookEventStatus;
+  attempt_count: number | string;
+  created_at: string | Date;
+  updated_at: string | Date;
+  last_error: string | null;
+}
+
+interface RetryJobRow {
+  id: string;
+  event_key: string;
+  gateway: PaymentGateway;
+  payment_reference: string;
+  attempt: number | string;
+  next_retry_at: string | Date;
+  last_error: string;
+  created_at: string | Date;
+  updated_at: string | Date;
+}
+
+interface WalletBootstrapRow {
+  wallet_address: string;
+  user_id: string;
+  prefund_tx_hash: string;
+  amount_wei: string;
+  funded_at: string | Date;
+  updated_at: string | Date;
+}
+
+interface PaymentHashRow {
+  order_id: string;
+  payment_id: string;
+  user_id: string;
+  amount: number | string;
+  nonce: string;
+  payment_hash: string;
+  signature: string;
+  signer_address: string;
+  status: PaymentHashLifecycleStatus;
+  issued_at: string | Date;
+  expires_at: string | Date;
+  event_id: number | string;
+  ticket_type_id: number | string;
+  quantity: number | string;
+  ticket_ids: string[];
+  buyer_wallet_address: string;
+  chain_id: number | string;
+  verifying_contract: string;
+  typed_data: PurchaseTypedData;
+}
+
+interface IdempotencyRow {
+  scope: string;
+  response: unknown;
+  expires_at: string | Date;
+}
+
 function sendJson(res: ServerResponse, statusCode: number, payload: unknown): void {
   res.statusCode = statusCode;
   res.setHeader("content-type", "application/json; charset=utf-8");
   res.end(JSON.stringify(payload));
 }
 
-function toIso(ms: number): string {
-  return new Date(ms).toISOString();
+function toIso(value: string | Date): string {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
 function extractSingleHeader(req: IncomingMessage, headerName: string): string | null {
@@ -209,23 +294,15 @@ function normalizeStatus(rawStatus: string | undefined): PaymentStatus | null {
   }
 
   const normalized = rawStatus.trim().toLowerCase();
-  if (
-    normalized === "paid" ||
-    normalized === "success" ||
-    normalized === "succeeded" ||
-    normalized === "confirmed"
-  ) {
+  if (["paid", "success", "succeeded", "confirmed"].includes(normalized)) {
     return "confirmed";
   }
-
-  if (normalized === "failed" || normalized === "error" || normalized === "declined") {
+  if (["failed", "error", "declined"].includes(normalized)) {
     return "failed";
   }
-
-  if (normalized === "cancelled" || normalized === "canceled") {
+  if (["cancelled", "canceled"].includes(normalized)) {
     return "cancelled";
   }
-
   if (normalized === "pending") {
     return "pending";
   }
@@ -366,7 +443,328 @@ function resolveWebhookGateway(req: IncomingMessage, url: URL): PaymentGateway |
   return rawGateway === "momo" || rawGateway === "vnpay" ? rawGateway : null;
 }
 
-export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfig) {
+function mapPayment(row: PaymentIntentRow): PaymentIntent {
+  return {
+    id: row.id,
+    orderId: row.order_id,
+    reservationId: row.reservation_id,
+    userId: row.user_id,
+    amount: Number(row.amount),
+    currency: row.currency,
+    gateway: row.gateway,
+    status: row.status,
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at),
+    gatewayTransactionId: row.gateway_transaction_id ?? undefined,
+    eventId: row.event_id === null ? undefined : Number(row.event_id),
+    ticketTypeId: row.ticket_type_id === null ? undefined : Number(row.ticket_type_id),
+    quantity: row.quantity === null ? undefined : Number(row.quantity),
+    ticketIds: row.ticket_ids ?? [],
+    buyerWalletAddress: row.buyer_wallet_address ?? undefined
+  };
+}
+
+function mapWebhookEvent(row: WebhookEventRow): WebhookEvent {
+  return {
+    id: row.id,
+    gateway: row.gateway,
+    eventKey: row.event_key,
+    paymentReference: row.payment_reference,
+    payloadDigest: row.payload_digest,
+    rawPayload: row.raw_payload,
+    status: row.status,
+    attemptCount: Number(row.attempt_count),
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at),
+    lastError: row.last_error ?? undefined
+  };
+}
+
+function mapRetryJob(row: RetryJobRow): RetryJob {
+  return {
+    id: row.id,
+    eventKey: row.event_key,
+    gateway: row.gateway,
+    paymentReference: row.payment_reference,
+    attempt: Number(row.attempt),
+    nextRetryAtMs: new Date(row.next_retry_at).getTime(),
+    lastError: row.last_error
+  };
+}
+
+function mapWalletBootstrap(row: WalletBootstrapRow): WalletBootstrapRecord {
+  return {
+    walletAddress: row.wallet_address,
+    userId: row.user_id,
+    prefundTxHash: row.prefund_tx_hash,
+    amountWei: row.amount_wei,
+    fundedAt: toIso(row.funded_at),
+    updatedAt: toIso(row.updated_at)
+  };
+}
+
+function mapPaymentHash(row: PaymentHashRow): PaymentHashRecord {
+  return {
+    orderId: row.order_id,
+    paymentId: row.payment_id,
+    userId: row.user_id,
+    amount: Number(row.amount),
+    nonce: row.nonce,
+    paymentHash: row.payment_hash,
+    signature: row.signature,
+    signerAddress: row.signer_address,
+    status: row.status,
+    issuedAt: toIso(row.issued_at),
+    expiresAt: toIso(row.expires_at),
+    eventId: Number(row.event_id),
+    ticketTypeId: Number(row.ticket_type_id),
+    quantity: Number(row.quantity),
+    ticketIds: row.ticket_ids ?? [],
+    buyerWalletAddress: row.buyer_wallet_address,
+    chainId: Number(row.chain_id),
+    verifyingContract: row.verifying_contract,
+    typedData: row.typed_data
+  };
+}
+
+async function ensureSchema(pool: Pool): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS payment_intents (
+      id TEXT PRIMARY KEY,
+      order_id TEXT NOT NULL UNIQUE,
+      reservation_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      amount INTEGER NOT NULL,
+      currency TEXT NOT NULL,
+      gateway TEXT NOT NULL CHECK (gateway IN ('momo', 'vnpay')),
+      status TEXT NOT NULL CHECK (status IN ('pending', 'confirmed', 'failed', 'cancelled')),
+      gateway_transaction_id TEXT,
+      event_id INTEGER,
+      ticket_type_id INTEGER,
+      quantity INTEGER,
+      ticket_ids TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+      buyer_wallet_address TEXT,
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS payment_webhook_events (
+      id TEXT PRIMARY KEY,
+      gateway TEXT NOT NULL CHECK (gateway IN ('momo', 'vnpay')),
+      event_key TEXT NOT NULL UNIQUE,
+      payment_reference TEXT NOT NULL,
+      payload_digest TEXT NOT NULL,
+      raw_payload TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('processed', 'queued_retry', 'rejected')),
+      attempt_count INTEGER NOT NULL,
+      last_error TEXT,
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS payment_retry_jobs (
+      id TEXT PRIMARY KEY,
+      event_key TEXT NOT NULL UNIQUE REFERENCES payment_webhook_events(event_key) ON DELETE CASCADE,
+      gateway TEXT NOT NULL CHECK (gateway IN ('momo', 'vnpay')),
+      payment_reference TEXT NOT NULL,
+      attempt INTEGER NOT NULL,
+      next_retry_at TIMESTAMPTZ NOT NULL,
+      last_error TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS payment_idempotency (
+      scope TEXT PRIMARY KEY,
+      response JSONB NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS payment_wallet_prefunds (
+      wallet_address TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL UNIQUE,
+      prefund_tx_hash TEXT NOT NULL,
+      amount_wei TEXT NOT NULL,
+      funded_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS payment_hashes (
+      order_id TEXT PRIMARY KEY,
+      payment_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      amount INTEGER NOT NULL,
+      nonce TEXT NOT NULL,
+      payment_hash TEXT NOT NULL,
+      signature TEXT NOT NULL,
+      signer_address TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('issued', 'expired')),
+      issued_at TIMESTAMPTZ NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      event_id INTEGER NOT NULL,
+      ticket_type_id INTEGER NOT NULL,
+      quantity INTEGER NOT NULL,
+      ticket_ids TEXT[] NOT NULL,
+      buyer_wallet_address TEXT NOT NULL,
+      chain_id INTEGER NOT NULL,
+      verifying_contract TEXT NOT NULL,
+      typed_data JSONB NOT NULL
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS payment_webhook_nonces (
+      gateway TEXT NOT NULL,
+      nonce TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (gateway, nonce)
+    );
+  `);
+}
+
+async function cleanupExpiredState(pool: Pool): Promise<void> {
+  await pool.query(`DELETE FROM payment_idempotency WHERE expires_at <= NOW()`);
+  await pool.query(`DELETE FROM payment_webhook_nonces WHERE expires_at <= NOW()`);
+  await pool.query(
+    `UPDATE payment_hashes SET status = 'expired' WHERE status = 'issued' AND expires_at <= NOW()`
+  );
+}
+
+async function getCachedIdempotency(pool: Pool, scope: string | null): Promise<unknown | null> {
+  if (!scope) {
+    return null;
+  }
+
+  const row = await queryOne<IdempotencyRow>(
+    pool,
+    `SELECT scope, response, expires_at FROM payment_idempotency WHERE scope = $1 AND expires_at > NOW()`,
+    [scope]
+  );
+
+  return row?.response ?? null;
+}
+
+async function setCachedIdempotency(
+  pool: Pool,
+  scope: string | null,
+  response: unknown
+): Promise<void> {
+  if (!scope) {
+    return;
+  }
+
+  await pool.query(
+    `
+      INSERT INTO payment_idempotency (scope, response, expires_at)
+      VALUES ($1, $2::jsonb, NOW() + INTERVAL '24 hours')
+      ON CONFLICT (scope) DO UPDATE SET response = EXCLUDED.response, expires_at = EXCLUDED.expires_at
+    `,
+    [scope, JSON.stringify(response)]
+  );
+}
+
+async function loadPaymentById(pool: Pool, paymentId: string): Promise<PaymentIntent | null> {
+  const row = await queryOne<PaymentIntentRow>(
+    pool,
+    `
+      SELECT id, order_id, reservation_id, user_id, amount, currency, gateway, status,
+             created_at, updated_at, gateway_transaction_id, event_id, ticket_type_id,
+             quantity, ticket_ids, buyer_wallet_address
+      FROM payment_intents
+      WHERE id = $1
+    `,
+    [paymentId]
+  );
+  return row ? mapPayment(row) : null;
+}
+
+async function findPaymentByReference(
+  pool: Pool,
+  reference: string
+): Promise<PaymentIntent | null> {
+  const normalizedReference = reference.trim();
+  if (!normalizedReference) {
+    return null;
+  }
+
+  const row = await queryOne<PaymentIntentRow>(
+    pool,
+    `
+      SELECT id, order_id, reservation_id, user_id, amount, currency, gateway, status,
+             created_at, updated_at, gateway_transaction_id, event_id, ticket_type_id,
+             quantity, ticket_ids, buyer_wallet_address
+      FROM payment_intents
+      WHERE id = $1 OR order_id = $1
+      LIMIT 1
+    `,
+    [normalizedReference]
+  );
+  return row ? mapPayment(row) : null;
+}
+
+async function findRetryJobByEventKey(pool: Pool, eventKey: string): Promise<RetryJob | null> {
+  const row = await queryOne<RetryJobRow>(
+    pool,
+    `
+      SELECT id, event_key, gateway, payment_reference, attempt, next_retry_at, last_error, created_at, updated_at
+      FROM payment_retry_jobs
+      WHERE event_key = $1
+    `,
+    [eventKey]
+  );
+  return row ? mapRetryJob(row) : null;
+}
+
+async function getWalletAddressForUser(pool: Pool, userId: string): Promise<string | undefined> {
+  const row = await queryOne<{ wallet_address: string }>(
+    pool,
+    `SELECT wallet_address FROM payment_wallet_prefunds WHERE user_id = $1`,
+    [userId]
+  );
+  return row?.wallet_address;
+}
+
+async function getPaymentHashByOrderId(
+  pool: Pool,
+  orderId: string
+): Promise<PaymentHashRecord | null> {
+  const row = await queryOne<PaymentHashRow>(
+    pool,
+    `
+      SELECT order_id, payment_id, user_id, amount, nonce, payment_hash, signature, signer_address,
+             status, issued_at, expires_at, event_id, ticket_type_id, quantity, ticket_ids,
+             buyer_wallet_address, chain_id, verifying_contract, typed_data
+      FROM payment_hashes
+      WHERE order_id = $1
+    `,
+    [orderId]
+  );
+
+  if (!row) {
+    return null;
+  }
+
+  if (row.status === "issued" && new Date(row.expires_at).getTime() <= Date.now()) {
+    await pool.query(`UPDATE payment_hashes SET status = 'expired' WHERE order_id = $1`, [orderId]);
+    row.status = "expired";
+  }
+
+  return mapPaymentHash(row);
+}
+
+export async function createPaymentOrchestratorServer(config: PaymentOrchestratorConfig) {
   const castBinaryPath = config.castBinaryPath ?? "cast";
   const paymentHashTtlSec = config.paymentHashTtlSec ?? DEFAULT_PAYMENT_HASH_TTL_SEC;
   const backendSignerPrivateKey =
@@ -381,18 +779,19 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
     throw new Error("Invalid TICKET_LEDGER_ADDRESS configuration");
   }
 
-  const paymentsById = new Map<string, PaymentIntent>();
-  const paymentIdByOrderId = new Map<string, string>();
-  const webhookEventsByKey = new Map<string, WebhookEvent>();
-  const retryJobsById = new Map<string, RetryJob>();
-  const idempotencyResponses = new Map<string, unknown>();
-  const nonceExpiryByValue = new Map<string, number>();
-  const walletPrefundsByAddress = new Map<string, WalletBootstrapRecord>();
-  const walletAddressByUserId = new Map<string, string>();
-  const paymentHashesByOrderId = new Map<string, PaymentHashRecord>();
+  const pool = createPostgresPool(process.env);
+  await ensureSchema(pool);
+  await cleanupExpiredState(pool);
+
+  const cleanupTimer = setInterval(() => {
+    void cleanupExpiredState(pool).catch((error) => {
+      log(config.serviceName, "error", "Failed to cleanup payment persistence state", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    });
+  }, 60_000);
 
   let backendSignerAddress: string | null = null;
-
   const getBackendSignerAddress = (): string => {
     if (!backendSignerAddress) {
       backendSignerAddress = deriveAddressFromPrivateKey(backendSignerPrivateKey, castBinaryPath);
@@ -401,62 +800,8 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
     return backendSignerAddress;
   };
 
-  const refreshPaymentHashRecord = (
-    record: PaymentHashRecord | null,
-    nowMs = Date.now()
-  ): PaymentHashRecord | null => {
-    if (!record) {
-      return null;
-    }
-
-    if (record.status !== "expired" && new Date(record.expiresAt).getTime() <= nowMs) {
-      record.status = "expired";
-    }
-
-    return record;
-  };
-
-  const cleanupTimer = setInterval(() => {
-    const now = Date.now();
-
-    for (const [nonce, expiresAtMs] of nonceExpiryByValue.entries()) {
-      if (expiresAtMs <= now) {
-        nonceExpiryByValue.delete(nonce);
-      }
-    }
-
-    for (const record of paymentHashesByOrderId.values()) {
-      refreshPaymentHashRecord(record, now);
-    }
-  }, 60_000);
-
-  const findPaymentByReference = (reference: string): PaymentIntent | null => {
-    const normalizedReference = reference.trim();
-    if (!normalizedReference) {
-      return null;
-    }
-
-    const direct = paymentsById.get(normalizedReference);
-    if (direct) {
-      return direct;
-    }
-
-    const paymentId = paymentIdByOrderId.get(normalizedReference);
-    return paymentId ? (paymentsById.get(paymentId) ?? null) : null;
-  };
-
-  const findRetryJobByEventKey = (eventKey: string): RetryJob | null => {
-    for (const retryJob of retryJobsById.values()) {
-      if (retryJob.eventKey === eventKey) {
-        return retryJob;
-      }
-    }
-
-    return null;
-  };
-
-  const ensureIssuanceContext = (payment: PaymentIntent): void => {
-    const userWalletAddress = walletAddressByUserId.get(payment.userId);
+  const ensureIssuanceContext = async (payment: PaymentIntent): Promise<void> => {
+    const userWalletAddress = await getWalletAddressForUser(pool, payment.userId);
     const buyerWalletAddress =
       normalizeWalletAddress(payment.buyerWalletAddress) ?? userWalletAddress;
     if (buyerWalletAddress) {
@@ -480,8 +825,6 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
     quantity: number;
     buyerWalletAddress: string;
   } => {
-    ensureIssuanceContext(payment);
-
     return (
       payment.status === "confirmed" &&
       typeof payment.eventId === "number" &&
@@ -496,17 +839,16 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
     );
   };
 
-  const issuePaymentHashIfReady = (
+  const issuePaymentHashIfReady = async (
     payment: PaymentIntent,
     nowMs = Date.now()
-  ): PaymentHashRecord | null => {
-    const existing = refreshPaymentHashRecord(
-      paymentHashesByOrderId.get(payment.orderId) ?? null,
-      nowMs
-    );
+  ): Promise<PaymentHashRecord | null> => {
+    const existing = await getPaymentHashByOrderId(pool, payment.orderId);
     if (existing) {
       return existing;
     }
+
+    await ensureIssuanceContext(payment);
 
     if (!canIssuePaymentHash(payment)) {
       return null;
@@ -535,88 +877,128 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
       privateKey: backendSignerPrivateKey,
       typedData
     });
-    const issuedAt = toIso(nowMs);
-    const expiresAt = toIso(nowMs + paymentHashTtlSec * 1000);
-    const record: PaymentHashRecord = {
-      orderId: payment.orderId,
-      paymentId: payment.id,
-      userId: payment.userId,
-      amount: payment.amount,
-      nonce,
-      paymentHash,
-      signature,
-      signerAddress: getBackendSignerAddress(),
-      status: "issued",
-      issuedAt,
-      expiresAt,
-      eventId: payment.eventId,
-      ticketTypeId: payment.ticketTypeId,
-      quantity: payment.quantity,
-      ticketIds: [...payment.ticketIds],
-      buyerWalletAddress: payment.buyerWalletAddress,
-      chainId: ticketLedgerChainId,
-      verifyingContract: ticketLedgerAddress,
-      typedData
-    };
+    const issuedAt = toIso(new Date(nowMs));
+    const expiresAt = toIso(new Date(nowMs + paymentHashTtlSec * 1000));
 
-    paymentHashesByOrderId.set(payment.orderId, record);
-    return record;
+    await pool.query(
+      `
+        INSERT INTO payment_hashes (
+          order_id, payment_id, user_id, amount, nonce, payment_hash, signature, signer_address,
+          status, issued_at, expires_at, event_id, ticket_type_id, quantity, ticket_ids,
+          buyer_wallet_address, chain_id, verifying_contract, typed_data
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'issued', $9::timestamptz, $10::timestamptz,
+                $11, $12, $13, $14::text[], $15, $16, $17, $18::jsonb)
+      `,
+      [
+        payment.orderId,
+        payment.id,
+        payment.userId,
+        payment.amount,
+        nonce,
+        paymentHash,
+        signature,
+        getBackendSignerAddress(),
+        issuedAt,
+        expiresAt,
+        payment.eventId,
+        payment.ticketTypeId,
+        payment.quantity,
+        payment.ticketIds,
+        payment.buyerWalletAddress,
+        ticketLedgerChainId,
+        ticketLedgerAddress,
+        JSON.stringify(typedData)
+      ]
+    );
+
+    return await getPaymentHashByOrderId(pool, payment.orderId);
   };
 
-  const buildPaymentHashResponse = (payment: PaymentIntent): Record<string, unknown> => {
-    const paymentHashRecord = issuePaymentHashIfReady(payment);
-    const refreshedRecord = refreshPaymentHashRecord(paymentHashRecord);
-    const lookupStatus = resolveHashLookupStatus(payment, refreshedRecord);
+  const buildPaymentHashResponse = async (
+    payment: PaymentIntent
+  ): Promise<Record<string, unknown>> => {
+    const paymentHashRecord = await issuePaymentHashIfReady(payment);
+    const lookupStatus = resolveHashLookupStatus(payment, paymentHashRecord);
 
     return {
       orderId: payment.orderId,
       paymentId: payment.id,
       paymentStatus: payment.status,
       status: lookupStatus,
-      paymentHash: refreshedRecord?.paymentHash ?? null,
-      signature: refreshedRecord?.signature ?? null,
-      nonce: refreshedRecord?.nonce ?? null,
-      signerAddress: refreshedRecord?.signerAddress ?? null,
-      buyer: refreshedRecord?.buyerWalletAddress ?? payment.buyerWalletAddress ?? null,
-      eventId: refreshedRecord?.eventId ?? payment.eventId ?? null,
-      ticketTypeId: refreshedRecord?.ticketTypeId ?? payment.ticketTypeId ?? null,
-      quantity: refreshedRecord?.quantity ?? payment.quantity ?? null,
-      amount: refreshedRecord?.amount ?? payment.amount,
-      ticketIds: refreshedRecord?.ticketIds ?? payment.ticketIds,
+      paymentHash: paymentHashRecord?.paymentHash ?? null,
+      signature: paymentHashRecord?.signature ?? null,
+      nonce: paymentHashRecord?.nonce ?? null,
+      signerAddress: paymentHashRecord?.signerAddress ?? null,
+      buyer: paymentHashRecord?.buyerWalletAddress ?? payment.buyerWalletAddress ?? null,
+      eventId: paymentHashRecord?.eventId ?? payment.eventId ?? null,
+      ticketTypeId: paymentHashRecord?.ticketTypeId ?? payment.ticketTypeId ?? null,
+      quantity: paymentHashRecord?.quantity ?? payment.quantity ?? null,
+      amount: paymentHashRecord?.amount ?? payment.amount,
+      ticketIds: paymentHashRecord?.ticketIds ?? payment.ticketIds,
       domain:
-        refreshedRecord === null
+        paymentHashRecord === null
           ? null
           : {
-              name: refreshedRecord.typedData.domain.name,
-              version: refreshedRecord.typedData.domain.version,
-              chainId: refreshedRecord.chainId,
-              verifyingContract: refreshedRecord.verifyingContract
+              name: paymentHashRecord.typedData.domain.name,
+              version: paymentHashRecord.typedData.domain.version,
+              chainId: paymentHashRecord.chainId,
+              verifyingContract: paymentHashRecord.verifyingContract
             },
-      issuedAt: refreshedRecord?.issuedAt ?? null,
-      expiresAt: refreshedRecord?.expiresAt ?? null,
+      issuedAt: paymentHashRecord?.issuedAt ?? null,
+      expiresAt: paymentHashRecord?.expiresAt ?? null,
       reason: lookupStatus === "unavailable" ? "PAYMENT_HASH_CONTEXT_INCOMPLETE" : null
     };
   };
 
-  const enqueueRetry = (
+  const enqueueRetry = async (
     event: WebhookEvent,
     gateway: PaymentGateway,
     paymentReference: string,
     attempt: number,
     lastError: string
-  ): RetryJob => {
-    const existing = findRetryJobByEventKey(event.eventKey);
+  ): Promise<RetryJob> => {
+    const existing = await findRetryJobByEventKey(pool, event.eventKey);
     const nextRetryAtMs = Date.now() + computeRetryDelayMs(config, attempt);
 
     if (existing) {
-      existing.attempt = attempt;
-      existing.nextRetryAtMs = nextRetryAtMs;
-      existing.lastError = lastError;
-      return existing;
+      await pool.query(
+        `
+          UPDATE payment_retry_jobs
+          SET attempt = $2, next_retry_at = $3::timestamptz, last_error = $4, updated_at = NOW()
+          WHERE id = $1
+        `,
+        [existing.id, attempt, new Date(nextRetryAtMs).toISOString(), lastError]
+      );
+      return {
+        ...existing,
+        attempt,
+        nextRetryAtMs,
+        lastError
+      };
     }
 
-    const job: RetryJob = {
-      id: `retry_${randomUUID().replace(/-/g, "")}`,
+    const jobId = `retry_${randomUUID().replace(/-/g, "")}`;
+    await pool.query(
+      `
+        INSERT INTO payment_retry_jobs (
+          id, event_key, gateway, payment_reference, attempt, next_retry_at, last_error
+        )
+        VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7)
+      `,
+      [
+        jobId,
+        event.eventKey,
+        gateway,
+        paymentReference,
+        attempt,
+        new Date(nextRetryAtMs).toISOString(),
+        lastError
+      ]
+    );
+
+    return {
+      id: jobId,
       eventKey: event.eventKey,
       gateway,
       paymentReference,
@@ -624,93 +1006,77 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
       nextRetryAtMs,
       lastError
     };
-
-    retryJobsById.set(job.id, job);
-    return job;
   };
 
-  const processWebhookPayload = (
+  const processWebhookPayload = async (
     event: WebhookEvent,
     payload: WebhookPayload
-  ): ProcessWebhookResult => {
+  ): Promise<ProcessWebhookResult> => {
     const nowIso = new Date().toISOString();
-    const payment = findPaymentByReference(event.paymentReference);
+    const payment = await findPaymentByReference(pool, event.paymentReference);
 
     if (!payment) {
-      event.status = "queued_retry";
-      event.lastError = "PAYMENT_NOT_FOUND";
-      event.updatedAt = nowIso;
-      return {
-        processed: false,
-        retriable: true,
-        error: "PAYMENT_NOT_FOUND"
-      };
+      await pool.query(
+        `UPDATE payment_webhook_events SET status = 'queued_retry', last_error = $2, updated_at = $3::timestamptz WHERE event_key = $1`,
+        [event.eventKey, "PAYMENT_NOT_FOUND", nowIso]
+      );
+      return { processed: false, retriable: true, error: "PAYMENT_NOT_FOUND" };
     }
 
     if (typeof payload.amount === "number" && payload.amount !== payment.amount) {
-      event.status = "rejected";
-      event.lastError = "AMOUNT_MISMATCH";
-      event.updatedAt = nowIso;
-      return {
-        processed: false,
-        retriable: false,
-        error: "AMOUNT_MISMATCH"
-      };
+      await pool.query(
+        `UPDATE payment_webhook_events SET status = 'rejected', last_error = $2, updated_at = $3::timestamptz WHERE event_key = $1`,
+        [event.eventKey, "AMOUNT_MISMATCH", nowIso]
+      );
+      return { processed: false, retriable: false, error: "AMOUNT_MISMATCH" };
     }
 
     if (payload.currency && payload.currency !== payment.currency) {
-      event.status = "rejected";
-      event.lastError = "CURRENCY_MISMATCH";
-      event.updatedAt = nowIso;
-      return {
-        processed: false,
-        retriable: false,
-        error: "CURRENCY_MISMATCH"
-      };
+      await pool.query(
+        `UPDATE payment_webhook_events SET status = 'rejected', last_error = $2, updated_at = $3::timestamptz WHERE event_key = $1`,
+        [event.eventKey, "CURRENCY_MISMATCH", nowIso]
+      );
+      return { processed: false, retriable: false, error: "CURRENCY_MISMATCH" };
     }
 
     const normalizedStatus = normalizeStatus(payload.status ?? payload.rawStatus);
     if (!normalizedStatus) {
-      event.status = "rejected";
-      event.lastError = "INVALID_PAYMENT_STATUS";
-      event.updatedAt = nowIso;
-      return {
-        processed: false,
-        retriable: false,
-        error: "INVALID_PAYMENT_STATUS"
-      };
+      await pool.query(
+        `UPDATE payment_webhook_events SET status = 'rejected', last_error = $2, updated_at = $3::timestamptz WHERE event_key = $1`,
+        [event.eventKey, "INVALID_PAYMENT_STATUS", nowIso]
+      );
+      return { processed: false, retriable: false, error: "INVALID_PAYMENT_STATUS" };
     }
 
-    payment.status = normalizedStatus;
-    payment.updatedAt = nowIso;
+    await pool.query(
+      `
+        UPDATE payment_intents
+        SET status = $2, updated_at = $3::timestamptz, gateway_transaction_id = COALESCE($4, gateway_transaction_id)
+        WHERE id = $1
+      `,
+      [payment.id, normalizedStatus, nowIso, payload.gatewayTransactionId?.trim() || null]
+    );
 
-    if (payload.gatewayTransactionId) {
-      payment.gatewayTransactionId = payload.gatewayTransactionId;
-    }
-
+    const updatedPayment = (await loadPaymentById(pool, payment.id)) as PaymentIntent;
     let paymentHashRecord: PaymentHashRecord | null = null;
-    if (payment.status === "confirmed") {
+    if (updatedPayment.status === "confirmed") {
       try {
-        paymentHashRecord = issuePaymentHashIfReady(payment);
+        paymentHashRecord = await issuePaymentHashIfReady(updatedPayment);
       } catch (error) {
         log(config.serviceName, "error", "Failed to issue payment hash", {
-          paymentId: payment.id,
-          orderId: payment.orderId,
+          paymentId: updatedPayment.id,
+          orderId: updatedPayment.orderId,
           error: error instanceof Error ? error.message : String(error)
         });
       }
     }
 
-    event.status = "processed";
-    event.lastError = undefined;
-    event.updatedAt = nowIso;
+    await pool.query(
+      `UPDATE payment_webhook_events SET status = 'processed', last_error = NULL, updated_at = $2::timestamptz WHERE event_key = $1`,
+      [event.eventKey, nowIso]
+    );
 
-    return {
-      processed: true,
-      retriable: false,
-      payment,
-      paymentHashRecord
-    };
+    return { processed: true, retriable: false, payment: updatedPayment, paymentHashRecord };
   };
 
   const server = createServer(async (req, res) => {
@@ -719,16 +1085,33 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
       if (method === "GET" && url.pathname === "/healthz") {
+        const counts = await queryOne<{
+          payment_count: string;
+          retry_count: string;
+          hash_count: string;
+          wallet_count: string;
+        }>(
+          pool,
+          `
+            SELECT
+              (SELECT COUNT(*)::text FROM payment_intents) AS payment_count,
+              (SELECT COUNT(*)::text FROM payment_retry_jobs) AS retry_count,
+              (SELECT COUNT(*)::text FROM payment_hashes) AS hash_count,
+              (SELECT COUNT(*)::text FROM payment_wallet_prefunds) AS wallet_count
+          `
+        );
+
         return sendJson(res, 200, {
           success: true,
           data: {
             service: config.serviceName,
             status: "ok",
+            storage: "postgres",
             timestamp: new Date().toISOString(),
-            paymentCount: paymentsById.size,
-            pendingRetryCount: retryJobsById.size,
-            issuedPaymentHashCount: paymentHashesByOrderId.size,
-            prefundedWalletCount: walletPrefundsByAddress.size
+            paymentCount: Number(counts?.payment_count ?? 0),
+            pendingRetryCount: Number(counts?.retry_count ?? 0),
+            issuedPaymentHashCount: Number(counts?.hash_count ?? 0),
+            prefundedWalletCount: Number(counts?.wallet_count ?? 0)
           }
         });
       }
@@ -741,10 +1124,7 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
         if (!userId) {
           return sendJson(res, 401, {
             success: false,
-            error: {
-              code: "UNAUTHORIZED",
-              message: "Missing x-user-id header"
-            }
+            error: { code: "UNAUTHORIZED", message: "Missing x-user-id header" }
           });
         }
 
@@ -755,10 +1135,7 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
         } catch {
           return sendJson(res, 400, {
             success: false,
-            error: {
-              code: "INVALID_JSON",
-              message: "Request body must be valid JSON"
-            }
+            error: { code: "INVALID_JSON", message: "Request body must be valid JSON" }
           });
         }
 
@@ -773,8 +1150,18 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
           });
         }
 
-        const existing = walletPrefundsByAddress.get(walletAddress);
-        if (existing && existing.userId !== userId) {
+        const existing = await queryOne<WalletBootstrapRow>(
+          pool,
+          `
+            SELECT wallet_address, user_id, prefund_tx_hash, amount_wei, funded_at, updated_at
+            FROM payment_wallet_prefunds
+            WHERE wallet_address = $1 OR user_id = $2
+            LIMIT 1
+          `,
+          [walletAddress, userId]
+        );
+
+        if (existing && existing.user_id !== userId && existing.wallet_address === walletAddress) {
           return sendJson(res, 409, {
             success: false,
             error: {
@@ -784,41 +1171,40 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
           });
         }
 
-        if (existing) {
-          walletAddressByUserId.set(userId, walletAddress);
+        if (existing && existing.user_id === userId) {
+          const record = mapWalletBootstrap(existing);
           return sendJson(res, 200, {
             success: true,
             data: {
-              walletAddress,
+              walletAddress: record.walletAddress,
               prefunded: true,
-              prefundTxHash: existing.prefundTxHash,
-              amountWei: existing.amountWei,
-              fundedAt: existing.fundedAt
+              prefundTxHash: record.prefundTxHash,
+              amountWei: record.amountWei,
+              fundedAt: record.fundedAt
             }
           });
         }
 
         const fundedAt = new Date().toISOString();
-        const record: WalletBootstrapRecord = {
-          walletAddress,
-          userId,
-          prefundTxHash: buildPrefundTxHash(walletAddress, fundedAt),
-          amountWei: prefundAmountWei,
-          fundedAt,
-          updatedAt: fundedAt
-        };
-
-        walletPrefundsByAddress.set(walletAddress, record);
-        walletAddressByUserId.set(userId, walletAddress);
+        const prefundTxHash = buildPrefundTxHash(walletAddress, fundedAt);
+        await pool.query(
+          `
+            INSERT INTO payment_wallet_prefunds (
+              wallet_address, user_id, prefund_tx_hash, amount_wei, funded_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5::timestamptz, $5::timestamptz)
+          `,
+          [walletAddress, userId, prefundTxHash, prefundAmountWei, fundedAt]
+        );
 
         return sendJson(res, 200, {
           success: true,
           data: {
             walletAddress,
             prefunded: true,
-            prefundTxHash: record.prefundTxHash,
-            amountWei: record.amountWei,
-            fundedAt: record.fundedAt
+            prefundTxHash,
+            amountWei: prefundAmountWei,
+            fundedAt
           }
         });
       }
@@ -836,15 +1222,24 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
           });
         }
 
-        const record = walletPrefundsByAddress.get(walletAddress);
+        const record = await queryOne<WalletBootstrapRow>(
+          pool,
+          `
+            SELECT wallet_address, user_id, prefund_tx_hash, amount_wei, funded_at, updated_at
+            FROM payment_wallet_prefunds
+            WHERE wallet_address = $1
+          `,
+          [walletAddress]
+        );
+
         return sendJson(res, 200, {
           success: true,
           data: {
             walletAddress,
             funded: Boolean(record),
-            txHash: record?.prefundTxHash ?? null,
-            amountWei: record?.amountWei ?? null,
-            fundedAt: record?.fundedAt ?? null
+            txHash: record?.prefund_tx_hash ?? null,
+            amountWei: record?.amount_wei ?? null,
+            fundedAt: record ? toIso(record.funded_at) : null
           }
         });
       }
@@ -857,10 +1252,7 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
         if (!userId) {
           return sendJson(res, 401, {
             success: false,
-            error: {
-              code: "UNAUTHORIZED",
-              message: "Missing x-user-id header"
-            }
+            error: { code: "UNAUTHORIZED", message: "Missing x-user-id header" }
           });
         }
 
@@ -869,8 +1261,9 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
           url.pathname,
           extractIdempotencyKey(req)
         );
-        if (idempotencyScope && idempotencyResponses.has(idempotencyScope)) {
-          return sendJson(res, 200, idempotencyResponses.get(idempotencyScope));
+        const cached = await getCachedIdempotency(pool, idempotencyScope);
+        if (cached) {
+          return sendJson(res, 200, cached);
         }
 
         const rawBody = await readRawBody(req);
@@ -880,10 +1273,7 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
         } catch {
           return sendJson(res, 400, {
             success: false,
-            error: {
-              code: "INVALID_JSON",
-              message: "Request body must be valid JSON"
-            }
+            error: { code: "INVALID_JSON", message: "Request body must be valid JSON" }
           });
         }
 
@@ -913,10 +1303,7 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
         if (currency !== "VND") {
           return sendJson(res, 400, {
             success: false,
-            error: {
-              code: "UNSUPPORTED_CURRENCY",
-              message: "Only VND is supported"
-            }
+            error: { code: "UNSUPPORTED_CURRENCY", message: "Only VND is supported" }
           });
         }
 
@@ -930,19 +1317,22 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
           });
         }
 
-        if (paymentIdByOrderId.has(orderId)) {
+        const existingOrder = await queryOne<{ id: string }>(
+          pool,
+          `SELECT id FROM payment_intents WHERE order_id = $1`,
+          [orderId]
+        );
+        if (existingOrder) {
           return sendJson(res, 409, {
             success: false,
-            error: {
-              code: "ORDER_ID_ALREADY_EXISTS",
-              message: "orderId already exists"
-            }
+            error: { code: "ORDER_ID_ALREADY_EXISTS", message: "orderId already exists" }
           });
         }
 
         const now = new Date().toISOString();
+        const paymentId = `pay_${randomUUID().replace(/-/g, "")}`;
         const payment: PaymentIntent = {
-          id: `pay_${randomUUID().replace(/-/g, "")}`,
+          id: paymentId,
           orderId,
           reservationId,
           userId,
@@ -957,11 +1347,36 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
           quantity,
           ticketIds:
             ticketIds.length > 0 ? ticketIds : buildDefaultTicketIds(reservationId, quantity),
-          buyerWalletAddress: buyerWalletAddress ?? walletAddressByUserId.get(userId)
+          buyerWalletAddress: buyerWalletAddress ?? (await getWalletAddressForUser(pool, userId))
         };
 
-        paymentsById.set(payment.id, payment);
-        paymentIdByOrderId.set(payment.orderId, payment.id);
+        await pool.query(
+          `
+            INSERT INTO payment_intents (
+              id, order_id, reservation_id, user_id, amount, currency, gateway, status,
+              gateway_transaction_id, event_id, ticket_type_id, quantity, ticket_ids,
+              buyer_wallet_address, created_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, $9, $10, $11, $12::text[], $13,
+                    $14::timestamptz, $14::timestamptz)
+          `,
+          [
+            payment.id,
+            payment.orderId,
+            payment.reservationId,
+            payment.userId,
+            payment.amount,
+            payment.currency,
+            payment.gateway,
+            payment.status,
+            payment.eventId ?? null,
+            payment.ticketTypeId ?? null,
+            payment.quantity ?? null,
+            payment.ticketIds,
+            payment.buyerWalletAddress ?? null,
+            now
+          ]
+        );
 
         const response = {
           success: true,
@@ -971,29 +1386,31 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
           }
         };
 
-        if (idempotencyScope) {
-          idempotencyResponses.set(idempotencyScope, response);
-        }
-
+        await setCachedIdempotency(pool, idempotencyScope, response);
         return sendJson(res, 200, response);
       }
 
       if (method === "GET" && url.pathname === "/payments/reconciliation/jobs") {
-        const jobs = Array.from(retryJobsById.values())
-          .sort((left, right) => left.nextRetryAtMs - right.nextRetryAtMs)
-          .map((job) => ({
-            retryJobId: job.id,
-            eventKey: job.eventKey,
-            paymentReference: job.paymentReference,
-            gateway: job.gateway,
-            attempt: job.attempt,
-            nextRetryAt: toIso(job.nextRetryAtMs),
-            lastError: job.lastError
-          }));
+        const jobs = await queryMany<RetryJobRow>(
+          pool,
+          `
+            SELECT id, event_key, gateway, payment_reference, attempt, next_retry_at, last_error, created_at, updated_at
+            FROM payment_retry_jobs
+            ORDER BY next_retry_at ASC
+          `
+        );
 
         return sendJson(res, 200, {
           success: true,
-          data: jobs
+          data: jobs.map((row: RetryJobRow) => ({
+            retryJobId: row.id,
+            eventKey: row.event_key,
+            paymentReference: row.payment_reference,
+            gateway: row.gateway,
+            attempt: Number(row.attempt),
+            nextRetryAt: toIso(row.next_retry_at),
+            lastError: row.last_error
+          }))
         });
       }
 
@@ -1003,8 +1420,9 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
           url.pathname,
           extractIdempotencyKey(req)
         );
-        if (idempotencyScope && idempotencyResponses.has(idempotencyScope)) {
-          return sendJson(res, 200, idempotencyResponses.get(idempotencyScope));
+        const cached = await getCachedIdempotency(pool, idempotencyScope);
+        if (cached) {
+          return sendJson(res, 200, cached);
         }
 
         const nowMs = Date.now();
@@ -1012,50 +1430,84 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
         let requeuedCount = 0;
         let deadLetterCount = 0;
 
-        const dueJobs = Array.from(retryJobsById.values())
-          .filter((job) => job.nextRetryAtMs <= nowMs)
-          .sort((left, right) => left.nextRetryAtMs - right.nextRetryAtMs);
+        const dueJobs = await queryMany<RetryJobRow>(
+          pool,
+          `
+            SELECT id, event_key, gateway, payment_reference, attempt, next_retry_at, last_error, created_at, updated_at
+            FROM payment_retry_jobs
+            WHERE next_retry_at <= NOW()
+            ORDER BY next_retry_at ASC
+          `
+        );
 
-        for (const job of dueJobs) {
-          const event = webhookEventsByKey.get(job.eventKey);
-          if (!event) {
-            retryJobsById.delete(job.id);
+        for (const jobRow of dueJobs) {
+          const job = mapRetryJob(jobRow);
+          const eventRow = await queryOne<WebhookEventRow>(
+            pool,
+            `
+              SELECT id, gateway, event_key, payment_reference, payload_digest, raw_payload,
+                     status, attempt_count, created_at, updated_at, last_error
+              FROM payment_webhook_events
+              WHERE event_key = $1
+            `,
+            [job.eventKey]
+          );
+
+          if (!eventRow) {
+            await pool.query(`DELETE FROM payment_retry_jobs WHERE id = $1`, [job.id]);
             deadLetterCount += 1;
             continue;
           }
 
-          event.attemptCount += 1;
+          await pool.query(
+            `UPDATE payment_webhook_events SET attempt_count = attempt_count + 1, updated_at = NOW() WHERE event_key = $1`,
+            [job.eventKey]
+          );
 
+          const event = mapWebhookEvent({
+            ...eventRow,
+            attempt_count: Number(eventRow.attempt_count) + 1
+          });
           const payload = parseJson<WebhookPayload>(event.rawPayload);
-          const result = processWebhookPayload(event, payload);
+          const result = await processWebhookPayload(event, payload);
 
           if (result.processed) {
-            retryJobsById.delete(job.id);
+            await pool.query(`DELETE FROM payment_retry_jobs WHERE id = $1`, [job.id]);
             processedCount += 1;
             continue;
           }
 
           if (!result.retriable) {
-            retryJobsById.delete(job.id);
+            await pool.query(`DELETE FROM payment_retry_jobs WHERE id = $1`, [job.id]);
             deadLetterCount += 1;
             continue;
           }
 
           if (job.attempt >= config.maxWebhookRetries) {
-            event.status = "rejected";
-            event.lastError = `MAX_RETRY_EXCEEDED:${result.error ?? "UNKNOWN"}`;
-            event.updatedAt = new Date().toISOString();
-            retryJobsById.delete(job.id);
+            await pool.query(
+              `UPDATE payment_webhook_events SET status = 'rejected', last_error = $2, updated_at = NOW() WHERE event_key = $1`,
+              [job.eventKey, `MAX_RETRY_EXCEEDED:${result.error ?? "UNKNOWN"}`]
+            );
+            await pool.query(`DELETE FROM payment_retry_jobs WHERE id = $1`, [job.id]);
             deadLetterCount += 1;
             continue;
           }
 
           const nextAttempt = job.attempt + 1;
           const nextRetryAtMs = nowMs + computeRetryDelayMs(config, nextAttempt);
-
-          job.attempt = nextAttempt;
-          job.nextRetryAtMs = nextRetryAtMs;
-          job.lastError = result.error ?? "UNKNOWN_RETRY_ERROR";
+          await pool.query(
+            `
+              UPDATE payment_retry_jobs
+              SET attempt = $2, next_retry_at = $3::timestamptz, last_error = $4, updated_at = NOW()
+              WHERE id = $1
+            `,
+            [
+              job.id,
+              nextAttempt,
+              new Date(nextRetryAtMs).toISOString(),
+              result.error ?? "UNKNOWN_RETRY_ERROR"
+            ]
+          );
           requeuedCount += 1;
         }
 
@@ -1065,14 +1517,18 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
             processed: processedCount,
             requeued: requeuedCount,
             deadLettered: deadLetterCount,
-            remaining: retryJobsById.size
+            remaining: Number(
+              (
+                await queryOne<{ count: string }>(
+                  pool,
+                  `SELECT COUNT(*)::text AS count FROM payment_retry_jobs`
+                )
+              )?.count ?? 0
+            )
           }
         };
 
-        if (idempotencyScope) {
-          idempotencyResponses.set(idempotencyScope, response);
-        }
-
+        await setCachedIdempotency(pool, idempotencyScope, response);
         return sendJson(res, 200, response);
       }
 
@@ -1081,35 +1537,29 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
       );
       if (method === "GET" && paymentHashMatch) {
         const paymentReference = decodeURIComponent(paymentHashMatch[1]);
-        const payment = findPaymentByReference(paymentReference);
+        const payment = await findPaymentByReference(pool, paymentReference);
 
         if (!payment) {
           return sendJson(res, 404, {
             success: false,
-            error: {
-              code: "PAYMENT_NOT_FOUND",
-              message: "Payment intent not found"
-            }
+            error: { code: "PAYMENT_NOT_FOUND", message: "Payment intent not found" }
           });
         }
 
         return sendJson(res, 200, {
           success: true,
-          data: buildPaymentHashResponse(payment)
+          data: await buildPaymentHashResponse(payment)
         });
       }
 
       const paymentIdMatch = /^\/payments\/([^/]+)$/.exec(url.pathname);
       if (method === "GET" && paymentIdMatch) {
-        const payment = paymentsById.get(paymentIdMatch[1]);
+        const payment = await loadPaymentById(pool, paymentIdMatch[1]);
 
         if (!payment) {
           return sendJson(res, 404, {
             success: false,
-            error: {
-              code: "PAYMENT_NOT_FOUND",
-              message: "Payment intent not found"
-            }
+            error: { code: "PAYMENT_NOT_FOUND", message: "Payment intent not found" }
           });
         }
 
@@ -1122,14 +1572,34 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
       const webhookGateway = resolveWebhookGateway(req, url);
       if (method === "POST" && webhookGateway) {
         const rawBody = await readRawBody(req);
+        const nonce = extractSingleHeader(req, "x-webhook-nonce");
+        if (nonce) {
+          const existingNonce = await queryOne<{ nonce: string }>(
+            pool,
+            `
+              SELECT nonce FROM payment_webhook_nonces
+              WHERE gateway = $1 AND nonce = $2 AND expires_at > NOW()
+            `,
+            [webhookGateway, nonce]
+          );
+          if (existingNonce) {
+            return sendJson(res, 401, {
+              success: false,
+              error: {
+                code: "WEBHOOK_NONCE_REUSED",
+                message: "Webhook nonce has already been used"
+              }
+            });
+          }
+        }
 
         const verification = verifyWebhookSignature({
           signature: extractSingleHeader(req, "x-webhook-signature"),
           timestampHeader: extractSingleHeader(req, "x-webhook-timestamp"),
-          nonce: extractSingleHeader(req, "x-webhook-nonce"),
+          nonce,
           rawBody,
           secret: gatewaySecret(config, webhookGateway),
-          nonceExpiryByValue,
+          nonceExpiryByValue: new Map<string, number>(),
           webhookMaxSkewSec: config.webhookMaxSkewSec,
           webhookNonceTtlSec: config.webhookNonceTtlSec
         });
@@ -1144,16 +1614,23 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
           });
         }
 
+        if (nonce) {
+          await pool.query(
+            `
+              INSERT INTO payment_webhook_nonces (gateway, nonce, expires_at)
+              VALUES ($1, $2, NOW() + INTERVAL '1 second' * $3)
+            `,
+            [webhookGateway, nonce, config.webhookNonceTtlSec]
+          );
+        }
+
         let payload: WebhookPayload;
         try {
           payload = parseJson<WebhookPayload>(rawBody);
         } catch {
           return sendJson(res, 400, {
             success: false,
-            error: {
-              code: "INVALID_JSON",
-              message: "Webhook payload must be valid JSON"
-            }
+            error: { code: "INVALID_JSON", message: "Webhook payload must be valid JSON" }
           });
         }
 
@@ -1172,9 +1649,19 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
         const eventSuffix = payload.eventId?.trim() || digest;
         const eventKey = `${webhookGateway}:${eventSuffix}`;
 
-        if (webhookEventsByKey.has(eventKey)) {
-          const existingEvent = webhookEventsByKey.get(eventKey) ?? null;
-          const existingPayment = findPaymentByReference(paymentReference);
+        const existingEvent = await queryOne<WebhookEventRow>(
+          pool,
+          `
+            SELECT id, gateway, event_key, payment_reference, payload_digest, raw_payload,
+                   status, attempt_count, created_at, updated_at, last_error
+            FROM payment_webhook_events
+            WHERE event_key = $1
+          `,
+          [eventKey]
+        );
+
+        if (existingEvent) {
+          const existingPayment = await findPaymentByReference(pool, paymentReference);
           return sendJson(res, 200, {
             success: true,
             data: {
@@ -1182,35 +1669,46 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
               status: "duplicate",
               paymentId: existingPayment?.id ?? null,
               orderId: existingPayment?.orderId ?? null,
-              lastProcessedStatus: existingEvent?.status ?? null
+              lastProcessedStatus: existingEvent.status
             }
           });
         }
 
         const nowIso = new Date().toISOString();
-        const event: WebhookEvent = {
-          id: `wbh_${randomUUID().replace(/-/g, "")}`,
+        const eventId = `wbh_${randomUUID().replace(/-/g, "")}`;
+        await pool.query(
+          `
+            INSERT INTO payment_webhook_events (
+              id, gateway, event_key, payment_reference, payload_digest, raw_payload,
+              status, attempt_count, created_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, 'processed', 1, $7::timestamptz, $7::timestamptz)
+          `,
+          [eventId, webhookGateway, eventKey, paymentReference, digest, rawBody, nowIso]
+        );
+
+        const event = mapWebhookEvent({
+          id: eventId,
           gateway: webhookGateway,
-          eventKey,
-          paymentReference,
-          payloadDigest: digest,
-          rawPayload: rawBody,
+          event_key: eventKey,
+          payment_reference: paymentReference,
+          payload_digest: digest,
+          raw_payload: rawBody,
           status: "processed",
-          attemptCount: 1,
-          createdAt: nowIso,
-          updatedAt: nowIso
-        };
+          attempt_count: 1,
+          created_at: nowIso,
+          updated_at: nowIso,
+          last_error: null
+        });
 
-        webhookEventsByKey.set(eventKey, event);
-
-        const result = processWebhookPayload(event, payload);
+        const result = await processWebhookPayload(event, payload);
 
         if (result.processed) {
           return sendJson(res, 200, {
             success: true,
             data: {
               eventKey,
-              status: event.status,
+              status: "processed",
               paymentId: result.payment?.id ?? null,
               orderId: result.payment?.orderId ?? null,
               paymentHashIssued: Boolean(result.paymentHashRecord)
@@ -1219,7 +1717,7 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
         }
 
         if (result.retriable) {
-          const retryJob = enqueueRetry(
+          const retryJob = await enqueueRetry(
             event,
             webhookGateway,
             paymentReference,
@@ -1230,10 +1728,10 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
             success: true,
             data: {
               eventKey,
-              status: event.status,
+              status: "queued_retry",
               retryJobId: retryJob.id,
               paymentReference,
-              nextRetryAt: toIso(retryJob.nextRetryAtMs)
+              nextRetryAt: toIso(new Date(retryJob.nextRetryAtMs))
             }
           });
         }
@@ -1249,10 +1747,7 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
 
       return sendJson(res, 404, {
         success: false,
-        error: {
-          code: "NOT_FOUND",
-          message: "Route not found"
-        }
+        error: { code: "NOT_FOUND", message: "Route not found" }
       });
     } catch (error) {
       log(config.serviceName, "error", "Unhandled request error", {
@@ -1261,16 +1756,14 @@ export function createPaymentOrchestratorServer(config: PaymentOrchestratorConfi
 
       return sendJson(res, 500, {
         success: false,
-        error: {
-          code: "INTERNAL_ERROR",
-          message: "Internal server error"
-        }
+        error: { code: "INTERNAL_ERROR", message: "Internal server error" }
       });
     }
   });
 
   server.on("close", () => {
     clearInterval(cleanupTimer);
+    void pool.end();
   });
 
   return server;

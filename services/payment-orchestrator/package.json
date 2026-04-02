@@ -4,6 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Payment orchestrator runnable skeleton",
+  "dependencies": {
+    "@ticket-platform/local-infra": "workspace:*",
+    "pg": "^8.16.3"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "node --watch --experimental-strip-types src/index.ts",
