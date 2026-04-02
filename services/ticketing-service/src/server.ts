@@ -99,6 +99,19 @@ interface TicketRecord {
   createdAt: string;
 }
 
+interface EventServiceTicketType {
+  id: string;
+  name: string;
+  price: number;
+  quantity: number;
+  soldCount: number;
+}
+
+interface EventServiceEvent {
+  id: string;
+  ticketTypes: EventServiceTicketType[];
+}
+
 class InvalidJsonError extends Error {
   constructor() {
     super("Invalid JSON payload");
@@ -108,43 +121,6 @@ class InvalidJsonError extends Error {
 
 const MAX_TICKETS_PER_RESERVATION = 4;
 const IDEMPOTENCY_TTL_SEC = 24 * 60 * 60;
-
-const seedInventory: Array<{
-  ticketTypeId: string;
-  eventId: string;
-  unitPrice: number;
-  quantity: number;
-  soldCount: number;
-}> = [
-  {
-    ticketTypeId: "tt_rockfest_ga",
-    eventId: "evt_rockfest_2026",
-    unitPrice: 900000,
-    quantity: 5000,
-    soldCount: 1250
-  },
-  {
-    ticketTypeId: "tt_rockfest_vip",
-    eventId: "evt_rockfest_2026",
-    unitPrice: 2200000,
-    quantity: 300,
-    soldCount: 120
-  },
-  {
-    ticketTypeId: "tt_jazz_std",
-    eventId: "evt_jazz_night_2026",
-    unitPrice: 650000,
-    quantity: 800,
-    soldCount: 180
-  },
-  {
-    ticketTypeId: "tt_jazz_vvip",
-    eventId: "evt_jazz_night_2026",
-    unitPrice: 1800000,
-    quantity: 100,
-    soldCount: 40
-  }
-];
 
 function sendJson(res: ServerResponse, statusCode: number, payload: unknown): void {
   res.statusCode = statusCode;
@@ -352,24 +328,68 @@ async function ensureSchema(pool: Pool): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+}
 
-  const count = await queryOne<{ count: string }>(
-    pool,
-    "SELECT COUNT(*)::text AS count FROM ticket_inventory"
-  );
-  if (Number(count?.count ?? 0) > 0) {
-    return;
+/**
+ * Sync inventory from event-service.
+ * Fetches all events and their ticket types from event-service, then upserts
+ * ticket_inventory rows. For new ticket types, inserts fresh rows. For existing
+ * ticket types, updates quantity and unit_price from event-service but preserves
+ * the local sold_count and locked_count (operational state owned by ticketing).
+ */
+async function syncInventoryFromEventService(
+  pool: Pool,
+  eventServiceBaseUrl: string,
+  serviceName: string
+): Promise<{ synced: number; events: number }> {
+  const response = await fetch(`${eventServiceBaseUrl}/events`);
+  if (!response.ok) {
+    throw new Error(`event-service /events returned ${response.status}`);
   }
 
-  for (const item of seedInventory) {
-    await pool.query(
-      `
+  const body = (await response.json()) as { success: boolean; data: Array<{ id: string }> };
+  if (!body.success || !Array.isArray(body.data)) {
+    throw new Error("event-service /events returned unexpected body");
+  }
+
+  let synced = 0;
+  for (const eventSummary of body.data) {
+    const detailResponse = await fetch(`${eventServiceBaseUrl}/events/${eventSummary.id}`);
+    if (!detailResponse.ok) {
+      log(serviceName, "warn", "Failed to fetch event detail for sync", {
+        eventId: eventSummary.id,
+        status: detailResponse.status
+      });
+      continue;
+    }
+
+    const detailBody = (await detailResponse.json()) as {
+      success: boolean;
+      data: EventServiceEvent;
+    };
+
+    if (!detailBody.success || !detailBody.data?.ticketTypes) {
+      continue;
+    }
+
+    const event = detailBody.data;
+    for (const tt of event.ticketTypes) {
+      await pool.query(
+        `
         INSERT INTO ticket_inventory (ticket_type_id, event_id, unit_price, quantity, sold_count, locked_count)
         VALUES ($1, $2, $3, $4, $5, 0)
-      `,
-      [item.ticketTypeId, item.eventId, item.unitPrice, item.quantity, item.soldCount]
-    );
+        ON CONFLICT (ticket_type_id) DO UPDATE SET
+          unit_price = EXCLUDED.unit_price,
+          quantity = EXCLUDED.quantity,
+          updated_at = NOW()
+        `,
+        [tt.id, event.id, tt.price, tt.quantity, tt.soldCount]
+      );
+      synced++;
+    }
   }
+
+  return { synced, events: body.data.length };
 }
 
 async function loadReservation(
@@ -447,6 +467,30 @@ export async function createTicketingServer(config: TicketingConfig) {
   await redis.connect();
   await ensureSchema(pool);
 
+  const eventServiceBaseUrl = process.env.EVENT_SERVICE_BASE_URL ?? "http://127.0.0.1:3004";
+
+  // Sync inventory from event-service on startup
+  try {
+    const result = await syncInventoryFromEventService(
+      pool,
+      eventServiceBaseUrl,
+      config.serviceName
+    );
+    log(config.serviceName, "info", "Inventory synced from event-service", {
+      events: result.events,
+      ticketTypesSynced: result.synced
+    });
+  } catch (error) {
+    log(
+      config.serviceName,
+      "warn",
+      "Failed to sync inventory from event-service on startup; will use existing inventory if any",
+      {
+        error: error instanceof Error ? error.message : String(error)
+      }
+    );
+  }
+
   const cleanupTimer = setInterval(() => {
     void expireDueReservations(pool).catch((error) => {
       log(config.serviceName, "error", "Failed to expire reservations", {
@@ -471,8 +515,57 @@ export async function createTicketingServer(config: TicketingConfig) {
               primary: "postgres",
               cache: "redis"
             },
+            inventorySource: "event-service",
             timestamp: new Date().toISOString()
           }
+        });
+      }
+
+      // Manual inventory sync endpoint
+      if (method === "POST" && url.pathname === "/tickets/inventory/sync") {
+        try {
+          const result = await syncInventoryFromEventService(
+            pool,
+            eventServiceBaseUrl,
+            config.serviceName
+          );
+          return sendJson(res, 200, {
+            success: true,
+            data: {
+              events: result.events,
+              ticketTypesSynced: result.synced,
+              syncedAt: new Date().toISOString()
+            }
+          });
+        } catch (error) {
+          return sendJson(res, 502, {
+            success: false,
+            error: {
+              code: "INVENTORY_SYNC_FAILED",
+              message: error instanceof Error ? error.message : "Failed to sync from event-service"
+            }
+          });
+        }
+      }
+
+      // Inventory status endpoint
+      if (method === "GET" && url.pathname === "/tickets/inventory") {
+        const inventory = await queryMany<InventoryRow>(
+          pool,
+          `SELECT ticket_type_id, event_id, unit_price, quantity, sold_count, locked_count FROM ticket_inventory ORDER BY event_id, ticket_type_id`
+        );
+
+        return sendJson(res, 200, {
+          success: true,
+          data: inventory.map((row) => ({
+            ticketTypeId: row.ticket_type_id,
+            eventId: row.event_id,
+            unitPrice: Number(row.unit_price),
+            quantity: Number(row.quantity),
+            soldCount: Number(row.sold_count),
+            lockedCount: Number(row.locked_count),
+            available: inventoryAvailable(row)
+          }))
         });
       }
 

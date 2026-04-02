@@ -1,21 +1,49 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 
+import {
+  createPostgresPool,
+  queryMany,
+  queryOne,
+  withPostgresTransaction
+} from "@ticket-platform/local-infra";
+import type { Pool } from "pg";
+
 import type { AuthConfig } from "./config.js";
 import { log } from "./logger.js";
 
-interface OtpRecord {
+interface OtpRow {
+  key: string;
   phone: string;
-  requestId: string;
+  request_id: string;
   code: string;
-  expiresAtMs: number;
+  expires_at: string | Date;
 }
 
-interface RefreshRecord {
-  userId: string;
+interface RefreshRow {
+  token: string;
+  user_id: string;
   phone: string;
-  sessionId: string;
-  expiresAtMs: number;
+  session_id: string;
+  expires_at: string | Date;
+}
+
+interface SessionRow {
+  id: string;
+  user_id: string;
+  phone: string;
+  device_id: string;
+  device_name: string;
+  platform: string;
+  created_at: string | Date;
+  last_active_at: string | Date;
+  current_refresh_token: string;
+  revoked_at: string | Date | null;
+}
+
+interface RateRow {
+  phone: string;
+  attempted_at: string | Date;
 }
 
 interface RequestOtpBody {
@@ -33,19 +61,6 @@ interface VerifyOtpBody {
 
 interface RefreshBody {
   refreshToken?: string;
-}
-
-interface SessionRecord {
-  id: string;
-  userId: string;
-  phone: string;
-  deviceId: string;
-  deviceName: string;
-  platform: string;
-  createdAt: string;
-  lastActiveAt: string;
-  currentRefreshToken: string;
-  revokedAt?: string;
 }
 
 const PHONE_REGEX = /^\+?[1-9]\d{7,14}$/;
@@ -97,43 +112,98 @@ function extractUserIdHeader(req: IncomingMessage): string | null {
   return normalized ? normalized : null;
 }
 
-function pruneTimestamps(now: number, timestamps: number[], windowMs: number): number[] {
-  return timestamps.filter((value) => now - value < windowMs);
+function toIso(value: string | Date): string {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
-export function createAuthServer(config: AuthConfig) {
-  const otpByKey = new Map<string, OtpRecord>();
-  const refreshByToken = new Map<string, RefreshRecord>();
-  const requestAttemptsByPhone = new Map<string, number[]>();
-  const sessionsById = new Map<string, SessionRecord>();
-  const sessionIdsByUserId = new Map<string, Set<string>>();
+async function ensureSchema(pool: Pool): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS auth_otp_requests (
+      key TEXT PRIMARY KEY,
+      phone TEXT NOT NULL,
+      request_id TEXT NOT NULL,
+      code TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
 
-  const cleanupTimer = setInterval(() => {
-    const now = Date.now();
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS auth_rate_attempts (
+      id SERIAL PRIMARY KEY,
+      phone TEXT NOT NULL,
+      attempted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
 
-    for (const [key, otp] of otpByKey.entries()) {
-      if (otp.expiresAtMs <= now) {
-        otpByKey.delete(key);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_auth_rate_attempts_phone ON auth_rate_attempts (phone, attempted_at);
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      device_name TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_active_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      current_refresh_token TEXT NOT NULL,
+      revoked_at TIMESTAMPTZ
+    );
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id ON auth_sessions (user_id);
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS auth_refresh_tokens (
+      token TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+}
+
+export async function createAuthServer(config: AuthConfig) {
+  const pool = createPostgresPool(process.env);
+  await ensureSchema(pool);
+
+  const cleanupTimer = setInterval(async () => {
+    try {
+      const now = new Date().toISOString();
+      await pool.query(`DELETE FROM auth_otp_requests WHERE expires_at <= $1::timestamptz`, [now]);
+      await pool.query(
+        `DELETE FROM auth_rate_attempts WHERE attempted_at < NOW() - INTERVAL '1 second' * $1`,
+        [config.otpRateWindowSec]
+      );
+
+      const expiredTokens = await queryMany<{ token: string; session_id: string }>(
+        pool,
+        `SELECT token, session_id FROM auth_refresh_tokens WHERE expires_at <= $1::timestamptz`,
+        [now]
+      );
+
+      for (const expired of expiredTokens) {
+        await pool.query(
+          `UPDATE auth_sessions SET revoked_at = NOW() WHERE id = $1 AND current_refresh_token = $2 AND revoked_at IS NULL`,
+          [expired.session_id, expired.token]
+        );
       }
-    }
 
-    for (const [token, refreshRecord] of refreshByToken.entries()) {
-      if (refreshRecord.expiresAtMs <= now) {
-        const session = sessionsById.get(refreshRecord.sessionId);
-        if (session && session.currentRefreshToken === token) {
-          session.revokedAt = new Date(now).toISOString();
-        }
-        refreshByToken.delete(token);
-      }
-    }
-
-    for (const [phone, attempts] of requestAttemptsByPhone.entries()) {
-      const validAttempts = pruneTimestamps(now, attempts, config.otpRateWindowSec * 1000);
-      if (validAttempts.length === 0) {
-        requestAttemptsByPhone.delete(phone);
-      } else {
-        requestAttemptsByPhone.set(phone, validAttempts);
-      }
+      await pool.query(`DELETE FROM auth_refresh_tokens WHERE expires_at <= $1::timestamptz`, [
+        now
+      ]);
+    } catch (error) {
+      log(config.serviceName, "error", "Cleanup failed", {
+        error: error instanceof Error ? error.message : String(error)
+      });
     }
   }, 60_000);
 
@@ -148,6 +218,7 @@ export function createAuthServer(config: AuthConfig) {
           data: {
             service: config.serviceName,
             status: "ok",
+            storage: "postgres",
             timestamp: new Date().toISOString()
           }
         });
@@ -167,12 +238,28 @@ export function createAuthServer(config: AuthConfig) {
           });
         }
 
-        const now = Date.now();
-        const windowMs = config.otpRateWindowSec * 1000;
-        const attempts = pruneTimestamps(now, requestAttemptsByPhone.get(phone) ?? [], windowMs);
+        const now = new Date();
+        const windowStart = new Date(now.getTime() - config.otpRateWindowSec * 1000);
 
-        if (attempts.length >= config.otpMaxRequestsPerWindow) {
-          const retryAfterSec = Math.max(1, Math.ceil((attempts[0] + windowMs - now) / 1000));
+        const countResult = await queryOne<{ count: string }>(
+          pool,
+          `SELECT COUNT(*)::text AS count FROM auth_rate_attempts WHERE phone = $1 AND attempted_at >= $2::timestamptz`,
+          [phone, windowStart.toISOString()]
+        );
+
+        const attempts = Number(countResult?.count ?? 0);
+        if (attempts >= config.otpMaxRequestsPerWindow) {
+          const oldest = await queryOne<{ attempted_at: string | Date }>(
+            pool,
+            `SELECT attempted_at FROM auth_rate_attempts WHERE phone = $1 AND attempted_at >= $2::timestamptz ORDER BY attempted_at ASC LIMIT 1`,
+            [phone, windowStart.toISOString()]
+          );
+          const oldestMs = oldest ? new Date(oldest.attempted_at).getTime() : now.getTime();
+          const retryAfterSec = Math.max(
+            1,
+            Math.ceil((oldestMs + config.otpRateWindowSec * 1000 - now.getTime()) / 1000)
+          );
+
           return sendJson(res, 429, {
             success: false,
             error: {
@@ -187,23 +274,23 @@ export function createAuthServer(config: AuthConfig) {
 
         const requestId = `req_${randomUUID().replace(/-/g, "")}`;
         const otpCode = generateOtpCode(config.otpLength);
-        const expiresAtMs = now + config.otpTtlSec * 1000;
+        const expiresAt = new Date(now.getTime() + config.otpTtlSec * 1000).toISOString();
         const key = `${phone}:${requestId}`;
 
-        otpByKey.set(key, {
-          phone,
-          requestId,
-          code: otpCode,
-          expiresAtMs
-        });
+        await pool.query(
+          `INSERT INTO auth_otp_requests (key, phone, request_id, code, expires_at) VALUES ($1, $2, $3, $4, $5::timestamptz)`,
+          [key, phone, requestId, otpCode, expiresAt]
+        );
 
-        attempts.push(now);
-        requestAttemptsByPhone.set(phone, attempts);
+        await pool.query(
+          `INSERT INTO auth_rate_attempts (phone, attempted_at) VALUES ($1, $2::timestamptz)`,
+          [phone, now.toISOString()]
+        );
 
         log(config.serviceName, "info", "OTP issued", {
           phone,
           requestId,
-          expiresAtMs
+          expiresAt
         });
 
         return sendJson(res, 200, {
@@ -234,7 +321,11 @@ export function createAuthServer(config: AuthConfig) {
         }
 
         const key = `${phone}:${requestId}`;
-        const record = otpByKey.get(key);
+        const record = await queryOne<OtpRow>(
+          pool,
+          `SELECT key, phone, request_id, code, expires_at FROM auth_otp_requests WHERE key = $1`,
+          [key]
+        );
 
         if (!record) {
           return sendJson(res, 401, {
@@ -246,8 +337,8 @@ export function createAuthServer(config: AuthConfig) {
           });
         }
 
-        if (Date.now() > record.expiresAtMs) {
-          otpByKey.delete(key);
+        if (new Date().getTime() > new Date(record.expires_at).getTime()) {
+          await pool.query(`DELETE FROM auth_otp_requests WHERE key = $1`, [key]);
           return sendJson(res, 401, {
             success: false,
             error: {
@@ -267,39 +358,45 @@ export function createAuthServer(config: AuthConfig) {
           });
         }
 
-        otpByKey.delete(key);
+        await pool.query(`DELETE FROM auth_otp_requests WHERE key = $1`, [key]);
 
         const userId = deriveUserId(phone);
         const sessionId = `ses_${randomUUID().replace(/-/g, "")}`;
         const accessToken = generateToken("atk");
         const refreshToken = generateToken("rtk");
-        const accessTokenExpiresAtMs = Date.now() + config.accessTokenTtlSec * 1000;
-        const refreshTokenExpiresAtMs = Date.now() + config.refreshTokenTtlSec * 1000;
-        const nowIso = new Date().toISOString();
+        const nowMs = Date.now();
+        const accessTokenExpiresAtMs = nowMs + config.accessTokenTtlSec * 1000;
+        const refreshTokenExpiresAtMs = nowMs + config.refreshTokenTtlSec * 1000;
+        const nowIso = new Date(nowMs).toISOString();
 
-        refreshByToken.set(refreshToken, {
-          userId,
-          phone,
-          sessionId,
-          expiresAtMs: refreshTokenExpiresAtMs
+        await withPostgresTransaction(pool, async (client) => {
+          await client.query(
+            `INSERT INTO auth_sessions (id, user_id, phone, device_id, device_name, platform, created_at, last_active_at, current_refresh_token)
+             VALUES ($1, $2, $3, $4, $5, $6, $7::timestamptz, $7::timestamptz, $8)`,
+            [
+              sessionId,
+              userId,
+              phone,
+              body.deviceId?.trim() || `dev_${randomUUID().replace(/-/g, "").slice(0, 12)}`,
+              body.deviceName?.trim() || "Unknown Device",
+              body.platform?.trim() || "unknown",
+              nowIso,
+              refreshToken
+            ]
+          );
+
+          await client.query(
+            `INSERT INTO auth_refresh_tokens (token, user_id, phone, session_id, expires_at)
+             VALUES ($1, $2, $3, $4, $5::timestamptz)`,
+            [
+              refreshToken,
+              userId,
+              phone,
+              sessionId,
+              new Date(refreshTokenExpiresAtMs).toISOString()
+            ]
+          );
         });
-
-        const session: SessionRecord = {
-          id: sessionId,
-          userId,
-          phone,
-          deviceId: body.deviceId?.trim() || `dev_${randomUUID().replace(/-/g, "").slice(0, 12)}`,
-          deviceName: body.deviceName?.trim() || "Unknown Device",
-          platform: body.platform?.trim() || "unknown",
-          createdAt: nowIso,
-          lastActiveAt: nowIso,
-          currentRefreshToken: refreshToken
-        };
-
-        sessionsById.set(sessionId, session);
-        const userSessions = sessionIdsByUserId.get(userId) ?? new Set<string>();
-        userSessions.add(sessionId);
-        sessionIdsByUserId.set(userId, userSessions);
 
         return sendJson(res, 200, {
           success: true,
@@ -328,9 +425,16 @@ export function createAuthServer(config: AuthConfig) {
           });
         }
 
-        const refreshRecord = refreshByToken.get(refreshToken);
-        if (!refreshRecord || Date.now() > refreshRecord.expiresAtMs) {
-          refreshByToken.delete(refreshToken);
+        const refreshRecord = await queryOne<RefreshRow>(
+          pool,
+          `SELECT token, user_id, phone, session_id, expires_at FROM auth_refresh_tokens WHERE token = $1`,
+          [refreshToken]
+        );
+
+        if (!refreshRecord || new Date().getTime() > new Date(refreshRecord.expires_at).getTime()) {
+          if (refreshRecord) {
+            await pool.query(`DELETE FROM auth_refresh_tokens WHERE token = $1`, [refreshToken]);
+          }
           return sendJson(res, 401, {
             success: false,
             error: {
@@ -340,9 +444,15 @@ export function createAuthServer(config: AuthConfig) {
           });
         }
 
-        const session = sessionsById.get(refreshRecord.sessionId);
-        if (!session || session.revokedAt) {
-          refreshByToken.delete(refreshToken);
+        const session = await queryOne<SessionRow>(
+          pool,
+          `SELECT id, user_id, phone, device_id, device_name, platform, created_at, last_active_at, current_refresh_token, revoked_at
+           FROM auth_sessions WHERE id = $1`,
+          [refreshRecord.session_id]
+        );
+
+        if (!session || session.revoked_at) {
+          await pool.query(`DELETE FROM auth_refresh_tokens WHERE token = $1`, [refreshToken]);
           return sendJson(res, 401, {
             success: false,
             error: {
@@ -352,28 +462,36 @@ export function createAuthServer(config: AuthConfig) {
           });
         }
 
-        refreshByToken.delete(refreshToken);
-
         const nextAccessToken = generateToken("atk");
         const nextRefreshToken = generateToken("rtk");
         const accessTokenExpiresAtMs = Date.now() + config.accessTokenTtlSec * 1000;
         const refreshTokenExpiresAtMs = Date.now() + config.refreshTokenTtlSec * 1000;
 
-        refreshByToken.set(nextRefreshToken, {
-          userId: refreshRecord.userId,
-          phone: refreshRecord.phone,
-          sessionId: refreshRecord.sessionId,
-          expiresAtMs: refreshTokenExpiresAtMs
-        });
+        await withPostgresTransaction(pool, async (client) => {
+          await client.query(`DELETE FROM auth_refresh_tokens WHERE token = $1`, [refreshToken]);
+          await client.query(
+            `INSERT INTO auth_refresh_tokens (token, user_id, phone, session_id, expires_at)
+             VALUES ($1, $2, $3, $4, $5::timestamptz)`,
+            [
+              nextRefreshToken,
+              refreshRecord.user_id,
+              refreshRecord.phone,
+              refreshRecord.session_id,
+              new Date(refreshTokenExpiresAtMs).toISOString()
+            ]
+          );
 
-        session.currentRefreshToken = nextRefreshToken;
-        session.lastActiveAt = new Date().toISOString();
+          await client.query(
+            `UPDATE auth_sessions SET current_refresh_token = $2, last_active_at = NOW() WHERE id = $1`,
+            [refreshRecord.session_id, nextRefreshToken]
+          );
+        });
 
         return sendJson(res, 200, {
           success: true,
           data: {
-            userId: refreshRecord.userId,
-            sessionId: refreshRecord.sessionId,
+            userId: refreshRecord.user_id,
+            sessionId: refreshRecord.session_id,
             accessToken: nextAccessToken,
             accessTokenExpiresAt: new Date(accessTokenExpiresAtMs).toISOString(),
             refreshToken: nextRefreshToken,
@@ -394,21 +512,23 @@ export function createAuthServer(config: AuthConfig) {
           });
         }
 
-        const sessionIds = sessionIdsByUserId.get(userId) ?? new Set<string>();
-        const sessions = Array.from(sessionIds.values())
-          .map((sessionId) => sessionsById.get(sessionId))
-          .filter((session): session is SessionRecord => Boolean(session))
-          .sort((left, right) => right.lastActiveAt.localeCompare(left.lastActiveAt))
-          .map((session) => ({
-            sessionId: session.id,
-            phone: session.phone,
-            deviceId: session.deviceId,
-            deviceName: session.deviceName,
-            platform: session.platform,
-            createdAt: session.createdAt,
-            lastActiveAt: session.lastActiveAt,
-            revokedAt: session.revokedAt
-          }));
+        const rows = await queryMany<SessionRow>(
+          pool,
+          `SELECT id, user_id, phone, device_id, device_name, platform, created_at, last_active_at, current_refresh_token, revoked_at
+           FROM auth_sessions WHERE user_id = $1 ORDER BY last_active_at DESC`,
+          [userId]
+        );
+
+        const sessions = rows.map((session) => ({
+          sessionId: session.id,
+          phone: session.phone,
+          deviceId: session.device_id,
+          deviceName: session.device_name,
+          platform: session.platform,
+          createdAt: toIso(session.created_at),
+          lastActiveAt: toIso(session.last_active_at),
+          revokedAt: session.revoked_at ? toIso(session.revoked_at) : undefined
+        }));
 
         return sendJson(res, 200, {
           success: true,
@@ -429,7 +549,13 @@ export function createAuthServer(config: AuthConfig) {
           });
         }
 
-        const session = sessionsById.get(revokeMatch[1]);
+        const session = await queryOne<SessionRow>(
+          pool,
+          `SELECT id, user_id, phone, device_id, device_name, platform, created_at, last_active_at, current_refresh_token, revoked_at
+           FROM auth_sessions WHERE id = $1`,
+          [revokeMatch[1]]
+        );
+
         if (!session) {
           return sendJson(res, 404, {
             success: false,
@@ -440,7 +566,7 @@ export function createAuthServer(config: AuthConfig) {
           });
         }
 
-        if (session.userId !== userId) {
+        if (session.user_id !== userId) {
           return sendJson(res, 403, {
             success: false,
             error: {
@@ -450,14 +576,20 @@ export function createAuthServer(config: AuthConfig) {
           });
         }
 
-        session.revokedAt = new Date().toISOString();
-        refreshByToken.delete(session.currentRefreshToken);
+        const revokedAt = new Date().toISOString();
+        await pool.query(`UPDATE auth_sessions SET revoked_at = $2::timestamptz WHERE id = $1`, [
+          session.id,
+          revokedAt
+        ]);
+        await pool.query(`DELETE FROM auth_refresh_tokens WHERE token = $1`, [
+          session.current_refresh_token
+        ]);
 
         return sendJson(res, 200, {
           success: true,
           data: {
             sessionId: session.id,
-            revokedAt: session.revokedAt
+            revokedAt
           }
         });
       }
@@ -486,6 +618,7 @@ export function createAuthServer(config: AuthConfig) {
 
   server.on("close", () => {
     clearInterval(cleanupTimer);
+    void pool.end();
   });
 
   return server;

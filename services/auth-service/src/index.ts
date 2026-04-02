@@ -3,7 +3,7 @@ import { log } from "./logger.js";
 import { createAuthServer } from "./server.js";
 
 const config = loadConfig();
-const server = createAuthServer(config);
+const server = await createAuthServer(config);
 
 server.listen(config.port, config.host, () => {
   log(config.serviceName, "info", "Auth service listening", {

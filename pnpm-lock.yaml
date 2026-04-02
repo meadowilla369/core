@@ -71,7 +71,14 @@ importers:
 
   services/api-gateway: {}
 
-  services/auth-service: {}
+  services/auth-service:
+    dependencies:
+      "@ticket-platform/local-infra":
+        specifier: workspace:*
+        version: link:../../packages/local-infra
+      pg:
+        specifier: ^8.16.3
+        version: 8.20.0
 
   services/checkin-service: {}
 
@@ -126,7 +133,14 @@ importers:
         specifier: ^5.8.2
         version: 5.11.0
 
-  services/user-service: {}
+  services/user-service:
+    dependencies:
+      "@ticket-platform/local-infra":
+        specifier: workspace:*
+        version: link:../../packages/local-infra
+      pg:
+        specifier: ^8.16.3
+        version: 8.20.0
 
   services/worker-mint: {}
 

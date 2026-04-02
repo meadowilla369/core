@@ -3,7 +3,7 @@ import { log } from "./logger.js";
 import { createUserServer } from "./server.js";
 
 const config = loadConfig();
-const server = createUserServer(config);
+const server = await createUserServer(config);
 
 server.listen(config.port, config.host, () => {
   log(config.serviceName, "info", "User service listening", {
