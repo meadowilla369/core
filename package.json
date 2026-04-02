@@ -30,8 +30,9 @@
     "rollback:gate": "./scripts/incident-rollback-gate.sh"
   },
   "devDependencies": {
-    "@types/node": "^22.10.1",
     "@eslint/js": "^9.14.0",
+    "@types/node": "^22.10.1",
+    "@types/pg": "^8.20.0",
     "eslint": "^9.14.0",
     "husky": "^9.1.6",
     "lint-staged": "^15.2.10",

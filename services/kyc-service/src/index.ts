@@ -3,17 +3,12 @@ import { log } from "./logger.js";
 import { createKycServer } from "./server.js";
 
 const config = loadConfig();
-const server = createKycServer(config);
+const server = await createKycServer(config);
 
 server.listen(config.port, config.host, () => {
   log(config.serviceName, "info", "KYC service listening", {
     host: config.host,
-    port: config.port,
-    provider: config.provider,
-    fallbackProvider: config.fallbackProvider,
-    minLivenessScore: config.minLivenessScore,
-    minFaceMatchScore: config.minFaceMatchScore,
-    internalApiKeyConfigured: Boolean(config.internalApiKey)
+    port: config.port
   });
 });
 

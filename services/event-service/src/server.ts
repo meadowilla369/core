@@ -1,6 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 
+import {
+  createPostgresPool,
+  queryMany,
+  queryOne,
+  withPostgresTransaction
+} from "@ticket-platform/local-infra";
+import type { Pool } from "pg";
+
 import type { EventServiceConfig } from "./config.js";
 import { log } from "./logger.js";
 
@@ -49,6 +57,26 @@ interface UpdateEventBody {
   status?: "active" | "cancelled";
 }
 
+interface EventRow {
+  id: string;
+  organizer_id: string;
+  title: string;
+  city: string;
+  venue: string;
+  start_at: string | Date;
+  end_at: string | Date;
+  status: "active" | "cancelled";
+}
+
+interface TicketTypeRow {
+  id: string;
+  event_id: string;
+  name: string;
+  price: number | string;
+  quantity: number | string;
+  sold_count: number | string;
+}
+
 class InvalidJsonError extends Error {
   constructor() {
     super("Invalid JSON payload");
@@ -56,7 +84,7 @@ class InvalidJsonError extends Error {
   }
 }
 
-const events: EventRecord[] = [
+const seedEvents: EventRecord[] = [
   {
     id: "evt_rockfest_2026",
     organizerId: "org_rockfest",
@@ -67,7 +95,13 @@ const events: EventRecord[] = [
     endAt: "2026-05-10T23:00:00.000Z",
     status: "active",
     ticketTypes: [
-      { id: "tt_rockfest_ga", name: "General Admission", price: 900000, quantity: 5000, soldCount: 1250 },
+      {
+        id: "tt_rockfest_ga",
+        name: "General Admission",
+        price: 900000,
+        quantity: 5000,
+        soldCount: 1250
+      },
       { id: "tt_rockfest_vip", name: "VIP", price: 2200000, quantity: 300, soldCount: 120 }
     ]
   },
@@ -122,6 +156,32 @@ function extractOrganizerId(req: IncomingMessage): string | null {
   return organizerId?.trim() || null;
 }
 
+function toIso(value: string | Date): string {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+function mapEventRow(row: EventRow, ticketTypes: TicketTypeRow[]): EventRecord {
+  return {
+    id: row.id,
+    organizerId: row.organizer_id,
+    title: row.title,
+    city: row.city,
+    venue: row.venue,
+    startAt: toIso(row.start_at),
+    endAt: toIso(row.end_at),
+    status: row.status,
+    ticketTypes: ticketTypes
+      .filter((item) => item.event_id === row.id)
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        price: Number(item.price),
+        quantity: Number(item.quantity),
+        soldCount: Number(item.sold_count)
+      }))
+  };
+}
+
 function computeAvailability(event: EventRecord) {
   return event.ticketTypes.map((type) => ({
     ticketTypeId: type.id,
@@ -144,8 +204,145 @@ function sanitizeSummary(event: EventRecord) {
   };
 }
 
-export function createEventServer(config: EventServiceConfig) {
-  return createServer(async (req, res) => {
+async function ensureSchema(pool: Pool): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS events (
+      id TEXT PRIMARY KEY,
+      organizer_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      city TEXT NOT NULL,
+      venue TEXT NOT NULL,
+      start_at TIMESTAMPTZ NOT NULL,
+      end_at TIMESTAMPTZ NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('active', 'cancelled')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS event_ticket_types (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      price INTEGER NOT NULL,
+      quantity INTEGER NOT NULL,
+      sold_count INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  const existing = await queryOne<{ count: string }>(
+    pool,
+    "SELECT COUNT(*)::text AS count FROM events"
+  );
+  if (Number(existing?.count ?? 0) > 0) {
+    return;
+  }
+
+  for (const event of seedEvents) {
+    await withPostgresTransaction(pool, async (client) => {
+      await client.query(
+        `
+          INSERT INTO events (id, organizer_id, title, city, venue, start_at, end_at, status)
+          VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7::timestamptz, $8)
+        `,
+        [
+          event.id,
+          event.organizerId,
+          event.title,
+          event.city,
+          event.venue,
+          event.startAt,
+          event.endAt,
+          event.status
+        ]
+      );
+
+      for (const ticketType of event.ticketTypes) {
+        await client.query(
+          `
+            INSERT INTO event_ticket_types (id, event_id, name, price, quantity, sold_count)
+            VALUES ($1, $2, $3, $4, $5, $6)
+          `,
+          [
+            ticketType.id,
+            event.id,
+            ticketType.name,
+            ticketType.price,
+            ticketType.quantity,
+            ticketType.soldCount
+          ]
+        );
+      }
+    });
+  }
+}
+
+async function listEvents(
+  pool: Pool,
+  filters: { city?: string | null; status?: string | null; organizerId?: string | null }
+) {
+  const conditions: string[] = [];
+  const values: string[] = [];
+
+  if (filters.city) {
+    values.push(`%${filters.city.toLowerCase()}%`);
+    conditions.push(`LOWER(city) LIKE $${values.length}`);
+  }
+
+  if (filters.status) {
+    values.push(filters.status);
+    conditions.push(`status = $${values.length}`);
+  }
+
+  if (filters.organizerId) {
+    values.push(filters.organizerId);
+    conditions.push(`organizer_id = $${values.length}`);
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const eventRows = await queryMany<EventRow>(
+    pool,
+    `SELECT id, organizer_id, title, city, venue, start_at, end_at, status FROM events ${whereClause} ORDER BY start_at ASC`,
+    values
+  );
+
+  const ticketTypeRows = await queryMany<TicketTypeRow>(
+    pool,
+    `SELECT id, event_id, name, price, quantity, sold_count FROM event_ticket_types WHERE event_id = ANY($1::text[]) ORDER BY id ASC`,
+    [eventRows.map((item) => item.id)]
+  );
+
+  return eventRows.map((row) => mapEventRow(row, ticketTypeRows));
+}
+
+async function loadEvent(pool: Pool, eventId: string): Promise<EventRecord | null> {
+  const eventRow = await queryOne<EventRow>(
+    pool,
+    `SELECT id, organizer_id, title, city, venue, start_at, end_at, status FROM events WHERE id = $1`,
+    [eventId]
+  );
+
+  if (!eventRow) {
+    return null;
+  }
+
+  const ticketTypeRows = await queryMany<TicketTypeRow>(
+    pool,
+    `SELECT id, event_id, name, price, quantity, sold_count FROM event_ticket_types WHERE event_id = $1 ORDER BY id ASC`,
+    [eventId]
+  );
+
+  return mapEventRow(eventRow, ticketTypeRows);
+}
+
+export async function createEventServer(config: EventServiceConfig) {
+  const pool = createPostgresPool(process.env);
+  await ensureSchema(pool);
+
+  const server = createServer(async (req, res) => {
     try {
       const method = req.method ?? "GET";
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
@@ -156,21 +353,17 @@ export function createEventServer(config: EventServiceConfig) {
           data: {
             service: config.serviceName,
             status: "ok",
+            storage: "postgres",
             timestamp: new Date().toISOString()
           }
         });
       }
 
       if (method === "GET" && url.pathname === "/events") {
-        const city = url.searchParams.get("city")?.toLowerCase();
-        const status = url.searchParams.get("status")?.toLowerCase();
-        const organizerId = url.searchParams.get("organizerId")?.trim();
-
-        const filtered = events.filter((event) => {
-          const cityMatch = city ? event.city.toLowerCase().includes(city) : true;
-          const statusMatch = status ? event.status === status : true;
-          const organizerMatch = organizerId ? event.organizerId === organizerId : true;
-          return cityMatch && statusMatch && organizerMatch;
+        const filtered = await listEvents(pool, {
+          city: url.searchParams.get("city")?.toLowerCase(),
+          status: url.searchParams.get("status")?.toLowerCase(),
+          organizerId: url.searchParams.get("organizerId")?.trim()
         });
 
         return sendJson(res, 200, {
@@ -217,20 +410,29 @@ export function createEventServer(config: EventServiceConfig) {
             soldCount: 0
           })) ?? [];
 
-        const next: EventRecord = {
-          id: `evt_${randomUUID().replace(/-/g, "").slice(0, 12)}`,
-          organizerId,
-          title,
-          city,
-          venue,
-          startAt,
-          endAt,
-          status: "active",
-          ticketTypes
-        };
+        const eventId = `evt_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
 
-        events.push(next);
+        await withPostgresTransaction(pool, async (client) => {
+          await client.query(
+            `
+              INSERT INTO events (id, organizer_id, title, city, venue, start_at, end_at, status)
+              VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7::timestamptz, $8)
+            `,
+            [eventId, organizerId, title, city, venue, startAt, endAt, "active"]
+          );
 
+          for (const ticketType of ticketTypes) {
+            await client.query(
+              `
+                INSERT INTO event_ticket_types (id, event_id, name, price, quantity, sold_count)
+                VALUES ($1, $2, $3, $4, $5, $6)
+              `,
+              [ticketType.id, eventId, ticketType.name, ticketType.price, ticketType.quantity, 0]
+            );
+          }
+        });
+
+        const next = await loadEvent(pool, eventId);
         return sendJson(res, 200, {
           success: true,
           data: next
@@ -251,8 +453,8 @@ export function createEventServer(config: EventServiceConfig) {
         }
 
         const eventId = detailMatch[1];
-        const event = events.find((item) => item.id === eventId);
-        if (!event) {
+        const existing = await loadEvent(pool, eventId);
+        if (!existing) {
           return sendJson(res, 404, {
             success: false,
             error: {
@@ -262,7 +464,7 @@ export function createEventServer(config: EventServiceConfig) {
           });
         }
 
-        if (event.organizerId !== organizerId) {
+        if (existing.organizerId !== organizerId) {
           return sendJson(res, 403, {
             success: false,
             error: {
@@ -273,34 +475,38 @@ export function createEventServer(config: EventServiceConfig) {
         }
 
         const body = await readJson<UpdateEventBody>(req);
-        if (typeof body.title === "string") {
-          event.title = body.title.trim();
-        }
-        if (typeof body.city === "string") {
-          event.city = body.city.trim();
-        }
-        if (typeof body.venue === "string") {
-          event.venue = body.venue.trim();
-        }
-        if (typeof body.startAt === "string") {
-          event.startAt = body.startAt.trim();
-        }
-        if (typeof body.endAt === "string") {
-          event.endAt = body.endAt.trim();
-        }
-        if (body.status === "active" || body.status === "cancelled") {
-          event.status = body.status;
-        }
+
+        await pool.query(
+          `
+            UPDATE events
+            SET title = COALESCE($2, title),
+                city = COALESCE($3, city),
+                venue = COALESCE($4, venue),
+                start_at = COALESCE($5::timestamptz, start_at),
+                end_at = COALESCE($6::timestamptz, end_at),
+                status = COALESCE($7, status),
+                updated_at = NOW()
+            WHERE id = $1
+          `,
+          [
+            eventId,
+            typeof body.title === "string" ? body.title.trim() : null,
+            typeof body.city === "string" ? body.city.trim() : null,
+            typeof body.venue === "string" ? body.venue.trim() : null,
+            typeof body.startAt === "string" ? body.startAt.trim() : null,
+            typeof body.endAt === "string" ? body.endAt.trim() : null,
+            body.status === "active" || body.status === "cancelled" ? body.status : null
+          ]
+        );
 
         return sendJson(res, 200, {
           success: true,
-          data: event
+          data: await loadEvent(pool, eventId)
         });
       }
 
       if (method === "GET" && detailMatch) {
-        const eventId = detailMatch[1];
-        const event = events.find((item) => item.id === eventId);
+        const event = await loadEvent(pool, detailMatch[1]);
 
         if (!event) {
           return sendJson(res, 404, {
@@ -332,7 +538,7 @@ export function createEventServer(config: EventServiceConfig) {
         }
 
         const eventId = cancelMatch[1];
-        const event = events.find((item) => item.id === eventId);
+        const event = await loadEvent(pool, eventId);
 
         if (!event) {
           return sendJson(res, 404, {
@@ -354,18 +560,21 @@ export function createEventServer(config: EventServiceConfig) {
           });
         }
 
-        event.status = "cancelled";
+        await pool.query(
+          `UPDATE events SET status = 'cancelled', updated_at = NOW() WHERE id = $1`,
+          [eventId]
+        );
+        const updated = await loadEvent(pool, eventId);
 
         return sendJson(res, 200, {
           success: true,
-          data: sanitizeSummary(event)
+          data: updated ? sanitizeSummary(updated) : null
         });
       }
 
       const ticketTypeMatch = url.pathname.match(/^\/events\/([^/]+)\/ticket-types$/);
       if (method === "GET" && ticketTypeMatch) {
-        const eventId = ticketTypeMatch[1];
-        const event = events.find((item) => item.id === eventId);
+        const event = await loadEvent(pool, ticketTypeMatch[1]);
 
         if (!event) {
           return sendJson(res, 404, {
@@ -385,8 +594,7 @@ export function createEventServer(config: EventServiceConfig) {
 
       const availabilityMatch = url.pathname.match(/^\/events\/([^/]+)\/availability$/);
       if (method === "GET" && availabilityMatch) {
-        const eventId = availabilityMatch[1];
-        const event = events.find((item) => item.id === eventId);
+        const event = await loadEvent(pool, availabilityMatch[1]);
 
         if (!event) {
           return sendJson(res, 404, {
@@ -435,4 +643,10 @@ export function createEventServer(config: EventServiceConfig) {
       });
     }
   });
+
+  server.on("close", () => {
+    void pool.end();
+  });
+
+  return server;
 }

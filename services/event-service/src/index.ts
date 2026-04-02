@@ -3,7 +3,7 @@ import { log } from "./logger.js";
 import { createEventServer } from "./server.js";
 
 const config = loadConfig();
-const server = createEventServer(config);
+const server = await createEventServer(config);
 
 server.listen(config.port, config.host, () => {
   log(config.serviceName, "info", "Event service listening", {

@@ -1,0 +1,23 @@
+{
+  "name": "@ticket-platform/local-infra",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "echo 'TODO: add tests for local-infra'",
+    "lint": "echo 'TODO: add lint for local-infra'",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "format": "echo 'TODO: add formatter for local-infra'"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.888.0",
+    "pg": "^8.16.3",
+    "redis": "^5.8.2"
+  }
+}

@@ -1,6 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 
+import {
+  createPostgresPool,
+  createRedisClientFromEnv,
+  queryMany,
+  queryOne,
+  withPostgresTransaction
+} from "@ticket-platform/local-infra";
+import type { Pool, PoolClient } from "pg";
+import type { RedisClientType } from "redis";
+
 import type { TicketingConfig } from "./config.js";
 import { log } from "./logger.js";
 
@@ -22,7 +32,45 @@ interface PurchaseConfirmBody {
 
 type ReservationStatus = "pending" | "payment_pending" | "paid" | "expired";
 
-interface Reservation {
+interface ReservationRow {
+  id: string;
+  user_id: string;
+  event_id: string;
+  ticket_type_id: string;
+  quantity: number | string;
+  unit_price: number | string;
+  total_amount: number | string;
+  status: ReservationStatus;
+  expires_at: string | Date;
+  created_at: string | Date;
+  payment_intent_id: string | null;
+  payment_method: string | null;
+  payment_initiated_at: string | Date | null;
+  paid_at: string | Date | null;
+  gateway_transaction_id: string | null;
+  inventory_locked: boolean;
+}
+
+interface TicketRow {
+  token_id: string;
+  event_id: string;
+  ticket_type_id: string;
+  owner_user_id: string;
+  seat_info: string;
+  reservation_id: string;
+  created_at: string | Date;
+}
+
+interface InventoryRow {
+  ticket_type_id: string;
+  event_id: string;
+  unit_price: number | string;
+  quantity: number | string;
+  sold_count: number | string;
+  locked_count: number | string;
+}
+
+interface ReservationRecord {
   id: string;
   userId: string;
   eventId: string;
@@ -51,14 +99,6 @@ interface TicketRecord {
   createdAt: string;
 }
 
-interface TicketTypeInventory {
-  eventId: string;
-  unitPrice: number;
-  quantity: number;
-  soldCount: number;
-  lockedCount: number;
-}
-
 class InvalidJsonError extends Error {
   constructor() {
     super("Invalid JSON payload");
@@ -67,49 +107,44 @@ class InvalidJsonError extends Error {
 }
 
 const MAX_TICKETS_PER_RESERVATION = 4;
+const IDEMPOTENCY_TTL_SEC = 24 * 60 * 60;
 
-const inventoryByTicketType = new Map<string, TicketTypeInventory>([
-  [
-    "tt_rockfest_ga",
-    {
-      eventId: "evt_rockfest_2026",
-      unitPrice: 900000,
-      quantity: 5000,
-      soldCount: 1250,
-      lockedCount: 0
-    }
-  ],
-  [
-    "tt_rockfest_vip",
-    {
-      eventId: "evt_rockfest_2026",
-      unitPrice: 2200000,
-      quantity: 300,
-      soldCount: 120,
-      lockedCount: 0
-    }
-  ],
-  [
-    "tt_jazz_std",
-    {
-      eventId: "evt_jazz_night_2026",
-      unitPrice: 650000,
-      quantity: 800,
-      soldCount: 180,
-      lockedCount: 0
-    }
-  ],
-  [
-    "tt_jazz_vvip",
-    {
-      eventId: "evt_jazz_night_2026",
-      unitPrice: 1800000,
-      quantity: 100,
-      soldCount: 40,
-      lockedCount: 0
-    }
-  ]
-]);
+const seedInventory: Array<{
+  ticketTypeId: string;
+  eventId: string;
+  unitPrice: number;
+  quantity: number;
+  soldCount: number;
+}> = [
+  {
+    ticketTypeId: "tt_rockfest_ga",
+    eventId: "evt_rockfest_2026",
+    unitPrice: 900000,
+    quantity: 5000,
+    soldCount: 1250
+  },
+  {
+    ticketTypeId: "tt_rockfest_vip",
+    eventId: "evt_rockfest_2026",
+    unitPrice: 2200000,
+    quantity: 300,
+    soldCount: 120
+  },
+  {
+    ticketTypeId: "tt_jazz_std",
+    eventId: "evt_jazz_night_2026",
+    unitPrice: 650000,
+    quantity: 800,
+    soldCount: 180
+  },
+  {
+    ticketTypeId: "tt_jazz_vvip",
+    eventId: "evt_jazz_night_2026",
+    unitPrice: 1800000,
+    quantity: 100,
+    soldCount: 40
+  }
+];
 
 function sendJson(res: ServerResponse, statusCode: number, payload: unknown): void {
   res.statusCode = statusCode;
@@ -167,36 +202,15 @@ async function readJson<T>(req: IncomingMessage): Promise<T> {
   }
 }
 
-function toIso(ms: number): string {
-  return new Date(ms).toISOString();
+function toIso(value: string | Date): string {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
-function inventoryAvailable(inventory: TicketTypeInventory): number {
-  return Math.max(inventory.quantity - inventory.soldCount - inventory.lockedCount, 0);
-}
-
-function releaseReservationLock(reservation: Reservation): void {
-  if (!reservation.inventoryLocked) {
-    return;
-  }
-
-  const inventory = inventoryByTicketType.get(reservation.ticketTypeId);
-  if (!inventory) {
-    reservation.inventoryLocked = false;
-    return;
-  }
-
-  inventory.lockedCount = Math.max(inventory.lockedCount - reservation.quantity, 0);
-  reservation.inventoryLocked = false;
-}
-
-function expireReservation(reservation: Reservation): void {
-  if (reservation.status === "expired" || reservation.status === "paid") {
-    return;
-  }
-
-  releaseReservationLock(reservation);
-  reservation.status = "expired";
+function inventoryAvailable(inventory: InventoryRow): number {
+  return Math.max(
+    Number(inventory.quantity) - Number(inventory.sold_count) - Number(inventory.locked_count),
+    0
+  );
 }
 
 function normalizePaymentConfirmation(status: string | undefined): boolean {
@@ -205,10 +219,48 @@ function normalizePaymentConfirmation(status: string | undefined): boolean {
   }
 
   const normalized = status.trim().toLowerCase();
-  return normalized === "paid" || normalized === "success" || normalized === "succeeded" || normalized === "confirmed";
+  return (
+    normalized === "paid" ||
+    normalized === "success" ||
+    normalized === "succeeded" ||
+    normalized === "confirmed"
+  );
 }
 
-function reservationResponse(reservation: Reservation): Record<string, unknown> {
+function mapReservation(row: ReservationRow): ReservationRecord {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    eventId: row.event_id,
+    ticketTypeId: row.ticket_type_id,
+    quantity: Number(row.quantity),
+    unitPrice: Number(row.unit_price),
+    totalAmount: Number(row.total_amount),
+    status: row.status,
+    expiresAtMs: new Date(row.expires_at).getTime(),
+    createdAt: toIso(row.created_at),
+    paymentIntentId: row.payment_intent_id ?? undefined,
+    paymentMethod: row.payment_method ?? undefined,
+    paymentInitiatedAt: row.payment_initiated_at ? toIso(row.payment_initiated_at) : undefined,
+    paidAt: row.paid_at ? toIso(row.paid_at) : undefined,
+    gatewayTransactionId: row.gateway_transaction_id ?? undefined,
+    inventoryLocked: row.inventory_locked
+  };
+}
+
+function mapTicket(row: TicketRow): TicketRecord {
+  return {
+    tokenId: row.token_id,
+    eventId: row.event_id,
+    ticketTypeId: row.ticket_type_id,
+    ownerUserId: row.owner_user_id,
+    seatInfo: row.seat_info,
+    reservationId: row.reservation_id,
+    createdAt: toIso(row.created_at)
+  };
+}
+
+function reservationResponse(reservation: ReservationRecord): Record<string, unknown> {
   return {
     reservationId: reservation.id,
     eventId: reservation.eventId,
@@ -220,26 +272,187 @@ function reservationResponse(reservation: Reservation): Record<string, unknown> 
     paymentIntentId: reservation.paymentIntentId,
     paymentMethod: reservation.paymentMethod,
     gatewayTransactionId: reservation.gatewayTransactionId,
-    expiresAt: toIso(reservation.expiresAtMs),
+    expiresAt: new Date(reservation.expiresAtMs).toISOString(),
     createdAt: reservation.createdAt,
     paymentInitiatedAt: reservation.paymentInitiatedAt,
     paidAt: reservation.paidAt
   };
 }
 
-export function createTicketingServer(config: TicketingConfig) {
-  const reservations = new Map<string, Reservation>();
-  const ticketsByUser = new Map<string, TicketRecord[]>();
-  const ticketsByReservationId = new Map<string, TicketRecord[]>();
-  const idempotencyResponses = new Map<string, unknown>();
+async function getCachedResponse(
+  redis: RedisClientType,
+  scope: string | null
+): Promise<unknown | null> {
+  if (!scope) {
+    return null;
+  }
+
+  const raw = await redis.get(`ticketing:idempotency:${scope}`);
+  return raw ? JSON.parse(raw) : null;
+}
+
+async function setCachedResponse(
+  redis: RedisClientType,
+  scope: string | null,
+  payload: unknown
+): Promise<void> {
+  if (!scope) {
+    return;
+  }
+
+  await redis.set(`ticketing:idempotency:${scope}`, JSON.stringify(payload), {
+    EX: IDEMPOTENCY_TTL_SEC
+  });
+}
+
+async function ensureSchema(pool: Pool): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ticket_inventory (
+      ticket_type_id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL,
+      unit_price INTEGER NOT NULL,
+      quantity INTEGER NOT NULL,
+      sold_count INTEGER NOT NULL DEFAULT 0,
+      locked_count INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS reservations (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      event_id TEXT NOT NULL,
+      ticket_type_id TEXT NOT NULL,
+      quantity INTEGER NOT NULL,
+      unit_price INTEGER NOT NULL,
+      total_amount INTEGER NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('pending', 'payment_pending', 'paid', 'expired')),
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL,
+      payment_intent_id TEXT,
+      payment_method TEXT,
+      payment_initiated_at TIMESTAMPTZ,
+      paid_at TIMESTAMPTZ,
+      gateway_transaction_id TEXT,
+      inventory_locked BOOLEAN NOT NULL DEFAULT TRUE,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tickets (
+      token_id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL,
+      ticket_type_id TEXT NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      seat_info TEXT NOT NULL,
+      reservation_id TEXT NOT NULL REFERENCES reservations(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  const count = await queryOne<{ count: string }>(
+    pool,
+    "SELECT COUNT(*)::text AS count FROM ticket_inventory"
+  );
+  if (Number(count?.count ?? 0) > 0) {
+    return;
+  }
+
+  for (const item of seedInventory) {
+    await pool.query(
+      `
+        INSERT INTO ticket_inventory (ticket_type_id, event_id, unit_price, quantity, sold_count, locked_count)
+        VALUES ($1, $2, $3, $4, $5, 0)
+      `,
+      [item.ticketTypeId, item.eventId, item.unitPrice, item.quantity, item.soldCount]
+    );
+  }
+}
+
+async function loadReservation(
+  client: Pool | PoolClient,
+  reservationId: string
+): Promise<ReservationRecord | null> {
+  const row = await queryOne<ReservationRow>(
+    client,
+    `
+      SELECT id, user_id, event_id, ticket_type_id, quantity, unit_price, total_amount, status, expires_at, created_at,
+             payment_intent_id, payment_method, payment_initiated_at, paid_at, gateway_transaction_id, inventory_locked
+      FROM reservations
+      WHERE id = $1
+    `,
+    [reservationId]
+  );
+
+  return row ? mapReservation(row) : null;
+}
+
+async function expireReservationById(pool: Pool, reservationId: string): Promise<void> {
+  await withPostgresTransaction(pool, async (client) => {
+    const reservation = await queryOne<ReservationRow>(
+      client,
+      `
+        SELECT id, user_id, event_id, ticket_type_id, quantity, unit_price, total_amount, status, expires_at, created_at,
+               payment_intent_id, payment_method, payment_initiated_at, paid_at, gateway_transaction_id, inventory_locked
+        FROM reservations
+        WHERE id = $1
+        FOR UPDATE
+      `,
+      [reservationId]
+    );
+
+    if (!reservation || reservation.status === "expired" || reservation.status === "paid") {
+      return;
+    }
+
+    if (reservation.inventory_locked) {
+      await client.query(
+        `
+          UPDATE ticket_inventory
+          SET locked_count = GREATEST(locked_count - $2, 0), updated_at = NOW()
+          WHERE ticket_type_id = $1
+        `,
+        [reservation.ticket_type_id, Number(reservation.quantity)]
+      );
+    }
+
+    await client.query(
+      `
+        UPDATE reservations
+        SET status = 'expired', inventory_locked = FALSE, updated_at = NOW()
+        WHERE id = $1
+      `,
+      [reservationId]
+    );
+  });
+}
+
+async function expireDueReservations(pool: Pool): Promise<void> {
+  const rows = await queryMany<{ id: string }>(
+    pool,
+    `SELECT id FROM reservations WHERE status IN ('pending', 'payment_pending') AND expires_at <= NOW() ORDER BY expires_at ASC LIMIT 50`
+  );
+
+  for (const row of rows) {
+    await expireReservationById(pool, row.id);
+  }
+}
+
+export async function createTicketingServer(config: TicketingConfig) {
+  const pool = createPostgresPool(process.env);
+  const redis = createRedisClientFromEnv(process.env);
+  await redis.connect();
+  await ensureSchema(pool);
 
   const cleanupTimer = setInterval(() => {
-    const now = Date.now();
-    for (const reservation of reservations.values()) {
-      if ((reservation.status === "pending" || reservation.status === "payment_pending") && reservation.expiresAtMs <= now) {
-        expireReservation(reservation);
-      }
-    }
+    void expireDueReservations(pool).catch((error) => {
+      log(config.serviceName, "error", "Failed to expire reservations", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    });
   }, 30_000);
 
   const server = createServer(async (req, res) => {
@@ -254,6 +467,10 @@ export function createTicketingServer(config: TicketingConfig) {
           data: {
             service: config.serviceName,
             status: "ok",
+            storage: {
+              primary: "postgres",
+              cache: "redis"
+            },
             timestamp: new Date().toISOString()
           }
         });
@@ -270,9 +487,14 @@ export function createTicketingServer(config: TicketingConfig) {
           });
         }
 
-        const idempotencyScope = createIdempotencyScope(method, url.pathname, extractIdempotencyKey(req));
-        if (idempotencyScope && idempotencyResponses.has(idempotencyScope)) {
-          return sendJson(res, 200, idempotencyResponses.get(idempotencyScope));
+        const idempotencyScope = createIdempotencyScope(
+          method,
+          url.pathname,
+          extractIdempotencyKey(req)
+        );
+        const cached = await getCachedResponse(redis, idempotencyScope);
+        if (cached) {
+          return sendJson(res, 200, cached);
         }
 
         const body = await readJson<ReserveBody>(req);
@@ -296,8 +518,87 @@ export function createTicketingServer(config: TicketingConfig) {
           });
         }
 
-        const inventory = inventoryByTicketType.get(body.ticketTypeId);
-        if (!inventory) {
+        const reservationId = `res_${randomUUID().replace(/-/g, "")}`;
+        const nowMs = Date.now();
+        const quantity = body.quantity;
+        const eventId = body.eventId;
+        const ticketTypeId = body.ticketTypeId;
+
+        const reservation = await withPostgresTransaction(pool, async (client) => {
+          const inventory = await queryOne<InventoryRow>(
+            client,
+            `
+              SELECT ticket_type_id, event_id, unit_price, quantity, sold_count, locked_count
+              FROM ticket_inventory
+              WHERE ticket_type_id = $1
+              FOR UPDATE
+            `,
+            [ticketTypeId]
+          );
+
+          if (!inventory) {
+            throw new Error("UNKNOWN_TICKET_TYPE");
+          }
+
+          if (inventory.event_id !== eventId) {
+            throw new Error("EVENT_TICKET_TYPE_MISMATCH");
+          }
+
+          if (inventoryAvailable(inventory) < quantity) {
+            throw new Error("INSUFFICIENT_INVENTORY");
+          }
+
+          await client.query(
+            `
+              UPDATE ticket_inventory
+              SET locked_count = locked_count + $2, updated_at = NOW()
+              WHERE ticket_type_id = $1
+            `,
+            [ticketTypeId, quantity]
+          );
+
+          const expiresAt = new Date(nowMs + config.reservationTtlSec * 1000).toISOString();
+          await client.query(
+            `
+              INSERT INTO reservations (
+                id, user_id, event_id, ticket_type_id, quantity, unit_price, total_amount, status,
+                expires_at, created_at, inventory_locked
+              )
+              VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8::timestamptz, $9::timestamptz, TRUE)
+            `,
+            [
+              reservationId,
+              userId,
+              eventId,
+              ticketTypeId,
+              quantity,
+              Number(inventory.unit_price),
+              Number(inventory.unit_price) * quantity,
+              expiresAt,
+              new Date(nowMs).toISOString()
+            ]
+          );
+
+          const created = await loadReservation(client, reservationId);
+          if (!created) {
+            throw new Error("RESERVATION_CREATE_FAILED");
+          }
+
+          return created;
+        }).catch((error: Error) => {
+          if (error.message === "UNKNOWN_TICKET_TYPE") {
+            return null;
+          }
+          if (error.message === "EVENT_TICKET_TYPE_MISMATCH") {
+            throw Object.assign(new Error(error.message), { statusCode: 400 });
+          }
+          if (error.message === "INSUFFICIENT_INVENTORY") {
+            throw Object.assign(new Error(error.message), { statusCode: 409 });
+          }
+          throw error;
+        });
+
+        if (!reservation) {
           return sendJson(res, 400, {
             success: false,
             error: {
@@ -307,53 +608,12 @@ export function createTicketingServer(config: TicketingConfig) {
           });
         }
 
-        if (inventory.eventId !== body.eventId) {
-          return sendJson(res, 400, {
-            success: false,
-            error: {
-              code: "EVENT_TICKET_TYPE_MISMATCH",
-              message: "ticketTypeId does not belong to eventId"
-            }
-          });
-        }
-
-        if (inventoryAvailable(inventory) < body.quantity) {
-          return sendJson(res, 409, {
-            success: false,
-            error: {
-              code: "INSUFFICIENT_INVENTORY",
-              message: "Not enough inventory for reservation"
-            }
-          });
-        }
-
-        inventory.lockedCount += body.quantity;
-        const now = Date.now();
-        const reservation: Reservation = {
-          id: `res_${randomUUID().replace(/-/g, "")}`,
-          userId,
-          eventId: body.eventId,
-          ticketTypeId: body.ticketTypeId,
-          quantity: body.quantity,
-          unitPrice: inventory.unitPrice,
-          totalAmount: inventory.unitPrice * body.quantity,
-          status: "pending",
-          expiresAtMs: now + config.reservationTtlSec * 1000,
-          createdAt: toIso(now),
-          inventoryLocked: true
-        };
-
-        reservations.set(reservation.id, reservation);
-
         const response = {
           success: true,
           data: reservationResponse(reservation)
         };
 
-        if (idempotencyScope) {
-          idempotencyResponses.set(idempotencyScope, response);
-        }
-
+        await setCachedResponse(redis, idempotencyScope, response);
         return sendJson(res, 200, response);
       }
 
@@ -368,9 +628,14 @@ export function createTicketingServer(config: TicketingConfig) {
           });
         }
 
-        const idempotencyScope = createIdempotencyScope(method, url.pathname, extractIdempotencyKey(req));
-        if (idempotencyScope && idempotencyResponses.has(idempotencyScope)) {
-          return sendJson(res, 200, idempotencyResponses.get(idempotencyScope));
+        const idempotencyScope = createIdempotencyScope(
+          method,
+          url.pathname,
+          extractIdempotencyKey(req)
+        );
+        const cached = await getCachedResponse(redis, idempotencyScope);
+        if (cached) {
+          return sendJson(res, 200, cached);
         }
 
         const body = await readJson<PurchaseBody>(req);
@@ -384,55 +649,78 @@ export function createTicketingServer(config: TicketingConfig) {
           });
         }
 
-        const reservation = reservations.get(body.reservationId);
-        if (!reservation || reservation.userId !== userId) {
-          return sendJson(res, 404, {
-            success: false,
-            error: {
-              code: "RESERVATION_NOT_FOUND",
-              message: "Reservation not found"
-            }
-          });
-        }
+        const reservationId = body.reservationId;
+        const paymentMethod = body.paymentMethod;
 
-        if (Date.now() > reservation.expiresAtMs && reservation.status !== "paid") {
-          expireReservation(reservation);
-          return sendJson(res, 400, {
-            success: false,
-            error: {
-              code: "RESERVATION_EXPIRED",
-              message: "Reservation expired"
-            }
-          });
-        }
+        const result = await withPostgresTransaction(pool, async (client) => {
+          const reservationRow = await queryOne<ReservationRow>(
+            client,
+            `
+              SELECT id, user_id, event_id, ticket_type_id, quantity, unit_price, total_amount, status, expires_at, created_at,
+                     payment_intent_id, payment_method, payment_initiated_at, paid_at, gateway_transaction_id, inventory_locked
+              FROM reservations
+              WHERE id = $1
+              FOR UPDATE
+            `,
+            [reservationId]
+          );
 
-        if (reservation.status !== "pending") {
-          return sendJson(res, 400, {
-            success: false,
-            error: {
-              code: "RESERVATION_NOT_PENDING",
-              message: "Reservation is not pending"
-            }
-          });
-        }
+          if (!reservationRow || reservationRow.user_id !== userId) {
+            throw Object.assign(new Error("RESERVATION_NOT_FOUND"), { statusCode: 404 });
+          }
 
-        reservation.status = "payment_pending";
-        reservation.paymentMethod = body.paymentMethod;
-        reservation.paymentInitiatedAt = new Date().toISOString();
-        reservation.paymentIntentId = reservation.paymentIntentId ?? `pay_${randomUUID().replace(/-/g, "")}`;
+          if (
+            Date.now() > new Date(reservationRow.expires_at).getTime() &&
+            reservationRow.status !== "paid"
+          ) {
+            if (reservationRow.inventory_locked) {
+              await client.query(
+                `UPDATE ticket_inventory SET locked_count = GREATEST(locked_count - $2, 0), updated_at = NOW() WHERE ticket_type_id = $1`,
+                [reservationRow.ticket_type_id, Number(reservationRow.quantity)]
+              );
+            }
+            await client.query(
+              `UPDATE reservations SET status = 'expired', inventory_locked = FALSE, updated_at = NOW() WHERE id = $1`,
+              [reservationId]
+            );
+            throw Object.assign(new Error("RESERVATION_EXPIRED"), { statusCode: 400 });
+          }
+
+          if (reservationRow.status !== "pending") {
+            throw Object.assign(new Error("RESERVATION_NOT_PENDING"), { statusCode: 400 });
+          }
+
+          const paymentIntentId =
+            reservationRow.payment_intent_id ?? `pay_${randomUUID().replace(/-/g, "")}`;
+          const paymentInitiatedAt = new Date().toISOString();
+
+          await client.query(
+            `
+              UPDATE reservations
+              SET status = 'payment_pending', payment_method = $2, payment_initiated_at = $3::timestamptz,
+                  payment_intent_id = $4, updated_at = NOW()
+              WHERE id = $1
+            `,
+            [reservationId, paymentMethod, paymentInitiatedAt, paymentIntentId]
+          );
+
+          const updated = await loadReservation(client, reservationId);
+          if (!updated) {
+            throw new Error("RESERVATION_NOT_FOUND");
+          }
+
+          return updated;
+        });
 
         const response = {
           success: true,
           data: {
-            ...reservationResponse(reservation),
+            ...reservationResponse(result),
             paymentGatewayStatus: "pending"
           }
         };
 
-        if (idempotencyScope) {
-          idempotencyResponses.set(idempotencyScope, response);
-        }
-
+        await setCachedResponse(redis, idempotencyScope, response);
         return sendJson(res, 200, response);
       }
 
@@ -448,24 +736,18 @@ export function createTicketingServer(config: TicketingConfig) {
           });
         }
 
-        const idempotencyScope = createIdempotencyScope(method, url.pathname, extractIdempotencyKey(req));
-        if (idempotencyScope && idempotencyResponses.has(idempotencyScope)) {
-          return sendJson(res, 200, idempotencyResponses.get(idempotencyScope));
+        const idempotencyScope = createIdempotencyScope(
+          method,
+          url.pathname,
+          extractIdempotencyKey(req)
+        );
+        const cached = await getCachedResponse(redis, idempotencyScope);
+        if (cached) {
+          return sendJson(res, 200, cached);
         }
 
         const reservationId = confirmMatch[1];
         const body = await readJson<PurchaseConfirmBody>(req);
-        const reservation = reservations.get(reservationId);
-
-        if (!reservation) {
-          return sendJson(res, 404, {
-            success: false,
-            error: {
-              code: "RESERVATION_NOT_FOUND",
-              message: "Reservation not found"
-            }
-          });
-        }
 
         if (!normalizePaymentConfirmation(body.status)) {
           return sendJson(res, 400, {
@@ -477,77 +759,123 @@ export function createTicketingServer(config: TicketingConfig) {
           });
         }
 
-        if (Date.now() > reservation.expiresAtMs && reservation.status !== "paid") {
-          expireReservation(reservation);
-          return sendJson(res, 400, {
-            success: false,
-            error: {
-              code: "RESERVATION_EXPIRED",
-              message: "Reservation expired"
+        const response = await withPostgresTransaction(pool, async (client) => {
+          const reservationRow = await queryOne<ReservationRow>(
+            client,
+            `
+              SELECT id, user_id, event_id, ticket_type_id, quantity, unit_price, total_amount, status, expires_at, created_at,
+                     payment_intent_id, payment_method, payment_initiated_at, paid_at, gateway_transaction_id, inventory_locked
+              FROM reservations
+              WHERE id = $1
+              FOR UPDATE
+            `,
+            [reservationId]
+          );
+
+          if (!reservationRow) {
+            throw Object.assign(new Error("RESERVATION_NOT_FOUND"), { statusCode: 404 });
+          }
+
+          if (
+            Date.now() > new Date(reservationRow.expires_at).getTime() &&
+            reservationRow.status !== "paid"
+          ) {
+            if (reservationRow.inventory_locked) {
+              await client.query(
+                `UPDATE ticket_inventory SET locked_count = GREATEST(locked_count - $2, 0), updated_at = NOW() WHERE ticket_type_id = $1`,
+                [reservationRow.ticket_type_id, Number(reservationRow.quantity)]
+              );
             }
-          });
-        }
+            await client.query(
+              `UPDATE reservations SET status = 'expired', inventory_locked = FALSE, updated_at = NOW() WHERE id = $1`,
+              [reservationId]
+            );
+            throw Object.assign(new Error("RESERVATION_EXPIRED"), { statusCode: 400 });
+          }
 
-        if (reservation.status !== "payment_pending" && reservation.status !== "paid") {
-          return sendJson(res, 400, {
-            success: false,
-            error: {
-              code: "RESERVATION_NOT_PENDING_PAYMENT",
-              message: "Reservation is not awaiting payment confirmation"
+          if (reservationRow.status !== "payment_pending" && reservationRow.status !== "paid") {
+            throw Object.assign(new Error("RESERVATION_NOT_PENDING_PAYMENT"), { statusCode: 400 });
+          }
+
+          if (reservationRow.status === "payment_pending") {
+            await client.query(
+              `
+                UPDATE ticket_inventory
+                SET sold_count = sold_count + $2,
+                    locked_count = GREATEST(locked_count - $2, 0),
+                    updated_at = NOW()
+                WHERE ticket_type_id = $1
+              `,
+              [reservationRow.ticket_type_id, Number(reservationRow.quantity)]
+            );
+
+            await client.query(
+              `
+                UPDATE reservations
+                SET status = 'paid',
+                    paid_at = NOW(),
+                    gateway_transaction_id = $2,
+                    inventory_locked = FALSE,
+                    updated_at = NOW()
+                WHERE id = $1
+              `,
+              [
+                reservationId,
+                body.gatewayTransactionId?.trim() || `gw_${randomUUID().replace(/-/g, "")}`
+              ]
+            );
+          }
+
+          const ticketCount = await queryOne<{ count: string }>(
+            client,
+            `SELECT COUNT(*)::text AS count FROM tickets WHERE reservation_id = $1`,
+            [reservationId]
+          );
+
+          if (Number(ticketCount?.count ?? 0) === 0) {
+            const existingUserTickets = await queryOne<{ count: string }>(
+              client,
+              `SELECT COUNT(*)::text AS count FROM tickets WHERE owner_user_id = $1`,
+              [reservationRow.user_id]
+            );
+            const startIndex = Number(existingUserTickets?.count ?? 0);
+
+            for (let i = 0; i < Number(reservationRow.quantity); i += 1) {
+              await client.query(
+                `
+                  INSERT INTO tickets (token_id, event_id, ticket_type_id, owner_user_id, seat_info, reservation_id, created_at)
+                  VALUES ($1, $2, $3, $4, $5, $6, NOW())
+                `,
+                [
+                  `mock_${randomUUID().replace(/-/g, "")}`,
+                  reservationRow.event_id,
+                  reservationRow.ticket_type_id,
+                  reservationRow.user_id,
+                  `GA-${String(startIndex + i + 1).padStart(4, "0")}`,
+                  reservationId
+                ]
+              );
             }
-          });
-        }
-
-        if (reservation.status === "payment_pending") {
-          releaseReservationLock(reservation);
-          const inventory = inventoryByTicketType.get(reservation.ticketTypeId);
-          if (inventory) {
-            inventory.soldCount += reservation.quantity;
           }
 
-          reservation.status = "paid";
-          reservation.paidAt = new Date().toISOString();
-          reservation.gatewayTransactionId = body.gatewayTransactionId?.trim() || `gw_${randomUUID().replace(/-/g, "")}`;
-        }
+          const updated = await loadReservation(client, reservationId);
+          const issued = await queryOne<{ count: string }>(
+            client,
+            `SELECT COUNT(*)::text AS count FROM tickets WHERE reservation_id = $1`,
+            [reservationId]
+          );
 
-        const existingTickets = ticketsByReservationId.get(reservation.id);
-        if (!existingTickets) {
-          const userTickets = ticketsByUser.get(reservation.userId) ?? [];
-          const mintedTickets: TicketRecord[] = [];
+          return {
+            success: true,
+            data: {
+              ...reservationResponse(updated as ReservationRecord),
+              ticketsIssued: Number(issued?.count ?? 0),
+              paymentGatewayStatus: "confirmed"
+            }
+          };
+        });
 
-          for (let i = 0; i < reservation.quantity; i += 1) {
-            const ticket: TicketRecord = {
-              tokenId: `mock_${randomUUID().replace(/-/g, "")}`,
-              eventId: reservation.eventId,
-              ticketTypeId: reservation.ticketTypeId,
-              ownerUserId: reservation.userId,
-              seatInfo: `GA-${String(userTickets.length + i + 1).padStart(4, "0")}`,
-              reservationId: reservation.id,
-              createdAt: new Date().toISOString()
-            };
-
-            mintedTickets.push(ticket);
-            userTickets.push(ticket);
-          }
-
-          ticketsByUser.set(reservation.userId, userTickets);
-          ticketsByReservationId.set(reservation.id, mintedTickets);
-        }
-
-        const ticketsIssued = ticketsByReservationId.get(reservation.id)?.length ?? 0;
-        const response = {
-          success: true,
-          data: {
-            ...reservationResponse(reservation),
-            ticketsIssued,
-            paymentGatewayStatus: "confirmed"
-          }
-        };
-
-        if (idempotencyScope) {
-          idempotencyResponses.set(idempotencyScope, response);
-        }
-
+        await setCachedResponse(redis, idempotencyScope, response);
         return sendJson(res, 200, response);
       }
 
@@ -563,7 +891,7 @@ export function createTicketingServer(config: TicketingConfig) {
           });
         }
 
-        const reservation = reservations.get(reservationMatch[1]);
+        const reservation = await loadReservation(pool, reservationMatch[1]);
         if (!reservation || reservation.userId !== userId) {
           return sendJson(res, 404, {
             success: false,
@@ -574,8 +902,16 @@ export function createTicketingServer(config: TicketingConfig) {
           });
         }
 
-        if ((reservation.status === "pending" || reservation.status === "payment_pending") && Date.now() > reservation.expiresAtMs) {
-          expireReservation(reservation);
+        if (
+          (reservation.status === "pending" || reservation.status === "payment_pending") &&
+          Date.now() > reservation.expiresAtMs
+        ) {
+          await expireReservationById(pool, reservation.id);
+          const refreshed = await loadReservation(pool, reservation.id);
+          return sendJson(res, 200, {
+            success: true,
+            data: reservationResponse(refreshed as ReservationRecord)
+          });
         }
 
         return sendJson(res, 200, {
@@ -595,10 +931,19 @@ export function createTicketingServer(config: TicketingConfig) {
           });
         }
 
-        const tickets = ticketsByUser.get(userId) ?? [];
+        const tickets = await queryMany<TicketRow>(
+          pool,
+          `
+            SELECT token_id, event_id, ticket_type_id, owner_user_id, seat_info, reservation_id, created_at
+            FROM tickets
+            WHERE owner_user_id = $1
+            ORDER BY created_at ASC
+          `,
+          [userId]
+        );
         return sendJson(res, 200, {
           success: true,
-          data: tickets
+          data: tickets.map(mapTicket)
         });
       }
 
@@ -614,9 +959,15 @@ export function createTicketingServer(config: TicketingConfig) {
           });
         }
 
-        const tokenId = ticketDetailMatch[1];
-        const tickets = ticketsByUser.get(userId) ?? [];
-        const ticket = tickets.find((item) => item.tokenId === tokenId);
+        const ticket = await queryOne<TicketRow>(
+          pool,
+          `
+            SELECT token_id, event_id, ticket_type_id, owner_user_id, seat_info, reservation_id, created_at
+            FROM tickets
+            WHERE token_id = $1 AND owner_user_id = $2
+          `,
+          [ticketDetailMatch[1], userId]
+        );
 
         if (!ticket) {
           return sendJson(res, 404, {
@@ -630,7 +981,7 @@ export function createTicketingServer(config: TicketingConfig) {
 
         return sendJson(res, 200, {
           success: true,
-          data: ticket
+          data: mapTicket(ticket)
         });
       }
 
@@ -646,14 +997,25 @@ export function createTicketingServer(config: TicketingConfig) {
           });
         }
 
-        const idempotencyScope = createIdempotencyScope(method, url.pathname, extractIdempotencyKey(req));
-        if (idempotencyScope && idempotencyResponses.has(idempotencyScope)) {
-          return sendJson(res, 200, idempotencyResponses.get(idempotencyScope));
+        const idempotencyScope = createIdempotencyScope(
+          method,
+          url.pathname,
+          extractIdempotencyKey(req)
+        );
+        const cached = await getCachedResponse(redis, idempotencyScope);
+        if (cached) {
+          return sendJson(res, 200, cached);
         }
 
-        const tokenId = qrMatch[1];
-        const tickets = ticketsByUser.get(userId) ?? [];
-        const ticket = tickets.find((item) => item.tokenId === tokenId);
+        const ticket = await queryOne<TicketRow>(
+          pool,
+          `
+            SELECT token_id, event_id, ticket_type_id, owner_user_id, seat_info, reservation_id, created_at
+            FROM tickets
+            WHERE token_id = $1 AND owner_user_id = $2
+          `,
+          [qrMatch[1], userId]
+        );
 
         if (!ticket) {
           return sendJson(res, 404, {
@@ -668,19 +1030,16 @@ export function createTicketingServer(config: TicketingConfig) {
         const response = {
           success: true,
           data: {
-            tokenId: ticket.tokenId,
-            eventId: ticket.eventId,
+            tokenId: ticket.token_id,
+            eventId: ticket.event_id,
             timestamp: Date.now(),
             nonce: randomUUID(),
-            walletAddress: `mock-wallet-${ticket.ownerUserId}`,
+            walletAddress: `mock-wallet-${userId}`,
             signature: `0x${randomUUID().replace(/-/g, "")}${randomUUID().replace(/-/g, "")}`
           }
         };
 
-        if (idempotencyScope) {
-          idempotencyResponses.set(idempotencyScope, response);
-        }
-
+        await setCachedResponse(redis, idempotencyScope, response);
         return sendJson(res, 200, response);
       }
 
@@ -702,8 +1061,75 @@ export function createTicketingServer(config: TicketingConfig) {
         });
       }
 
+      const statusCode =
+        typeof error === "object" && error && "statusCode" in error
+          ? Number((error as { statusCode: number }).statusCode)
+          : 500;
+      const code = error instanceof Error ? error.message : "INTERNAL_ERROR";
+
+      if (code === "EVENT_TICKET_TYPE_MISMATCH") {
+        return sendJson(res, 400, {
+          success: false,
+          error: {
+            code,
+            message: "ticketTypeId does not belong to eventId"
+          }
+        });
+      }
+
+      if (code === "INSUFFICIENT_INVENTORY") {
+        return sendJson(res, 409, {
+          success: false,
+          error: {
+            code,
+            message: "Not enough inventory for reservation"
+          }
+        });
+      }
+
+      if (code === "RESERVATION_NOT_FOUND") {
+        return sendJson(res, 404, {
+          success: false,
+          error: {
+            code,
+            message: "Reservation not found"
+          }
+        });
+      }
+
+      if (code === "RESERVATION_EXPIRED") {
+        return sendJson(res, 400, {
+          success: false,
+          error: {
+            code,
+            message: "Reservation expired"
+          }
+        });
+      }
+
+      if (code === "RESERVATION_NOT_PENDING") {
+        return sendJson(res, 400, {
+          success: false,
+          error: {
+            code,
+            message: "Reservation is not pending"
+          }
+        });
+      }
+
+      if (code === "RESERVATION_NOT_PENDING_PAYMENT") {
+        return sendJson(res, 400, {
+          success: false,
+          error: {
+            code,
+            message: "Reservation is not awaiting payment confirmation"
+          }
+        });
+      }
+
       log(config.serviceName, "error", "Unhandled request error", {
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
+        statusCode
       });
 
       return sendJson(res, 500, {
@@ -718,6 +1144,8 @@ export function createTicketingServer(config: TicketingConfig) {
 
   server.on("close", () => {
     clearInterval(cleanupTimer);
+    void redis.quit();
+    void pool.end();
   });
 
   return server;

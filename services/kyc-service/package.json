@@ -4,6 +4,11 @@
   "version": "0.1.0",
   "type": "module",
   "description": "KYC service runnable skeleton",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.888.0",
+    "@ticket-platform/local-infra": "workspace:*",
+    "pg": "^8.16.3"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "node --watch --experimental-strip-types src/index.ts",

@@ -7,6 +7,7 @@ export interface KycServiceConfig {
   internalApiKey: string;
   minLivenessScore: number;
   minFaceMatchScore: number;
+  archiveBucket: string;
 }
 
 function parseNumber(value: string | undefined, fallback: number): number {
@@ -27,6 +28,7 @@ export function loadConfig(): KycServiceConfig {
     fallbackProvider: process.env.KYC_FALLBACK_PROVIDER ?? "vnpt",
     internalApiKey: process.env.INTERNAL_API_KEY ?? "internal_dev_key",
     minLivenessScore: parseNumber(process.env.KYC_MIN_LIVENESS_SCORE, 0.8),
-    minFaceMatchScore: parseNumber(process.env.KYC_MIN_FACE_MATCH_SCORE, 0.7)
+    minFaceMatchScore: parseNumber(process.env.KYC_MIN_FACE_MATCH_SCORE, 0.7),
+    archiveBucket: process.env.KYC_ARCHIVE_BUCKET ?? "ticket-platform-kyc-local"
   };
 }

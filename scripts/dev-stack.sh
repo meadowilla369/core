@@ -39,10 +39,46 @@ can_use_docker() {
   command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1
 }
 
+wait_for_tcp() {
+  local name="$1"
+  local host="$2"
+  local port="$3"
+
+  for _ in $(seq 1 30); do
+    if bash -lc "</dev/tcp/$host/$port" >/dev/null 2>&1; then
+      echo "✓ $name ready -> $host:$port"
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "✗ $name did not become ready -> $host:$port"
+  return 1
+}
+
+wait_for_http() {
+  local name="$1"
+  local url="$2"
+
+  for _ in $(seq 1 30); do
+    if curl -fsS "$url" >/dev/null 2>&1; then
+      echo "✓ $name ready -> $url"
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "✗ $name did not become ready -> $url"
+  return 1
+}
+
 start_infra() {
   if can_use_docker; then
     echo "== Starting local infra (docker compose) =="
     docker compose up -d postgres redis minio
+    wait_for_tcp postgres 127.0.0.1 "${POSTGRES_PORT:-5432}"
+    wait_for_tcp redis 127.0.0.1 "${REDIS_PORT:-6379}"
+    wait_for_http minio "http://127.0.0.1:${MINIO_API_PORT:-9000}/minio/health/live"
   else
     echo "== Skipping docker infra =="
     echo "Docker daemon is not available. Start Docker Desktop and re-run 'npm run stack:up' if you want Postgres/Redis/MinIO containers."

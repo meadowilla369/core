@@ -3,13 +3,12 @@ import { log } from "./logger.js";
 import { createTicketingServer } from "./server.js";
 
 const config = loadConfig();
-const server = createTicketingServer(config);
+const server = await createTicketingServer(config);
 
 server.listen(config.port, config.host, () => {
   log(config.serviceName, "info", "Ticketing service listening", {
     host: config.host,
-    port: config.port,
-    reservationTtlSec: config.reservationTtlSec
+    port: config.port
   });
 });
 

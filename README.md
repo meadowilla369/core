@@ -31,6 +31,10 @@ npm test
 
 Start infra dependencies (Postgres, Redis, MinIO) plus all runnable services and the browser UI simulator:
 
+- `event-service` now persists events/ticket types in Postgres.
+- `ticketing-service` now persists reservations/tickets/inventory in Postgres and uses Redis for idempotency caching.
+- `kyc-service` now persists workflow state in Postgres and archives KYC payload snapshots to MinIO.
+
 ```bash
 npm run stack:up
 npm run stack:status
@@ -63,9 +67,10 @@ npm run ui:dev
 cp .env.example .env
 ```
 
-- `.env.example` contains the full local dev baseline.
-- `docker-compose.yml` provides local infra services.
+- `.env.example` contains the full local dev baseline, including `DATABASE_URL`, `REDIS_URL`, and MinIO settings.
+- `docker-compose.yml` provides local Postgres, Redis, and MinIO services.
 - `scripts/dev-stack.sh` boots the full host-side app stack.
+- Persistence is currently wired for `event-service`, `ticketing-service`, and `kyc-service`; the remaining services still run with in-memory/mock state.
 
 ## Quality checks
 
