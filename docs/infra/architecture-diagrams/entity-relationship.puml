@@ -1,0 +1,324 @@
+@startuml
+title Ticket Platform - Entity Relationship Diagram
+left to right direction
+skinparam shadowing false
+skinparam linetype ortho
+skinparam packageStyle rectangle
+hide circle
+
+package "Identity Domain" {
+  entity "users" as users {
+    *id : uuid
+    --
+    phone_e164 : text
+    email : text
+    wallet_address : text
+    status : user_status
+    kyc_status : kyc_status
+  }
+
+  entity "user_devices" as user_devices {
+    *id : uuid
+    --
+    user_id : uuid
+    fingerprint : text
+    is_current : boolean
+    revoked_at : timestamptz
+  }
+
+  entity "user_audit_logs" as user_audit_logs {
+    *id : uuid
+    --
+    user_id : uuid
+    action : text
+    metadata : jsonb
+  }
+
+  entity "kyc_records" as kyc_records {
+    *id : uuid
+    --
+    user_id : uuid
+    provider : text
+    status : kyc_status
+    verified_at : timestamptz
+  }
+
+  entity "recovery_requests" as recovery_requests {
+    *id : uuid
+    --
+    user_id : uuid
+    status : recovery_status
+    hold_expires_at : timestamptz
+  }
+
+  entity "recovery_verifications" as recovery_verifications {
+    *id : uuid
+    --
+    recovery_request_id : uuid
+    channel : verification_channel
+    verified : boolean
+  }
+}
+
+package "Catalog + Ticketing Domain" {
+  entity "organizers" as organizers {
+    *id : uuid
+    --
+    display_name : text
+    wallet_address : text
+    is_verified : boolean
+  }
+
+  entity "venues" as venues {
+    *id : uuid
+    --
+    name : text
+    city : text
+    capacity : int
+  }
+
+  entity "events" as events {
+    *id : uuid
+    --
+    organizer_id : uuid
+    venue_id : uuid
+    title : text
+    starts_at : timestamptz
+    status : event_status
+  }
+
+  entity "ticket_types" as ticket_types {
+    *id : uuid
+    --
+    event_id : uuid
+    name : text
+    face_price : bigint
+    quantity : int
+    sold_count : int
+  }
+
+  entity "reservations" as reservations {
+    *id : uuid
+    --
+    user_id : uuid
+    event_id : uuid
+    ticket_type_id : uuid
+    quantity : int
+    total_amount : bigint
+    status : reservation_status
+    payment_intent_id : text
+  }
+
+  entity "tickets" as tickets {
+    *id : uuid
+    --
+    token_id : bigint
+    event_id : uuid
+    ticket_type_id : uuid
+    owner_user_id : uuid
+    reservation_id : uuid
+    status : ticket_status
+  }
+}
+
+package "Payments + Marketplace Domain" {
+  entity "payments" as payments {
+    *id : uuid
+    --
+    reservation_id : uuid
+    user_id : uuid
+    amount : bigint
+    gateway : text
+    status : payment_status
+  }
+
+  entity "webhook_events" as webhook_events {
+    *id : uuid
+    --
+    payment_id : uuid
+    gateway : text
+    event_key : text
+    status : webhook_status
+  }
+
+  entity "payment_hashes" as payment_hashes {
+    *id : uuid
+    --
+    payment_id : uuid
+    order_id : text
+    user_id : uuid
+    buyer_wallet_address : text
+    payment_hash : bytea
+  }
+
+  entity "wallet_prefunds" as wallet_prefunds {
+    *wallet_address : text
+    --
+    user_id : uuid
+    prefund_tx_hash : text
+    amount_wei : numeric
+  }
+
+  entity "refund_requests" as refund_requests {
+    *id : uuid
+    --
+    user_id : uuid
+    ticket_id : uuid
+    event_id : uuid
+    refund_amount : bigint
+    status : refund_status
+  }
+
+  entity "listings" as listings {
+    *id : uuid
+    --
+    ticket_id : uuid
+    seller_user_id : uuid
+    event_id : uuid
+    ask_price : bigint
+    status : listing_status
+  }
+
+  entity "purchases" as purchases {
+    *id : uuid
+    --
+    listing_id : uuid
+    buyer_user_id : uuid
+    payment_id : uuid
+    amount : bigint
+    status : purchase_status
+  }
+
+  entity "escrow_transfers" as escrow_transfers {
+    *id : uuid
+    --
+    listing_id : uuid
+    purchase_id : uuid
+    seller_user_id : uuid
+    buyer_user_id : uuid
+    total_amount : bigint
+    status : escrow_transfer_status
+  }
+}
+
+package "Operations + Support Domain" {
+  entity "gates" as gates {
+    *id : uuid
+    --
+    event_id : uuid
+    name : text
+  }
+
+  entity "check_ins" as check_ins {
+    *id : uuid
+    --
+    token_id : bigint
+    ticket_id : uuid
+    event_id : uuid
+    gate_id : uuid
+    scanned_at : timestamptz
+  }
+
+  entity "disputes" as disputes {
+    *id : uuid
+    --
+    filed_by_user_id : uuid
+    ticket_id : uuid
+    event_id : uuid
+    status : dispute_status
+    current_tier : dispute_tier
+  }
+
+  entity "dispute_messages" as dispute_messages {
+    *id : uuid
+    --
+    dispute_id : uuid
+    sender_user_id : uuid
+    sender_type : message_sender_type
+  }
+
+  entity "dispute_audit_logs" as dispute_audit_logs {
+    *id : uuid
+    --
+    dispute_id : uuid
+    actor_type : text
+    action : text
+  }
+
+  entity "goodwill_credits" as goodwill_credits {
+    *id : uuid
+    --
+    user_id : uuid
+    dispute_id : uuid
+    amount : bigint
+  }
+}
+
+users ||--o{ user_devices
+users ||--o{ user_audit_logs
+users ||--o{ kyc_records
+users ||--o{ recovery_requests
+recovery_requests ||--o{ recovery_verifications
+
+organizers ||--o{ events
+venues ||--o{ events
+events ||--o{ ticket_types
+users ||--o{ reservations
+events ||--o{ reservations
+ticket_types ||--o{ reservations
+events ||--o{ tickets
+ticket_types ||--o{ tickets
+users ||--o{ tickets
+reservations ||--o{ tickets
+
+reservations ||--o{ payments
+users ||--o{ payments
+payments ||--o{ webhook_events
+payments ||--o{ payment_hashes
+users ||--o{ wallet_prefunds
+users ||--o{ refund_requests
+tickets ||--o{ refund_requests
+events ||--o{ refund_requests
+
+tickets ||--o{ listings
+users ||--o{ listings
+events ||--o{ listings
+listings ||--o{ purchases
+users ||--o{ purchases
+listings ||--o{ escrow_transfers
+purchases ||--o{ escrow_transfers
+users ||--o{ escrow_transfers
+
+events ||--o{ gates
+events ||--o{ check_ins
+gates ||--o{ check_ins
+tickets ||--o{ check_ins
+
+users ||--o{ disputes
+tickets ||--o{ disputes
+events ||--o{ disputes
+disputes ||--o{ dispute_messages
+users ||--o{ dispute_messages
+disputes ||--o{ dispute_audit_logs
+users ||--o{ goodwill_credits
+disputes ||--o{ goodwill_credits
+
+note bottom of payment_hashes
+Current services also persist operational
+tables such as payment_retry_jobs and
+payment_idempotency that are omitted here.
+end note
+
+note bottom of listings
+Current marketplace implementation adds
+marketplace_buy_hashes and a settlement
+ledger around the canonical resale model.
+end note
+
+note bottom of reservations
+Current ticketing implementation also keeps
+ticket_inventory as its local operational
+source of truth for sold_count and locked_count.
+end note
+
+@enduml

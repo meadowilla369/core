@@ -1,0 +1,60 @@
+@startuml
+title Primary Purchase Activity - Ticketing + Payment Orchestrator
+skinparam shadowing false
+skinparam linetype ortho
+
+start
+
+:Buyer app loads active events\nthrough API Gateway and event-service;
+:Buyer chooses event, ticket type,\nand quantity;
+:Ticketing service receives\nPOST /tickets/reserve;
+
+if (Inventory available?) then (yes)
+  :Lock inventory in ticket_inventory;
+  :Create reservation with TTL;
+else (no)
+  :Return validation or\nINSUFFICIENT_INVENTORY;
+  stop
+endif
+
+:Buyer app starts checkout;
+:Ticketing service receives\nPOST /tickets/purchase;
+:Reservation becomes payment_pending;
+:Payment orchestrator receives\nPOST /payments/intents;
+:Persist payment_intent and\nreturn paymentUrl;
+:Buyer completes MoMo or VNPay checkout;
+:Payment orchestrator receives webhook;
+:Verify signature, timestamp,\nnonce, and dedupe;
+
+if (Webhook accepted on first try?) then (yes)
+  :Mark payment confirmed;
+else (no)
+  :Insert payment_retry_job;
+  :Wait for reconciliation run;
+  if (Retry succeeds?) then (yes)
+    :Mark payment confirmed;
+  else (no)
+    :Leave payment unresolved or rejected;
+    stop
+  endif
+endif
+
+:Issue expiring payment_hash\nfor TicketLedger purchase flow;
+:Ticketing service receives\nPOST /tickets/purchase/{reservationId}/confirm;
+
+if (Reservation expired?) then (yes)
+  :Expire reservation;
+  :Unlock locked inventory;
+  stop
+else (no)
+  :Move locked_count to sold_count;
+  :Mark reservation paid;
+  :Create ticket rows;
+endif
+
+:Buyer app loads reservation detail\nor GET /tickets/me;
+:Show issued tickets to buyer;
+
+stop
+
+@enduml

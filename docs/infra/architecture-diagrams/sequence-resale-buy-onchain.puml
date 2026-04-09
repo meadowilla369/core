@@ -1,0 +1,62 @@
+@startuml
+title Resale Purchase Sequence - Backend Buy Hash + On-chain Batch
+skinparam shadowing false
+skinparam responseMessageBelowArrow true
+skinparam sequenceMessageAlign center
+
+actor Buyer
+participant "Web App\nResalePurchasePage" as WebApp
+participant "API Gateway" as ApiGateway
+participant "Marketplace Service" as MarketplaceService
+database "marketplace_listings\nmarketplace_buy_hashes" as MarketplaceDb
+participant "SDK Client\nbuildMarketplaceBuyTx()" as SdkClient
+participant "Wallet / EOA" as Wallet
+participant "Handler" as Handler
+participant "MarketplaceV2" as MarketplaceV2
+participant "TicketLedger" as TicketLedger
+participant "Contract Sync Service" as ContractSync
+
+Buyer -> WebApp : Open resale listing and click "prepare buy"
+WebApp -> ApiGateway : POST /v1/marketplace/listings/{id}/initiate-buy
+ApiGateway -> MarketplaceService : proxy request
+MarketplaceService -> MarketplaceDb : load active listing\ncheck existing buy hash
+MarketplaceService -> MarketplaceDb : insert marketplace_buy_hashes
+MarketplaceService --> ApiGateway : paymentHash + signature + EIP-712 domain
+ApiGateway --> WebApp : backend authorization payload
+
+WebApp -> SdkClient : buildMarketplaceBuyTx(...)
+SdkClient --> WebApp : authorizationHash + executeBatchCalldata
+
+WebApp -> Wallet : request EIP-7702 auth signature\nand tx broadcast
+Wallet -> Handler : executeBatch([MarketplaceV2.buyWithSignature])
+Handler -> MarketplaceV2 : buyWithSignature(listingId, paymentHash, signature)
+MarketplaceV2 -> TicketLedger : transferTicket(ticketId, buyer)
+TicketLedger --> MarketplaceV2 : owner index updated
+MarketplaceV2 --> Handler : TicketSold + PendingPayoutRecorded
+Handler --> Wallet : tx success
+Wallet --> WebApp : tx hash / success state
+WebApp --> Buyer : show completed purchase
+
+... async contract-state sync ...
+
+MarketplaceV2 -> ContractSync : SaleCompleted event
+TicketLedger -> ContractSync : Transfer event
+ContractSync -> ContractSync : update token owner + listing status snapshot
+
+note right of MarketplaceService
+`initiate-buy` signs MarketplaceV2 BUY
+typed data and persists an expiring
+backend-issued payment hash.
+end note
+
+note right of Wallet
+Frontend uses sdk-client to build the
+type-4 payload against Handler.executeBatch.
+end note
+
+note right of ContractSync
+Live ingestion is optional and starts only
+when RPC_URL + contract addresses are set.
+end note
+
+@enduml

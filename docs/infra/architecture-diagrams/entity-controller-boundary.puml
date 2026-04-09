@@ -1,0 +1,133 @@
+@startuml
+title Ticket Platform - Entity Controller Boundary
+left to right direction
+skinparam shadowing false
+skinparam linetype ortho
+skinparam packageStyle rectangle
+
+legend right
+  boundary = user-facing or external edge
+  control = request handling or orchestration
+  entity = durable state, cache, or contract state
+endlegend
+
+package "Boundaries" {
+  actor "Buyer" as Buyer
+  actor "Organizer" as Organizer
+  actor "Staff" as Staff
+
+  boundary "Web App\nReact + ApiClient" as WebApp
+  boundary "Mobile App\nBuyer wallet flow" as MobileApp
+  boundary "Organizer Portal" as OrganizerPortal
+  boundary "Staff Scanner" as StaffScanner
+  boundary "Payment Gateway\nMoMo / VNPay" as PaymentGateway
+  boundary "Wallet / EOA" as Wallet
+  boundary "EVM RPC Node" as RpcNode
+}
+
+package "Controls" {
+  control "API Gateway" as ApiGateway
+  control "Auth Service" as AuthService
+  control "User Service" as UserService
+  control "KYC Service" as KycService
+  control "Event Service" as EventService
+  control "Ticketing Service" as TicketingService
+  control "Payment Orchestrator" as PaymentService
+  control "Marketplace Service" as MarketplaceService
+  control "Check-in Service" as CheckinService
+  control "Refund Service" as RefundService
+  control "Recovery Service" as RecoveryService
+  control "Dispute Service" as DisputeService
+  control "Notification Service" as NotificationService
+  control "Contract Sync Service" as ContractSyncService
+  control "Handler + Paymaster" as OnchainExecutor
+}
+
+package "Entities" {
+  entity "Auth State\notp_requests, sessions,\nrefresh_tokens" as AuthState
+  entity "User State\nprofiles, devices,\naudit logs" as UserState
+  entity "KYC State\nrecords, provider status" as KycState
+  entity "MinIO Archive\nKYC payload snapshots" as MinioArchive
+  entity "Event Catalog\nevents, ticket types" as EventState
+  entity "Ticketing State\nticket_inventory,\nreservations, tickets" as TicketState
+  entity "Redis Cache\nidempotency responses" as RedisState
+  entity "Payment State\nintents, webhooks,\nretry jobs, payment hashes,\nwallet prefunds" as PaymentState
+  entity "Marketplace State\nlistings, settlements,\nbuy hashes" as MarketplaceState
+  entity "Ops State\ncheck-ins, refunds,\nrecovery, disputes,\nnotifications" as OpsState
+  entity "Sync State\ntracked token snapshots" as SyncState
+  entity "TicketLedger" as TicketLedger
+  entity "TicketNFT" as TicketNFT
+  entity "MarketplaceV2" as MarketplaceV2
+  entity "GuardianAccount" as GuardianAccount
+}
+
+Buyer --> WebApp
+Buyer --> MobileApp
+Organizer --> OrganizerPortal
+Staff --> StaffScanner
+
+WebApp --> ApiGateway
+MobileApp --> ApiGateway
+OrganizerPortal --> ApiGateway
+StaffScanner --> ApiGateway
+PaymentGateway --> ApiGateway : webhooks
+Wallet --> OnchainExecutor : sign + broadcast tx4
+RpcNode --> ContractSyncService : watchContractEvent
+
+ApiGateway --> AuthService
+ApiGateway --> UserService
+ApiGateway --> KycService
+ApiGateway --> EventService
+ApiGateway --> TicketingService
+ApiGateway --> PaymentService
+ApiGateway --> MarketplaceService
+ApiGateway --> CheckinService
+ApiGateway --> RefundService
+ApiGateway --> RecoveryService
+ApiGateway --> DisputeService
+ApiGateway --> NotificationService
+ApiGateway --> ContractSyncService
+
+AuthService --> AuthState
+UserService --> UserState
+KycService --> KycState
+KycService --> MinioArchive
+EventService --> EventState
+TicketingService --> EventService : inventory sync
+TicketingService --> TicketState
+TicketingService --> RedisState
+PaymentService --> PaymentState
+MarketplaceService --> MarketplaceState
+CheckinService --> OpsState
+RefundService --> OpsState
+RecoveryService --> OpsState
+DisputeService --> OpsState
+NotificationService --> OpsState
+ContractSyncService --> SyncState
+
+PaymentService ..> TicketLedger : signs Purchase EIP-712 domain
+MarketplaceService ..> MarketplaceV2 : signs Buy EIP-712 domain
+CheckinService --> TicketLedger : markUsedBatch
+RefundService --> TicketLedger : cancel / refund lifecycle
+RecoveryService --> GuardianAccount : rotate guardian flow
+
+OnchainExecutor --> TicketLedger : primary purchase batch
+OnchainExecutor --> MarketplaceV2 : resale batch
+OnchainExecutor --> TicketNFT : mint / event lifecycle path
+
+TicketNFT ..> ContractSyncService : Transfer / TicketUsed / TicketRefunded
+MarketplaceV2 ..> ContractSyncService : listing lifecycle events
+TicketLedger ..> ContractSyncService : ownership / sale outcome context
+
+note bottom of TicketingService
+Current implementation keeps local
+inventory ownership in ticketing-service
+and syncs catalog data from event-service.
+end note
+
+note bottom of ContractSyncService
+HTTP ingestion and live RPC ingestion
+share the same event-application path.
+end note
+
+@enduml
