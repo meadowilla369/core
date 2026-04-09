@@ -55,7 +55,12 @@ function normalizeHeaders(headers = {}) {
   return normalized;
 }
 
+async function resolveServer(server) {
+  return await Promise.resolve(server);
+}
+
 export async function invokeJson(server, { method = "GET", path = "/", headers = {}, body }) {
+  const resolvedServer = await resolveServer(server);
   const req = new PassThrough();
   req.method = method;
   req.url = path;
@@ -63,7 +68,7 @@ export async function invokeJson(server, { method = "GET", path = "/", headers =
 
   const responsePromise = new Promise((resolve) => {
     const res = new MockResponse(resolve);
-    server.emit("request", req, res);
+    resolvedServer.emit("request", req, res);
   });
 
   if (body !== undefined) {
@@ -75,5 +80,11 @@ export async function invokeJson(server, { method = "GET", path = "/", headers =
 }
 
 export function disposeServer(server) {
-  server.emit("close");
+  void resolveServer(server)
+    .then((resolvedServer) => {
+      resolvedServer.emit("close");
+    })
+    .catch(() => {
+      // Ignore bootstrap failures in finally blocks; the original test error should surface.
+    });
 }

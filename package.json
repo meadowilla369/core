@@ -7,7 +7,7 @@
   "scripts": {
     "bootstrap": "./scripts/bootstrap.sh",
     "build": "PATH=\"$PWD/bin:$PATH\" turbo run build",
-    "dev": "PATH=\"$PWD/bin:$PATH\" turbo run dev --parallel",
+    "dev": "./scripts/dev-stack.sh infra-up && PATH=\"$PWD/bin:$PATH\" turbo run dev",
     "ui:dev": "node --env-file=.env apps/ui-simulator/server.mjs",
     "test": "PATH=\"$PWD/bin:$PATH\" turbo run test",
     "test:integration": "node scripts/run-integration-test.mjs",
@@ -20,6 +20,9 @@
     "format:write": "prettier . --write",
     "prepare": "husky",
     "stack:up": "./scripts/dev-stack.sh up",
+    "stack:infra:up": "./scripts/dev-stack.sh infra-up",
+    "stack:infra:down": "./scripts/dev-stack.sh infra-down",
+    "stack:infra:status": "./scripts/dev-stack.sh infra-status",
     "stack:down": "./scripts/dev-stack.sh down",
     "stack:status": "./scripts/dev-stack.sh status",
     "stack:logs": "./scripts/dev-stack.sh logs",

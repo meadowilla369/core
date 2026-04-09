@@ -73,6 +73,8 @@ wait_for_http() {
 }
 
 start_infra() {
+  local require_docker="${1:-false}"
+
   if can_use_docker; then
     echo "== Starting local infra (docker compose) =="
     docker compose up -d postgres redis minio
@@ -81,7 +83,10 @@ start_infra() {
     wait_for_http minio "http://127.0.0.1:${MINIO_API_PORT:-9000}/minio/health/live"
   else
     echo "== Skipping docker infra =="
-    echo "Docker daemon is not available. Start Docker Desktop and re-run 'npm run stack:up' if you want Postgres/Redis/MinIO containers."
+    echo "Docker daemon is not available. Start Docker Desktop and re-run the command."
+    if [[ "$require_docker" == "true" ]]; then
+      return 1
+    fi
   fi
 }
 
@@ -223,7 +228,7 @@ status_service() {
 
 cmd_up() {
   ensure_env
-  start_infra
+  start_infra true
 
   echo "== Building workspace =="
   (
@@ -242,6 +247,19 @@ cmd_up() {
   echo "- API gateway:   http://127.0.0.1:3000/healthz"
   echo "- UI simulator:  http://127.0.0.1:4310"
   echo "- Logs:          ./scripts/dev-stack.sh logs [service]"
+}
+
+cmd_infra_up() {
+  ensure_env
+  start_infra true
+}
+
+cmd_infra_down() {
+  stop_infra
+}
+
+cmd_infra_status() {
+  status_infra
 }
 
 cmd_down() {
@@ -298,12 +316,15 @@ cmd_smoke() {
 
 case "${1:-up}" in
   up) cmd_up ;;
+  infra-up) cmd_infra_up ;;
+  infra-down) cmd_infra_down ;;
+  infra-status) cmd_infra_status ;;
   down) cmd_down ;;
   status) cmd_status ;;
   logs) cmd_logs "$@" ;;
   smoke) cmd_smoke ;;
   *)
-    echo "Usage: $0 {up|down|status|logs [service]|smoke}"
+    echo "Usage: $0 {up|infra-up|infra-down|infra-status|down|status|logs [service]|smoke}"
     exit 1
     ;;
 esac

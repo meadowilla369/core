@@ -27,7 +27,28 @@ npm run typecheck
 npm test
 ```
 
-### 3) Run the local stack
+### 3) Run in watch mode
+
+```bash
+npm run dev
+```
+
+`npm run dev` now brings up the required Docker infra first (Postgres, Redis, MinIO) and then starts the Turbo watch processes.
+
+If you only want the containers without the watch processes:
+
+```bash
+npm run stack:infra:up
+npm run stack:infra:status
+```
+
+Stop only the containers:
+
+```bash
+npm run stack:infra:down
+```
+
+### 4) Run the full local stack
 
 Start infra dependencies (Postgres, Redis, MinIO) plus all runnable services and the browser UI simulator:
 
@@ -58,7 +79,7 @@ npm run stack:logs
 ./scripts/dev-stack.sh logs api-gateway
 ```
 
-### 4) Run only the browser UI simulator
+### 5) Run only the browser UI simulator
 
 ```bash
 npm run ui:dev
