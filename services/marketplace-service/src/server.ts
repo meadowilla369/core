@@ -167,6 +167,70 @@ interface BuyHashRow {
   typed_data: BuyTypedData;
 }
 
+interface BroadcastBuyBody {
+  authorizationHash?: string;
+  signedAuthorization?: Record<string, unknown>;
+  tx?: {
+    to?: string;
+    data?: string;
+    chainId?: number;
+  };
+  paymentId?: string;
+  gateway?: string;
+  gatewayReference?: string;
+}
+
+interface ContractEventInput {
+  chainId?: number;
+  blockNumber?: number;
+  transactionHash?: string;
+  logIndex?: number;
+  eventName?: string;
+  contractAddress?: string;
+  occurredAt?: string;
+  payload?: Record<string, unknown>;
+}
+
+interface ContractSyncEventResponse {
+  accepted: number;
+  duplicates: number;
+  rejected: number;
+  results: Array<{
+    eventKey: string;
+    status: "processed" | "duplicate" | "rejected";
+    reason?: string;
+  }>;
+}
+
+interface ContractSyncTokenState {
+  tokenId: string;
+  eventId?: string | null;
+  sourceListingId?: string | null;
+  ownerWalletAddress: string | null;
+  ownerUserId: string | null;
+  listingStatus: "none" | "active" | "cancelled" | "completed";
+  isUsed: boolean;
+  isRefunded: boolean;
+  usedAt: string | null;
+  refundedAt: string | null;
+  lastEventName: string | null;
+  lastSalePrice?: number | null;
+  lastTransactionHash: string | null;
+  lastLogIndex: number | null;
+  lastSyncedBlock: number;
+  updatedAt: string;
+}
+
+interface ContractSyncStatus {
+  lastProcessedBlock: number;
+  totalEventsProcessed: number;
+  totalEventsDuplicate: number;
+  totalEventsRejected: number;
+  trackedTokens: number;
+  processedEventCount: number;
+  timestamp: string;
+}
+
 interface IdempotencyRow {
   scope: string;
   response: unknown;
@@ -338,6 +402,10 @@ function buildBuyHashResponse(record: BuyHashRecord): Record<string, unknown> {
       verifyingContract: record.verifyingContract
     }
   };
+}
+
+function buildSyntheticTxHash(input: Record<string, unknown>): `0x${string}` {
+  return `0x${sha256Hex(JSON.stringify(input))}`;
 }
 
 async function ensureSchema(pool: Pool): Promise<void> {
@@ -522,6 +590,85 @@ async function loadLatestBuyHash(
   }
 
   return mapBuyHash(row);
+}
+
+async function postContractSyncEvents(
+  config: MarketplaceConfig,
+  events: ContractEventInput[]
+): Promise<ContractSyncEventResponse> {
+  const response = await fetch(`${config.contractSyncServiceBaseUrl}/internal/contracts/events`, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      "x-internal-api-key": config.internalApiKey
+    },
+    body: JSON.stringify({ events })
+  });
+
+  const payloadText = await response.text();
+  const payload = payloadText ? JSON.parse(payloadText) : null;
+  if (!response.ok || !payload || payload.success !== true) {
+    throw new Error(
+      `Contract sync ingest failed with status ${response.status}${
+        payload?.error?.message ? `: ${payload.error.message}` : ""
+      }`
+    );
+  }
+
+  return payload.data as ContractSyncEventResponse;
+}
+
+async function loadContractSyncToken(
+  config: MarketplaceConfig,
+  tokenId: string
+): Promise<ContractSyncTokenState | null> {
+  const response = await fetch(
+    `${config.contractSyncServiceBaseUrl}/tokens/${encodeURIComponent(tokenId)}`,
+    {
+      headers: {
+        accept: "application/json"
+      }
+    }
+  );
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  const payloadText = await response.text();
+  const payload = payloadText ? JSON.parse(payloadText) : null;
+  if (!response.ok || !payload || payload.success !== true) {
+    throw new Error(
+      `Contract sync token lookup failed with status ${response.status}${
+        payload?.error?.message ? `: ${payload.error.message}` : ""
+      }`
+    );
+  }
+
+  return payload.data as ContractSyncTokenState;
+}
+
+async function loadContractSyncStatus(
+  config: MarketplaceConfig
+): Promise<ContractSyncStatus | null> {
+  const response = await fetch(`${config.contractSyncServiceBaseUrl}/sync/status`, {
+    headers: {
+      accept: "application/json"
+    }
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const payloadText = await response.text();
+  const payload = payloadText ? JSON.parse(payloadText) : null;
+  if (!payload || payload.success !== true) {
+    return null;
+  }
+
+  return payload.data as ContractSyncStatus;
 }
 
 export async function createMarketplaceServer(config: MarketplaceConfig) {
@@ -1273,6 +1420,258 @@ export async function createMarketplaceServer(config: MarketplaceConfig) {
         }
 
         return sendJson(res, 200, { success: true, data: buildBuyHashResponse(record) });
+      }
+
+      const broadcastBuyMatch = /^\/marketplace\/listings\/([^/]+)\/broadcast-buy$/.exec(
+        url.pathname
+      );
+      if (method === "POST" && broadcastBuyMatch) {
+        const userId = extractUserId(req);
+        if (!userId) {
+          return sendJson(res, 401, {
+            success: false,
+            error: { code: "UNAUTHORIZED", message: "Missing x-user-id header" }
+          });
+        }
+
+        const idempotencyScope = createIdempotencyScope(
+          method,
+          url.pathname,
+          extractIdempotencyKey(req)
+        );
+        const cached = await getCachedIdempotency(pool, idempotencyScope);
+        if (cached) {
+          return sendJson(res, 200, cached);
+        }
+
+        const body = await readJson<BroadcastBuyBody>(req);
+        const listing = await loadListing(pool, broadcastBuyMatch[1]);
+        if (!listing) {
+          return sendJson(res, 404, {
+            success: false,
+            error: { code: "LISTING_NOT_FOUND", message: "Listing not found" }
+          });
+        }
+
+        const buyHash = await loadLatestBuyHash(pool, listing.id, userId);
+        if (!buyHash) {
+          return sendJson(res, 404, {
+            success: false,
+            error: {
+              code: "BUY_HASH_NOT_FOUND",
+              message: "No buy hash initiated for this listing. Call initiate-buy first."
+            }
+          });
+        }
+
+        if (buyHash.status !== "issued") {
+          return sendJson(res, 400, {
+            success: false,
+            error: {
+              code: "BUY_HASH_EXPIRED",
+              message: "Buy hash has expired. Initiate a new buy request."
+            }
+          });
+        }
+
+        if (listing.sellerUserId === userId) {
+          return sendJson(res, 400, {
+            success: false,
+            error: {
+              code: "SELF_PURCHASE_FORBIDDEN",
+              message: "Seller cannot purchase own listing"
+            }
+          });
+        }
+
+        if (
+          listing.status === "completed" &&
+          listing.buyerUserId &&
+          listing.buyerUserId !== userId
+        ) {
+          return sendJson(res, 409, {
+            success: false,
+            error: {
+              code: "LISTING_ALREADY_COMPLETED",
+              message: "Listing has already been completed by another buyer"
+            }
+          });
+        }
+
+        const gateway = body.gateway?.trim().toLowerCase() || "momo";
+        const gatewayReference = body.gatewayReference?.trim() || `gw_demo_${buyHash.orderId}`;
+        const gatewayCode = toGatewayCode(gateway);
+        if (!gatewayCode) {
+          return sendJson(res, 400, {
+            success: false,
+            error: { code: "UNSUPPORTED_GATEWAY", message: "gateway must be momo or vnpay" }
+          });
+        }
+
+        const paymentId = body.paymentId?.trim() || `pay_${buyHash.orderId}`;
+        const txHash = buildSyntheticTxHash({
+          listingId: listing.id,
+          orderId: buyHash.orderId,
+          paymentHash: buyHash.paymentHash,
+          authorizationHash: body.authorizationHash ?? "",
+          signedAuthorization: body.signedAuthorization ?? null,
+          tx: body.tx ?? null
+        });
+
+        let finalizedListing = listing;
+        if (listing.status !== "completed") {
+          const grossAmount = listing.askPrice;
+          const platformFee = calculateFee(grossAmount, config.platformFeeBps);
+          const organizerRoyalty = calculateFee(grossAmount, config.organizerRoyaltyBps);
+          const sellerAmount = grossAmount - platformFee - organizerRoyalty;
+
+          if (sellerAmount <= 0) {
+            return sendJson(res, 400, {
+              success: false,
+              error: { code: "INVALID_SPLIT", message: "Invalid settlement split" }
+            });
+          }
+
+          const settledAt = Math.floor(Date.now() / 1000);
+          const settlementId = randomUUID();
+          const nonce = randomUUID().replace(/-/g, "");
+          const gatewayReferenceHash = sha256Hex(gatewayReference);
+          const escrowPayload = {
+            version: 1,
+            settlementId,
+            listingId: listing.id,
+            paymentId,
+            tokenId: listing.tokenId,
+            seller: listing.sellerWalletAddress,
+            buyer: buyHash.buyerWalletAddress,
+            grossAmount,
+            sellerAmount,
+            platformFee,
+            organizerRoyalty,
+            currency: "VND",
+            gateway: gatewayCode,
+            gatewayReferenceHash,
+            settledAt,
+            nonce
+          };
+          const escrowDataHash = sha256Hex(JSON.stringify(escrowPayload));
+          const completeSaleRequestId = `cs_${randomUUID().replace(/-/g, "")}`;
+          const completedAt = new Date().toISOString();
+
+          await pool.query(
+            `
+              UPDATE marketplace_listings
+              SET status = 'completed', updated_at = $2::timestamptz, buyer_user_id = $3,
+                  payment_id = $4, settlement_id = $5
+              WHERE id = $1 AND status = 'active'
+            `,
+            [listing.id, completedAt, userId, paymentId, settlementId]
+          );
+
+          await pool.query(
+            `
+              INSERT INTO marketplace_completed_sales (
+                listing_id, payment_id, settlement_id, escrow_data_hash, complete_sale_request_id,
+                completed_at
+              )
+              VALUES ($1, $2, $3, $4, $5, $6::timestamptz)
+              ON CONFLICT (listing_id) DO NOTHING
+            `,
+            [
+              listing.id,
+              paymentId,
+              settlementId,
+              escrowDataHash,
+              completeSaleRequestId,
+              completedAt
+            ]
+          );
+
+          finalizedListing = (await loadListing(pool, listing.id)) as Listing;
+        }
+
+        const syncEvents: ContractEventInput[] = [
+          {
+            chainId: buyHash.chainId,
+            blockNumber: Number(Date.now()),
+            transactionHash: txHash,
+            logIndex: 0,
+            eventName: "ListingStatusChanged",
+            contractAddress: buyHash.verifyingContract,
+            occurredAt: new Date().toISOString(),
+            payload: {
+              tokenId: finalizedListing.tokenId,
+              eventId: finalizedListing.eventId,
+              listingId: finalizedListing.id,
+              status: "completed",
+              seller: finalizedListing.sellerWalletAddress,
+              buyer: buyHash.buyerWalletAddress,
+              buyerUserId: userId,
+              price: String(finalizedListing.askPrice)
+            }
+          },
+          {
+            chainId: buyHash.chainId,
+            blockNumber: Number(Date.now()),
+            transactionHash: txHash,
+            logIndex: 1,
+            eventName: "Transfer",
+            contractAddress: buyHash.verifyingContract,
+            occurredAt: new Date().toISOString(),
+            payload: {
+              tokenId: finalizedListing.tokenId,
+              eventId: finalizedListing.eventId,
+              listingId: finalizedListing.id,
+              from: finalizedListing.sellerWalletAddress,
+              to: buyHash.buyerWalletAddress,
+              toUserId: userId
+            }
+          }
+        ];
+
+        let syncResult: ContractSyncEventResponse | null = null;
+        let syncToken: ContractSyncTokenState | null = null;
+        let syncStatus: ContractSyncStatus | null = null;
+        let syncError: string | null = null;
+
+        try {
+          syncResult = await postContractSyncEvents(config, syncEvents);
+          syncToken = await loadContractSyncToken(config, finalizedListing.tokenId);
+          syncStatus = await loadContractSyncStatus(config);
+        } catch (error) {
+          syncError = error instanceof Error ? error.message : String(error);
+          log(config.serviceName, "warn", "Broadcast buy completed without sync confirmation", {
+            listingId: finalizedListing.id,
+            txHash,
+            error: syncError
+          });
+        }
+
+        const response = {
+          success: true,
+          data: {
+            listing: finalizedListing,
+            buyHash: buildBuyHashResponse(buyHash),
+            tx: {
+              hash: txHash,
+              authorizationHash: body.authorizationHash ?? null,
+              signedAuthorization: body.signedAuthorization ?? null,
+              request: body.tx ?? null,
+              broadcastAt: new Date().toISOString(),
+              mode: "simulated"
+            },
+            sync: {
+              status: syncError ? "degraded" : "confirmed",
+              error: syncError ?? undefined,
+              ingestion: syncResult ?? undefined,
+              token: syncToken ?? undefined,
+              service: syncStatus ?? undefined
+            }
+          }
+        };
+
+        await setCachedIdempotency(pool, idempotencyScope, response);
+        return sendJson(res, 200, response);
       }
 
       return sendJson(res, 404, {

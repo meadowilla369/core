@@ -6,6 +6,7 @@ export interface MarketplaceConfig {
   platformFeeBps: number;
   organizerRoyaltyBps: number;
   internalApiKey: string;
+  contractSyncServiceBaseUrl: string;
   /** Private key used to sign EIP-712 BUY_TYPE authorizations for resale purchases. */
   backendSignerPrivateKey?: string;
   /** Chain ID for MarketplaceV2 EIP-712 domain. */
@@ -39,7 +40,9 @@ export function loadConfig(): MarketplaceConfig {
     maxMarkupBps: parseNumber(process.env.MAX_MARKUP_BPS, 12000),
     platformFeeBps: parseNumber(process.env.PLATFORM_FEE_BPS, 500),
     organizerRoyaltyBps: parseNumber(process.env.ORGANIZER_ROYALTY_BPS, 200),
-    internalApiKey: process.env.INTERNAL_API_KEY ?? "internal_dev_key",
+    internalApiKey: process.env.INTERNAL_API_KEY ?? "internal-dev-key",
+    contractSyncServiceBaseUrl:
+      process.env.CONTRACT_SYNC_SERVICE_BASE_URL ?? "http://127.0.0.1:3014",
     backendSignerPrivateKey:
       process.env.BACKEND_SIGNER_PRIVATE_KEY ?? DEFAULT_BACKEND_SIGNER_PRIVATE_KEY,
     marketplaceChainId: parseNumber(process.env.MARKETPLACE_CHAIN_ID, DEFAULT_MARKETPLACE_CHAIN_ID),

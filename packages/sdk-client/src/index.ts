@@ -162,6 +162,75 @@ export interface MarketplaceBuyHashData {
   };
 }
 
+export interface SignedAuthorizationData {
+  chainId: number;
+  address: `0x${string}`;
+  nonce: number;
+  yParity?: number;
+  v?: bigint;
+  r: `0x${string}`;
+  s: `0x${string}`;
+}
+
+export interface MarketplaceBroadcastTxData {
+  hash: `0x${string}`;
+  authorizationHash?: `0x${string}` | null;
+  signedAuthorization?: SignedAuthorizationData | null;
+  request?: {
+    to?: `0x${string}`;
+    data?: `0x${string}`;
+    chainId?: number;
+  } | null;
+  broadcastAt: string;
+  mode: "simulated";
+}
+
+export interface ContractSyncedTokenData {
+  tokenId: string;
+  eventId?: string | null;
+  sourceListingId?: string | null;
+  ownerWalletAddress: string | null;
+  ownerUserId: string | null;
+  listingStatus: "none" | "active" | "cancelled" | "completed";
+  isUsed: boolean;
+  isRefunded: boolean;
+  usedAt: string | null;
+  refundedAt: string | null;
+  lastEventName: string | null;
+  lastSalePrice?: number | null;
+  lastTransactionHash: string | null;
+  lastLogIndex: number | null;
+  lastSyncedBlock: number;
+  updatedAt: string;
+}
+
+export interface ContractSyncServiceStatusData {
+  lastProcessedBlock: number;
+  totalEventsProcessed: number;
+  totalEventsDuplicate: number;
+  totalEventsRejected: number;
+  trackedTokens: number;
+  processedEventCount: number;
+  timestamp: string;
+}
+
+export interface MarketplaceBroadcastData {
+  listing: MarketplaceListing;
+  buyHash: MarketplaceBuyHashData;
+  tx: MarketplaceBroadcastTxData;
+  sync: {
+    status: "confirmed" | "degraded";
+    error?: string;
+    ingestion?: {
+      accepted: number;
+      duplicates: number;
+      rejected: number;
+    };
+    token?: ContractSyncedTokenData;
+    service?: ContractSyncServiceStatusData;
+  };
+}
+
 interface RequestOptions {
   method?: "GET" | "POST" | "PUT" | "DELETE";
   body?: unknown;
@@ -355,6 +424,60 @@ export class ApiClient {
       headers: {
         "x-user-id": ctx.userId
       }
+    });
+  }
+
+  async broadcastMarketplaceBuy(
+    listingId: string,
+    input: {
+      authorizationHash: `0x${string}`;
+      signedAuthorization: SignedAuthorizationData;
+      tx: {
+        to: `0x${string}`;
+        data: `0x${string}`;
+        chainId: number;
+      };
+      paymentId?: string;
+      gateway?: string;
+      gatewayReference?: string;
+    },
+    ctx: { userId: string; idempotencyKey?: string }
+  ): Promise<ApiSuccessResponse<MarketplaceBroadcastData>> {
+    return this.request(`/v1/marketplace/listings/${listingId}/broadcast-buy`, {
+      method: "POST",
+      body: input,
+      headers: {
+        "x-user-id": ctx.userId,
+        ...(ctx.idempotencyKey ? { "idempotency-key": ctx.idempotencyKey } : {})
+      }
+    });
+  }
+
+  async listSyncedTokens(
+    query: {
+      ownerWalletAddress?: string;
+      ownerUserId?: string;
+      listingStatus?: string;
+      eventId?: string;
+    } = {}
+  ): Promise<ApiSuccessResponse<ContractSyncedTokenData[]>> {
+    const search = new URLSearchParams();
+    if (query.ownerWalletAddress) {
+      search.set("ownerWalletAddress", query.ownerWalletAddress);
+    }
+    if (query.ownerUserId) {
+      search.set("ownerUserId", query.ownerUserId);
+    }
+    if (query.listingStatus) {
+      search.set("listingStatus", query.listingStatus);
+    }
+    if (query.eventId) {
+      search.set("eventId", query.eventId);
+    }
+
+    const suffix = search.toString();
+    return this.request(`/v1/internal/contracts/tokens${suffix ? `?${suffix}` : ""}`, {
+      method: "GET"
     });
   }
 

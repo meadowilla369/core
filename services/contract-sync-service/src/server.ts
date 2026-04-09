@@ -20,6 +20,8 @@ interface ContractEventBatchInput {
 
 interface TokenSyncState {
   tokenId: string;
+  eventId: string | null;
+  sourceListingId: string | null;
   ownerWalletAddress: string | null;
   ownerUserId: string | null;
   listingStatus: "none" | "active" | "cancelled" | "completed";
@@ -28,6 +30,7 @@ interface TokenSyncState {
   usedAt: string | null;
   refundedAt: string | null;
   lastEventName: string | null;
+  lastSalePrice: number | null;
   lastTransactionHash: string | null;
   lastLogIndex: number | null;
   lastSyncedBlock: number;
@@ -127,6 +130,8 @@ export function createContractSyncApp(config: ContractSyncConfig): ContractSyncA
 
     const created: TokenSyncState = {
       tokenId,
+      eventId: null,
+      sourceListingId: null,
       ownerWalletAddress: null,
       ownerUserId: null,
       listingStatus: "none",
@@ -135,6 +140,7 @@ export function createContractSyncApp(config: ContractSyncConfig): ContractSyncA
       usedAt: null,
       refundedAt: null,
       lastEventName: null,
+      lastSalePrice: null,
       lastTransactionHash: null,
       lastLogIndex: null,
       lastSyncedBlock: 0,
@@ -195,6 +201,8 @@ export function createContractSyncApp(config: ContractSyncConfig): ContractSyncA
 
       current.ownerWalletAddress = toWallet;
       current.ownerUserId = getPayloadString(payload, "toUserId");
+      current.eventId = getPayloadString(payload, "eventId") ?? current.eventId;
+      current.sourceListingId = getPayloadString(payload, "listingId") ?? current.sourceListingId;
     } else if (normalized === "ticketused") {
       current.isUsed = true;
       current.usedAt =
@@ -217,6 +225,13 @@ export function createContractSyncApp(config: ContractSyncConfig): ContractSyncA
       }
 
       current.listingStatus = status;
+      current.eventId = getPayloadString(payload, "eventId") ?? current.eventId;
+      current.sourceListingId = getPayloadString(payload, "listingId") ?? current.sourceListingId;
+      const price = getPayloadString(payload, "price");
+      if (price) {
+        const parsedPrice = Number(price);
+        current.lastSalePrice = Number.isFinite(parsedPrice) ? parsedPrice : current.lastSalePrice;
+      }
     } else {
       totalEventsRejected += 1;
       return {
@@ -327,6 +342,41 @@ export function createContractSyncApp(config: ContractSyncConfig): ContractSyncA
         return sendJson(res, 200, {
           success: true,
           data: token
+        });
+      }
+
+      if (
+        method === "GET" &&
+        (url.pathname === "/tokens" || url.pathname === "/internal/contracts/tokens")
+      ) {
+        const ownerWalletAddress =
+          url.searchParams.get("ownerWalletAddress")?.trim().toLowerCase() ?? "";
+        const ownerUserId = url.searchParams.get("ownerUserId")?.trim() ?? "";
+        const listingStatus = url.searchParams.get("listingStatus")?.trim().toLowerCase() ?? "";
+        const eventId = url.searchParams.get("eventId")?.trim() ?? "";
+
+        const tokens = Array.from(tokenStateById.values()).filter((token) => {
+          if (
+            ownerWalletAddress &&
+            token.ownerWalletAddress?.toLowerCase() !== ownerWalletAddress
+          ) {
+            return false;
+          }
+          if (ownerUserId && token.ownerUserId !== ownerUserId) {
+            return false;
+          }
+          if (listingStatus && token.listingStatus !== listingStatus) {
+            return false;
+          }
+          if (eventId && token.eventId !== eventId) {
+            return false;
+          }
+          return true;
+        });
+
+        return sendJson(res, 200, {
+          success: true,
+          data: tokens.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
         });
       }
 

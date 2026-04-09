@@ -10,8 +10,14 @@ import {
   User
 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
-import { useMutation } from "@tanstack/react-query";
-import { buildMarketplaceBuyTx, type MarketplaceBuyHashData } from "@ticket-platform/sdk-client";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  assembleTx4,
+  buildMarketplaceBuyTx,
+  MockEOASigner,
+  type MarketplaceBroadcastData,
+  type MarketplaceBuyHashData
+} from "@ticket-platform/sdk-client";
 import MobileLayout from "@/components/mobile/MobileLayout";
 import { useMarketplaceListing } from "@/hooks/use-marketplace-listing";
 import { eventDetailFallback } from "@/lib/fallback-data";
@@ -26,6 +32,12 @@ interface PreparedBuyState {
   txDraft: ReturnType<typeof buildMarketplaceBuyTx>;
 }
 
+interface BroadcastedBuyState {
+  signedAuthorization: Awaited<ReturnType<MockEOASigner["signAuthorization"]>>;
+  tx: ReturnType<typeof assembleTx4>;
+  backend: MarketplaceBroadcastData;
+}
+
 const fallbackListing = {
   id: "l1",
   sellerUserId: "user_8x2k",
@@ -33,16 +45,19 @@ const fallbackListing = {
   tokenId: "ticket_1",
   askPrice: 4200000,
   originalPrice: 3500000,
+  status: "active",
   createdAt: new Date().toISOString()
 };
 
 const ResalePurchasePage = () => {
   const { ticketId } = useParams();
   const client = useApiClient();
+  const queryClient = useQueryClient();
   const { data, isError, isLoading } = useMarketplaceListing(ticketId);
   const [onChainListingId, setOnChainListingId] = useState("1");
   const [authorizationNonce, setAuthorizationNonce] = useState("0");
   const [prepared, setPrepared] = useState<PreparedBuyState | null>(null);
+  const [broadcasted, setBroadcasted] = useState<BroadcastedBuyState | null>(null);
 
   const listing = data?.listing ?? fallbackListing;
   const event = data?.event;
@@ -109,6 +124,7 @@ const ResalePurchasePage = () => {
     },
     onSuccess: (result) => {
       setPrepared(result);
+      setBroadcasted(null);
       toast({
         title: "Đã chuẩn bị lệnh mua on-chain",
         description: "Backend đã cấp paymentHash/signature và FE đã build calldata batch."
@@ -118,6 +134,74 @@ const ResalePurchasePage = () => {
       const message = error instanceof Error ? error.message : "Không thể chuẩn bị lệnh mua";
       toast({
         title: "Chuẩn bị thất bại",
+        description: message,
+        variant: "destructive"
+      });
+    }
+  });
+
+  const broadcastBuyMutation = useMutation({
+    mutationFn: async () => {
+      if (!ticketId || !prepared) {
+        throw new Error("Buy flow has not been prepared");
+      }
+
+      const signer = new MockEOASigner(getSessionWalletAddress() as `0x${string}`);
+      const signedAuthorization = await signer.signAuthorization(
+        prepared.txDraft.authorizationTuple,
+        prepared.txDraft.authorizationHash
+      );
+      const payload = prepared.txDraft.assemble(signedAuthorization);
+      const tx = assembleTx4(payload, signer.address);
+      const response = await client.broadcastMarketplaceBuy(
+        ticketId,
+        {
+          authorizationHash: prepared.txDraft.authorizationHash,
+          signedAuthorization,
+          tx: {
+            to: tx.to,
+            data: tx.data,
+            chainId: tx.chainId
+          },
+          paymentId: `pay_${prepared.backend.orderId}`,
+          gateway: "momo",
+          gatewayReference: `gw_web_${prepared.backend.orderId}`
+        },
+        {
+          userId: getSessionUserId(),
+          idempotencyKey: `broadcast:${prepared.backend.orderId}`
+        }
+      );
+
+      return {
+        signedAuthorization,
+        tx,
+        backend: response.data
+      };
+    },
+    onSuccess: async (result) => {
+      setBroadcasted(result);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["marketplace"] }),
+        queryClient.invalidateQueries({ queryKey: ["tickets", "me"] }),
+        queryClient.invalidateQueries({ queryKey: ["profile", "summary"] })
+      ]);
+      toast({
+        title:
+          result.backend.sync.status === "confirmed"
+            ? "Đã broadcast và sync xong"
+            : "Đã broadcast, sync đang degraded",
+        description:
+          result.backend.sync.status === "confirmed"
+            ? "Listing đã completed, contract-sync đã phản ánh owner mới và UI đang refetch."
+            : (result.backend.sync.error ??
+              "Broadcast xong nhưng contract-sync chưa xác nhận hoàn toàn.")
+      });
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : "Không thể ký và broadcast";
+      toast({
+        title: "Broadcast thất bại",
         description: message,
         variant: "destructive"
       });
@@ -366,6 +450,83 @@ const ResalePurchasePage = () => {
               )}
             </pre>
           </div>
+
+          <div className="border border-foreground/20 p-4">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <h3 className="font-mono text-[10px] tracking-widest text-foreground/50">
+                [ WALLET SIGN ]
+              </h3>
+              {broadcasted && (
+                <button
+                  onClick={() => copyJson(broadcasted.signedAuthorization, "Wallet signature")}
+                  className="px-3 py-2 border border-foreground/20 font-mono text-[10px] hover:bg-foreground/10"
+                >
+                  <Copy className="w-3 h-3 inline-block mr-1" />
+                  COPY
+                </button>
+              )}
+            </div>
+            <p className="font-mono text-[10px] text-foreground/40 mb-3">
+              Sau khi prepare, FE dùng `MockEOASigner` để ký `authorizationHash`, assemble type-4
+              request rồi gọi `broadcast-buy` để backend finalize listing và đẩy event sang
+              contract-sync.
+            </p>
+            {broadcasted ? (
+              <pre className="overflow-x-auto text-[11px] font-mono text-foreground/80 whitespace-pre-wrap break-all">
+                {JSON.stringify(broadcasted.signedAuthorization, null, 2)}
+              </pre>
+            ) : (
+              <div className="border border-dashed border-foreground/20 p-3 font-mono text-[10px] text-foreground/40">
+                Chưa ký. Nhấn “KÝ & BROADCAST” để chạy hết phần wallet + backend orchestration.
+              </div>
+            )}
+          </div>
+
+          {broadcasted && (
+            <div className="border border-foreground/20 p-4 space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="font-mono text-[10px] tracking-widest text-foreground/50">
+                  [ BROADCAST & SYNC ]
+                </h3>
+                <button
+                  onClick={() => copyJson(broadcasted.backend, "Broadcast result")}
+                  className="px-3 py-2 border border-foreground/20 font-mono text-[10px] hover:bg-foreground/10"
+                >
+                  <Copy className="w-3 h-3 inline-block mr-1" />
+                  COPY
+                </button>
+              </div>
+
+              <div
+                className={`p-3 border ${
+                  broadcasted.backend.sync.status === "confirmed"
+                    ? "border-green-600/30 bg-green-600/5"
+                    : "border-yellow-500/30 bg-yellow-500/10"
+                }`}
+              >
+                <p className="font-mono text-[10px]">
+                  TX hash: <span className="break-all">{broadcasted.backend.tx.hash}</span>
+                </p>
+                <p className="font-mono text-[10px] mt-1">
+                  Sync status: {broadcasted.backend.sync.status}
+                </p>
+                {broadcasted.backend.sync.token && (
+                  <p className="font-mono text-[10px] mt-1">
+                    Owner synced: {broadcasted.backend.sync.token.ownerWalletAddress}
+                  </p>
+                )}
+                {broadcasted.backend.sync.error && (
+                  <p className="font-mono text-[10px] mt-1 text-yellow-200">
+                    {broadcasted.backend.sync.error}
+                  </p>
+                )}
+              </div>
+
+              <pre className="overflow-x-auto text-[11px] font-mono text-foreground/80 whitespace-pre-wrap break-all">
+                {JSON.stringify(broadcasted.backend, null, 2)}
+              </pre>
+            </div>
+          )}
         </section>
       )}
 
@@ -380,11 +541,31 @@ const ResalePurchasePage = () => {
           <span className="text-lg font-medium tracking-tight">{formatVnd(feePreview.total)}</span>
         </div>
         <button
-          disabled={prepareBuyMutation.isPending || isLoading || !ticketId}
-          onClick={() => prepareBuyMutation.mutate()}
+          disabled={
+            prepareBuyMutation.isPending ||
+            broadcastBuyMutation.isPending ||
+            isLoading ||
+            !ticketId ||
+            listing.status !== "active"
+          }
+          onClick={() => {
+            if (prepared) {
+              broadcastBuyMutation.mutate();
+              return;
+            }
+            prepareBuyMutation.mutate();
+          }}
           className="w-full py-4 bg-foreground text-background font-medium tracking-tight hover:bg-foreground/90 transition-colors disabled:opacity-50"
         >
-          {prepareBuyMutation.isPending ? "ĐANG CHUẨN BỊ..." : "CHUẨN BỊ LỆNH MUA ON-CHAIN"}
+          {listing.status !== "active"
+            ? "LISTING ĐÃ KHÔNG CÒN ACTIVE"
+            : prepareBuyMutation.isPending
+              ? "ĐANG CHUẨN BỊ..."
+              : broadcastBuyMutation.isPending
+                ? "ĐANG KÝ & BROADCAST..."
+                : prepared
+                  ? "KÝ & BROADCAST"
+                  : "CHUẨN BỊ LỆNH MUA ON-CHAIN"}
         </button>
       </div>
     </MobileLayout>
