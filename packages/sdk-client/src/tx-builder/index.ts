@@ -6,6 +6,11 @@ export type {
   Tx4Request
 } from "./types.js";
 export {
+  buildMarketplaceBuyTx,
+  type MarketplaceBuyTxParams,
+  type MarketplaceBuyTxUnsigned
+} from "./marketplace-buy.js";
+export {
   encodeExecuteBatch,
   hashAuthorizationTuple,
   buildAuthorizationTuple,
