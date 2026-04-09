@@ -13,6 +13,7 @@
     "format": "echo 'TODO: add formatter for app-mobile'"
   },
   "dependencies": {
-    "@ticket-platform/sdk-client": "workspace:*"
+    "@ticket-platform/sdk-client": "workspace:*",
+    "viem": "^2.21.0"
   }
 }
