@@ -40,6 +40,11 @@ const SERVICE_MODULES = {
     serverPath: "services/marketplace-service/dist/server.js",
     createExport: "createMarketplaceServer"
   },
+  "contract-sync-service": {
+    configPath: "services/contract-sync-service/dist/config.js",
+    serverPath: "services/contract-sync-service/dist/server.js",
+    createExport: "createContractSyncServer"
+  },
   "checkin-service": {
     configPath: "services/checkin-service/dist/config.js",
     serverPath: "services/checkin-service/dist/server.js",

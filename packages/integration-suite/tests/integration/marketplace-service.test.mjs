@@ -7,11 +7,18 @@ import { startService, stopService, waitForHealth } from "../utils/process.mjs";
 
 const SELLER_WALLET_ADDRESS = "0x0000000000000000000000000000000000000a11";
 const BUYER_WALLET_ADDRESS = "0x0000000000000000000000000000000000000b22";
-const INTERNAL_API_KEY = "internal_dev_key";
+const INTERNAL_API_KEY = "internal-dev-key";
+const CONTRACT_SYNC_ENV = {
+  HOST: "127.0.0.1",
+  PORT: "3114",
+  INTERNAL_API_KEY
+};
+const CONTRACT_SYNC_BASE_URL = `http://${CONTRACT_SYNC_ENV.HOST}:${CONTRACT_SYNC_ENV.PORT}`;
 const SERVICE_ENV = {
   HOST: "127.0.0.1",
   PORT: "3107",
-  INTERNAL_API_KEY
+  INTERNAL_API_KEY,
+  CONTRACT_SYNC_SERVICE_BASE_URL: CONTRACT_SYNC_BASE_URL
 };
 const SERVICE_BASE_URL = `http://${SERVICE_ENV.HOST}:${SERVICE_ENV.PORT}`;
 const MARKETPLACE_TABLES = [
@@ -32,6 +39,23 @@ async function bootMarketplace() {
 
   try {
     await waitForHealth(SERVICE_BASE_URL);
+    return handle;
+  } catch (error) {
+    await stopService(handle);
+    throw error;
+  }
+}
+
+async function bootContractSync() {
+  const handle = startService(
+    "contract-sync-service",
+    "contract-sync-service",
+    CONTRACT_SYNC_ENV,
+    process.cwd()
+  );
+
+  try {
+    await waitForHealth(CONTRACT_SYNC_BASE_URL);
     return handle;
   } catch (error) {
     await stopService(handle);
@@ -167,5 +191,119 @@ test("marketplace-service persists listings, buy hashes, and settlements across 
     assert.equal(restoredSettlement.escrowDataHash, settlement.escrowDataHash);
   } finally {
     await stopService(service);
+  }
+});
+
+test("marketplace-service broadcast-buy completes listing and syncs buyer ownership", async () => {
+  await resetPostgresTables(MARKETPLACE_TABLES);
+
+  const contractSync = await bootContractSync();
+  const marketplace = await bootMarketplace();
+
+  try {
+    const listing = await expectSuccess(SERVICE_BASE_URL, "/marketplace/listings", {
+      method: "POST",
+      headers: {
+        "x-user-id": "seller_broadcast_001",
+        "x-kyc-status": "approved"
+      },
+      body: {
+        tokenId: "token_broadcast_001",
+        eventId: "event_broadcast_001",
+        sellerWalletAddress: SELLER_WALLET_ADDRESS,
+        originalPrice: 1_500_000,
+        askPrice: 1_650_000
+      }
+    });
+
+    const buyHash = await expectSuccess(
+      SERVICE_BASE_URL,
+      `/marketplace/listings/${listing.id}/initiate-buy`,
+      {
+        method: "POST",
+        headers: {
+          "x-user-id": "buyer_broadcast_001"
+        },
+        body: {
+          orderId: "ord_buy_broadcast_001",
+          amount: 1_650_000,
+          buyerWalletAddress: BUYER_WALLET_ADDRESS,
+          onChainListingId: 9901
+        }
+      }
+    );
+
+    const broadcast = await expectSuccess(
+      SERVICE_BASE_URL,
+      `/marketplace/listings/${listing.id}/broadcast-buy`,
+      {
+        method: "POST",
+        headers: {
+          "x-user-id": "buyer_broadcast_001",
+          "idempotency-key": "broadcast_buy_001"
+        },
+        body: {
+          authorizationHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          signedAuthorization: {
+            address: "0x2000000000000000000000000000000000000002",
+            chainId: 84532,
+            nonce: 7,
+            yParity: 0,
+            r: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            s: "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          },
+          tx: {
+            to: "0x2000000000000000000000000000000000000002",
+            data: "0xdeadbeef",
+            chainId: 84532
+          },
+          paymentId: "pay_broadcast_001",
+          gateway: "momo",
+          gatewayReference: "gw_broadcast_001"
+        }
+      }
+    );
+
+    assert.equal(broadcast.listing.id, listing.id);
+    assert.equal(broadcast.listing.status, "completed");
+    assert.equal(broadcast.listing.buyerUserId, "buyer_broadcast_001");
+    assert.equal(broadcast.listing.paymentId, "pay_broadcast_001");
+    assert.equal(broadcast.buyHash.orderId, buyHash.orderId);
+    assert.equal(broadcast.buyHash.paymentHash, buyHash.paymentHash);
+    assert.equal(broadcast.tx.mode, "simulated");
+    assert.equal(broadcast.sync.status, "confirmed");
+    assert.equal(broadcast.sync.ingestion.accepted, 2);
+    assert.equal(broadcast.sync.ingestion.rejected, 0);
+    assert.equal(broadcast.sync.token.tokenId, "token_broadcast_001");
+    assert.equal(broadcast.sync.token.ownerWalletAddress, BUYER_WALLET_ADDRESS);
+    assert.equal(broadcast.sync.token.ownerUserId, "buyer_broadcast_001");
+    assert.equal(broadcast.sync.token.listingStatus, "completed");
+    assert.equal(broadcast.sync.token.sourceListingId, listing.id);
+    assert.equal(broadcast.sync.token.eventId, "event_broadcast_001");
+
+    const completedListings = await expectSuccess(
+      SERVICE_BASE_URL,
+      "/marketplace/listings?status=completed"
+    );
+    assert.equal(completedListings.length, 1);
+    assert.equal(completedListings[0].id, listing.id);
+    assert.equal(completedListings[0].buyerUserId, "buyer_broadcast_001");
+
+    const syncedToken = await expectSuccess(CONTRACT_SYNC_BASE_URL, "/tokens/token_broadcast_001");
+    assert.equal(syncedToken.ownerWalletAddress, BUYER_WALLET_ADDRESS);
+    assert.equal(syncedToken.ownerUserId, "buyer_broadcast_001");
+    assert.equal(syncedToken.listingStatus, "completed");
+    assert.equal(syncedToken.sourceListingId, listing.id);
+    assert.equal(syncedToken.eventId, "event_broadcast_001");
+
+    const ownerTokens = await expectSuccess(
+      CONTRACT_SYNC_BASE_URL,
+      `/tokens?ownerWalletAddress=${encodeURIComponent(BUYER_WALLET_ADDRESS)}`
+    );
+    assert.equal(ownerTokens.length, 1);
+    assert.equal(ownerTokens[0].tokenId, "token_broadcast_001");
+  } finally {
+    await stopService(marketplace);
+    await stopService(contractSync);
   }
 });
