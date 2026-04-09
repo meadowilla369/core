@@ -58,6 +58,17 @@ export interface AuthTokenData {
   expiresInSec: number;
 }
 
+export interface UserProfileData {
+  id: string;
+  phoneNumber: string;
+  fullName: string;
+  email?: string;
+  emailVerified: boolean;
+  isFrozen: boolean;
+  freezeReason?: string;
+  updatedAt: string;
+}
+
 export interface EventSummary {
   id: string;
   organizerId?: string;
@@ -118,12 +129,37 @@ export interface MarketplaceListing {
   tokenId: string;
   eventId: string;
   sellerUserId: string;
+  sellerWalletAddress: string;
   originalPrice: number;
   askPrice: number;
   currency: "VND";
   status: "active" | "cancelled" | "completed";
   createdAt: string;
   updatedAt: string;
+  buyerUserId?: string;
+  paymentId?: string;
+  settlementId?: string;
+}
+
+export interface MarketplaceBuyHashData {
+  orderId: string;
+  listingId: string;
+  buyerUserId: string;
+  buyerWalletAddress: string;
+  amount: number;
+  nonce: `0x${string}`;
+  paymentHash: `0x${string}`;
+  signature: `0x${string}`;
+  signerAddress: string;
+  status: "issued" | "expired";
+  issuedAt: string;
+  expiresAt: string;
+  domain: {
+    name: string;
+    version: string;
+    chainId: number;
+    verifyingContract: `0x${string}`;
+  };
 }
 
 interface RequestOptions {
@@ -155,6 +191,15 @@ export class ApiClient {
 
   async refreshToken(input: RefreshInput): Promise<ApiSuccessResponse<AuthTokenData>> {
     return this.request("/v1/auth/refresh", { method: "POST", body: input });
+  }
+
+  async getMyProfile(userId: string): Promise<ApiSuccessResponse<UserProfileData>> {
+    return this.request("/v1/users/me", {
+      method: "GET",
+      headers: {
+        "x-user-id": userId
+      }
+    });
   }
 
   async listEvents(
@@ -278,6 +323,37 @@ export class ApiClient {
       headers: {
         "x-user-id": ctx.userId,
         ...(ctx.idempotencyKey ? { "idempotency-key": ctx.idempotencyKey } : {})
+      }
+    });
+  }
+
+  async initiateMarketplaceBuy(
+    listingId: string,
+    input: {
+      orderId?: string;
+      amount: number;
+      buyerWalletAddress: string;
+      onChainListingId: number;
+    },
+    ctx: { userId: string }
+  ): Promise<ApiSuccessResponse<MarketplaceBuyHashData>> {
+    return this.request(`/v1/marketplace/listings/${listingId}/initiate-buy`, {
+      method: "POST",
+      body: input,
+      headers: {
+        "x-user-id": ctx.userId
+      }
+    });
+  }
+
+  async getMarketplaceBuyHash(
+    listingId: string,
+    ctx: { userId: string }
+  ): Promise<ApiSuccessResponse<MarketplaceBuyHashData>> {
+    return this.request(`/v1/marketplace/listings/${listingId}/buy-hash`, {
+      method: "GET",
+      headers: {
+        "x-user-id": ctx.userId
       }
     });
   }

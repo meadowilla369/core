@@ -1,0 +1,19 @@
+{
+  "name": "@ticket-platform/tailwind-config",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    "./preset": "./preset.js"
+  },
+  "dependencies": {
+    "tailwindcss-animate": "^1.0.7"
+  },
+  "scripts": {
+    "build": "echo 'tailwind-config is source-only'",
+    "test": "echo 'TODO: add tests for tailwind-config'",
+    "lint": "echo 'TODO: add lint for tailwind-config'",
+    "typecheck": "echo 'tailwind-config is source-only'",
+    "format": "echo 'TODO: add formatter for tailwind-config'"
+  }
+}
