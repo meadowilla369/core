@@ -11,6 +11,9 @@ remappings = [
     "@openzeppelin/=../lib/openzeppelin-contracts/",
     "forge-std/=../lib/forge-std/src/"
 ]
+fs_permissions = [
+    { access = "read-write", path = "./deployments" }
+]
 
 [fmt]
 tab_width = 4

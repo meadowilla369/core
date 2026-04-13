@@ -111,6 +111,91 @@ export function mapTicketRefunded(
   };
 }
 
+/**
+ * TicketPurchased(uint256 ticketId, address buyer, uint256 eventId, uint256 price, uint256 timestamp)
+ *
+ * Current TicketLedger flow emits a purchase event instead of ERC-721 Transfer.
+ * Map it to the service's canonical Transfer event so downstream state handling
+ * stays unchanged.
+ */
+export function mapTicketPurchased(
+  args: {
+    ticketId: bigint;
+    buyer: `0x${string}`;
+    eventId: bigint;
+    price: bigint;
+    timestamp: bigint;
+  },
+  meta: RawLogMeta
+): ContractEventInput {
+  return {
+    chainId: meta.chainId,
+    blockNumber: Number(meta.blockNumber),
+    transactionHash: meta.transactionHash,
+    logIndex: meta.logIndex,
+    eventName: "Transfer",
+    contractAddress: meta.address,
+    occurredAt: new Date(Number(args.timestamp) * 1000).toISOString(),
+    payload: {
+      tokenId: String(args.ticketId),
+      eventId: String(args.eventId),
+      from: "0x0000000000000000000000000000000000000000",
+      to: args.buyer,
+      price: String(args.price)
+    }
+  };
+}
+
+/**
+ * TicketTransferred(uint256 ticketId, address from, address to)
+ *
+ * Current TicketLedger transfer event maps directly to canonical Transfer.
+ */
+export function mapTicketTransferred(
+  args: { ticketId: bigint; from: `0x${string}`; to: `0x${string}` },
+  meta: RawLogMeta
+): ContractEventInput {
+  return {
+    chainId: meta.chainId,
+    blockNumber: Number(meta.blockNumber),
+    transactionHash: meta.transactionHash,
+    logIndex: meta.logIndex,
+    eventName: "Transfer",
+    contractAddress: meta.address,
+    occurredAt: meta.blockTimestamp ? blockTsToIso(meta.blockTimestamp) : undefined,
+    payload: {
+      tokenId: String(args.ticketId),
+      from: args.from,
+      to: args.to
+    }
+  };
+}
+
+/**
+ * TicketCancelled(uint256 ticketId, uint256 refundAmount)
+ *
+ * Current TicketLedger cancellation flow maps to canonical TicketRefunded.
+ */
+export function mapTicketCancelled(
+  args: { ticketId: bigint; refundAmount: bigint },
+  meta: RawLogMeta
+): ContractEventInput {
+  return {
+    chainId: meta.chainId,
+    blockNumber: Number(meta.blockNumber),
+    transactionHash: meta.transactionHash,
+    logIndex: meta.logIndex,
+    eventName: "TicketRefunded",
+    contractAddress: meta.address,
+    occurredAt: meta.blockTimestamp ? blockTsToIso(meta.blockTimestamp) : undefined,
+    payload: {
+      tokenId: String(args.ticketId),
+      amount: String(args.refundAmount),
+      refundedAt: meta.blockTimestamp ? blockTsToIso(meta.blockTimestamp) : new Date().toISOString()
+    }
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Marketplace events
 // ---------------------------------------------------------------------------
@@ -189,6 +274,103 @@ export function mapSaleCompleted(
     occurredAt: meta.blockTimestamp ? blockTsToIso(meta.blockTimestamp) : undefined,
     payload: {
       tokenId: String(args.tokenId),
+      status: "completed",
+      seller: args.seller,
+      buyer: args.buyer,
+      price: String(args.price)
+    }
+  };
+}
+
+/**
+ * TicketListed(uint256 listingId, address seller, uint256 ticketId, uint256 price)
+ *
+ * Current MarketplaceV2 listing event maps to ListingStatusChanged(active).
+ */
+export function mapTicketListed(
+  args: {
+    listingId: bigint;
+    seller: `0x${string}`;
+    ticketId: bigint;
+    price: bigint;
+  },
+  meta: RawLogMeta
+): ContractEventInput {
+  return {
+    chainId: meta.chainId,
+    blockNumber: Number(meta.blockNumber),
+    transactionHash: meta.transactionHash,
+    logIndex: meta.logIndex,
+    eventName: "ListingStatusChanged",
+    contractAddress: meta.address,
+    occurredAt: meta.blockTimestamp ? blockTsToIso(meta.blockTimestamp) : undefined,
+    payload: {
+      tokenId: String(args.ticketId),
+      listingId: String(args.listingId),
+      status: "active",
+      seller: args.seller,
+      price: String(args.price)
+    }
+  };
+}
+
+/**
+ * ListingCancelled(uint256 listingId, address seller, string reason)
+ *
+ * Current MarketplaceV2 cancellation event omits ticketId, so callers must
+ * provide the resolved ticketId from a follow-up read if they want the event
+ * to be accepted by contract-sync state handling.
+ */
+export function mapMarketplaceListingCancelled(
+  args: { listingId: bigint; seller: `0x${string}`; reason: string },
+  meta: RawLogMeta,
+  ticketId: bigint
+): ContractEventInput {
+  return {
+    chainId: meta.chainId,
+    blockNumber: Number(meta.blockNumber),
+    transactionHash: meta.transactionHash,
+    logIndex: meta.logIndex,
+    eventName: "ListingStatusChanged",
+    contractAddress: meta.address,
+    occurredAt: meta.blockTimestamp ? blockTsToIso(meta.blockTimestamp) : undefined,
+    payload: {
+      tokenId: String(ticketId),
+      listingId: String(args.listingId),
+      status: "cancelled",
+      seller: args.seller,
+      reason: args.reason
+    }
+  };
+}
+
+/**
+ * TicketSold(uint256 listingId, address buyer, address seller, uint256 ticketId, uint256 price)
+ *
+ * Current MarketplaceV2 sale event maps to ListingStatusChanged(completed).
+ * Ownership itself is updated by the accompanying TicketTransferred event.
+ */
+export function mapTicketSold(
+  args: {
+    listingId: bigint;
+    buyer: `0x${string}`;
+    seller: `0x${string}`;
+    ticketId: bigint;
+    price: bigint;
+  },
+  meta: RawLogMeta
+): ContractEventInput {
+  return {
+    chainId: meta.chainId,
+    blockNumber: Number(meta.blockNumber),
+    transactionHash: meta.transactionHash,
+    logIndex: meta.logIndex,
+    eventName: "ListingStatusChanged",
+    contractAddress: meta.address,
+    occurredAt: meta.blockTimestamp ? blockTsToIso(meta.blockTimestamp) : undefined,
+    payload: {
+      tokenId: String(args.ticketId),
+      listingId: String(args.listingId),
       status: "completed",
       seller: args.seller,
       buyer: args.buyer,

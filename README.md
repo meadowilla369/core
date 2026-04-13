@@ -79,7 +79,46 @@ npm run stack:logs
 ./scripts/dev-stack.sh logs api-gateway
 ```
 
-### 5) Run only the browser UI simulator
+### 4b) Run local chain + backend stack
+
+Start Anvil, deploy local `TicketLedger` / `MarketplaceV2` / `TicketPaymaster` / `Handler`,
+write `.env.localchain`, then boot Docker infra plus the backend/services stack against that env:
+
+```bash
+npm run stack:localchain:up
+```
+
+`stack:localchain:up` now runs a smoke pass automatically after boot:
+
+- checks local RPC chain id and deployed contract bytecode
+- checks backend `healthz` / `readyz`
+- submits a real `TicketLedger.purchaseWithSignature` transaction on Anvil
+- verifies `contract-sync-service` ingests that event through the RPC listener
+- builds and serves a temporary `apps/web` preview, then curls it
+
+Useful helpers:
+
+```bash
+npm run chain:status
+npm run chain:deploy
+npm run stack:localchain:smoke
+npm run stack:localchain:down
+```
+
+`contract-sync-service` will enable its RPC listener in this mode because `.env.localchain`
+includes `RPC_URL`, `TICKET_LEDGER_ADDRESS`, and `MARKETPLACE_ADDRESS`.
+
+### 5) Run frontend against local chain backend
+
+```bash
+npm run web:localchain:dev
+# open http://127.0.0.1:8080
+```
+
+This starts `apps/web` with `VITE_API_BASE_URL=http://127.0.0.1:3000` and the deployed
+`HANDLER_ADDRESS` from `.env.localchain`.
+
+### 6) Run only the browser UI simulator
 
 ```bash
 npm run ui:dev

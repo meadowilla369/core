@@ -18,9 +18,15 @@ const {
   mapTransfer,
   mapTicketUsed,
   mapTicketRefunded,
+  mapTicketPurchased,
+  mapTicketTransferred,
+  mapTicketCancelled,
   mapListed,
   mapListingCancelled,
-  mapSaleCompleted
+  mapSaleCompleted,
+  mapTicketListed,
+  mapMarketplaceListingCancelled,
+  mapTicketSold
 } = await import(
   pathToFileURL(path.resolve(REPO_ROOT, "services/contract-sync-service/dist/event-mapper.js")).href
 );
@@ -89,6 +95,47 @@ test("mapTicketRefunded: produces TicketRefunded event", () => {
   assert.ok(ev.payload?.refundedAt);
 });
 
+test("mapTicketPurchased: normalizes TicketLedger purchase into Transfer", () => {
+  const ev = mapTicketPurchased(
+    {
+      ticketId: 12n,
+      buyer: "0xbuyer",
+      eventId: 44n,
+      price: 500000n,
+      timestamp: 1700000000n
+    },
+    BASE_META
+  );
+
+  assert.equal(ev.eventName, "Transfer");
+  assert.equal(ev.payload?.tokenId, "12");
+  assert.equal(ev.payload?.eventId, "44");
+  assert.equal(ev.payload?.to, "0xbuyer");
+});
+
+test("mapTicketTransferred: normalizes TicketLedger transfer into Transfer", () => {
+  const ev = mapTicketTransferred(
+    { ticketId: 19n, from: "0xseller", to: "0xbuyer" },
+    { ...BASE_META, transactionHash: "0xledger-transfer" }
+  );
+
+  assert.equal(ev.eventName, "Transfer");
+  assert.equal(ev.payload?.tokenId, "19");
+  assert.equal(ev.payload?.from, "0xseller");
+  assert.equal(ev.payload?.to, "0xbuyer");
+});
+
+test("mapTicketCancelled: normalizes TicketLedger cancel into TicketRefunded", () => {
+  const ev = mapTicketCancelled(
+    { ticketId: 33n, refundAmount: 700000n },
+    { ...BASE_META, blockTimestamp: 1700000000n }
+  );
+
+  assert.equal(ev.eventName, "TicketRefunded");
+  assert.equal(ev.payload?.tokenId, "33");
+  assert.equal(ev.payload?.amount, "700000");
+});
+
 test("mapListed: produces ListingStatusChanged with status=active", () => {
   const ev = mapListed(
     { tokenId: 5n, seller: "0xseller", price: 500n, expiresAt: 9999999n },
@@ -119,6 +166,43 @@ test("mapSaleCompleted: produces ListingStatusChanged with status=completed", ()
   assert.equal(ev.payload?.status, "completed");
   assert.equal(ev.payload?.buyer, "0xbuyer");
   assert.equal(ev.payload?.price, "400");
+});
+
+test("mapTicketListed: produces ListingStatusChanged with listingId for MarketplaceV2", () => {
+  const ev = mapTicketListed(
+    { listingId: 9n, seller: "0xseller", ticketId: 5n, price: 600n },
+    BASE_META
+  );
+
+  assert.equal(ev.eventName, "ListingStatusChanged");
+  assert.equal(ev.payload?.listingId, "9");
+  assert.equal(ev.payload?.tokenId, "5");
+  assert.equal(ev.payload?.status, "active");
+});
+
+test("mapMarketplaceListingCancelled: produces ListingStatusChanged with resolved ticketId", () => {
+  const ev = mapMarketplaceListingCancelled(
+    { listingId: 9n, seller: "0xseller", reason: "seller_cancelled" },
+    BASE_META,
+    5n
+  );
+
+  assert.equal(ev.eventName, "ListingStatusChanged");
+  assert.equal(ev.payload?.listingId, "9");
+  assert.equal(ev.payload?.tokenId, "5");
+  assert.equal(ev.payload?.status, "cancelled");
+});
+
+test("mapTicketSold: produces ListingStatusChanged with status=completed for MarketplaceV2", () => {
+  const ev = mapTicketSold(
+    { listingId: 9n, buyer: "0xbuyer", seller: "0xseller", ticketId: 5n, price: 400n },
+    BASE_META
+  );
+
+  assert.equal(ev.eventName, "ListingStatusChanged");
+  assert.equal(ev.payload?.listingId, "9");
+  assert.equal(ev.payload?.tokenId, "5");
+  assert.equal(ev.payload?.status, "completed");
 });
 
 // ---------------------------------------------------------------------------

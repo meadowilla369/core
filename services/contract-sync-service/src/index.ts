@@ -31,7 +31,7 @@ if (rpcConfig) {
   log(
     config.serviceName,
     "info",
-    "RPC listener disabled (RPC_URL / TICKET_NFT_ADDRESS / MARKETPLACE_ADDRESS not set)",
+    "RPC listener disabled (RPC_URL / TICKET_LEDGER_ADDRESS|TICKET_NFT_ADDRESS / MARKETPLACE_ADDRESS not set)",
     {}
   );
 }

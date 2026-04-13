@@ -9,7 +9,7 @@ export interface ContractSyncConfig {
 export interface RpcConfig {
   rpcUrl: string;
   chainId: number;
-  ticketNftAddress: `0x${string}`;
+  ticketContractAddress: `0x${string}`;
   marketplaceAddress: `0x${string}`;
 }
 
@@ -37,17 +37,18 @@ export function loadConfig(): ContractSyncConfig {
  */
 export function loadRpcConfig(): RpcConfig | null {
   const rpcUrl = process.env.RPC_URL?.trim();
-  const ticketNft = process.env.TICKET_NFT_ADDRESS?.trim();
+  const ticketContract =
+    process.env.TICKET_LEDGER_ADDRESS?.trim() ?? process.env.TICKET_NFT_ADDRESS?.trim();
   const marketplace = process.env.MARKETPLACE_ADDRESS?.trim();
 
-  if (!rpcUrl || !ticketNft || !marketplace) {
+  if (!rpcUrl || !ticketContract || !marketplace) {
     return null;
   }
 
   return {
     rpcUrl,
     chainId: parseNumber(process.env.CHAIN_ID, 31337),
-    ticketNftAddress: ticketNft as `0x${string}`,
+    ticketContractAddress: ticketContract as `0x${string}`,
     marketplaceAddress: marketplace as `0x${string}`
   };
 }

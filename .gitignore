@@ -16,6 +16,8 @@ package-lock.json
 # Environment and local overrides
 .env
 .env.*.local
+contracts/deployments/localchain-addresses.json
+contracts/deployments/localchain-smoke.json
 
 # Logs
 *.log

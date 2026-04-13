@@ -5,34 +5,41 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE_DIR="$ROOT_DIR/.tmp/dev-stack"
 LOG_DIR="$STATE_DIR/logs"
 PID_DIR="$STATE_DIR/pids"
-ENV_FILE="$ROOT_DIR/.env"
+STACK_ENV_FILE_REL="${STACK_ENV_FILE:-.env}"
+ENV_FILE="$ROOT_DIR/$STACK_ENV_FILE_REL"
 
 mkdir -p "$LOG_DIR" "$PID_DIR"
 
 SERVICES=(
-  "auth-service|http://127.0.0.1:3001/healthz|PORT=3001 node --env-file=.env services/auth-service/dist/index.js"
-  "user-service|http://127.0.0.1:3002/healthz|PORT=3002 node --env-file=.env services/user-service/dist/index.js"
-  "kyc-service|http://127.0.0.1:3003/healthz|PORT=3003 node --env-file=.env services/kyc-service/dist/index.js"
-  "event-service|http://127.0.0.1:3004/healthz|PORT=3004 node --env-file=.env services/event-service/dist/index.js"
-  "ticketing-service|http://127.0.0.1:3005/healthz|PORT=3005 node --env-file=.env services/ticketing-service/dist/index.js"
-  "payment-orchestrator|http://127.0.0.1:3006/healthz|PORT=3006 node --env-file=.env services/payment-orchestrator/dist/index.js"
-  "marketplace-service|http://127.0.0.1:3007/healthz|PORT=3007 node --env-file=.env services/marketplace-service/dist/index.js"
-  "checkin-service|http://127.0.0.1:3008/healthz|PORT=3008 node --env-file=.env services/checkin-service/dist/index.js"
-  "refund-service|http://127.0.0.1:3009/healthz|PORT=3009 node --env-file=.env services/refund-service/dist/index.js"
-  "worker-mint|http://127.0.0.1:3010/healthz|PORT=3010 node --env-file=.env services/worker-mint/dist/index.js"
-  "recovery-service|http://127.0.0.1:3011/healthz|PORT=3011 node --env-file=.env services/recovery-service/dist/index.js"
-  "dispute-service|http://127.0.0.1:3012/healthz|PORT=3012 node --env-file=.env services/dispute-service/dist/index.js"
-  "notification-service|http://127.0.0.1:3013/healthz|PORT=3013 node --env-file=.env services/notification-service/dist/index.js"
-  "contract-sync-service|http://127.0.0.1:3014/healthz|PORT=3014 node --env-file=.env services/contract-sync-service/dist/index.js"
-  "api-gateway|http://127.0.0.1:3000/healthz|PORT=3000 node --env-file=.env services/api-gateway/dist/index.js"
-  "ui-simulator|http://127.0.0.1:4310|UI_PORT=4310 node --env-file=.env apps/ui-simulator/server.mjs"
+  "auth-service|http://127.0.0.1:3001/healthz|PORT=3001 node --env-file=\"$ENV_FILE\" services/auth-service/dist/index.js"
+  "user-service|http://127.0.0.1:3002/healthz|PORT=3002 node --env-file=\"$ENV_FILE\" services/user-service/dist/index.js"
+  "kyc-service|http://127.0.0.1:3003/healthz|PORT=3003 node --env-file=\"$ENV_FILE\" services/kyc-service/dist/index.js"
+  "event-service|http://127.0.0.1:3004/healthz|PORT=3004 node --env-file=\"$ENV_FILE\" services/event-service/dist/index.js"
+  "ticketing-service|http://127.0.0.1:3005/healthz|PORT=3005 node --env-file=\"$ENV_FILE\" services/ticketing-service/dist/index.js"
+  "payment-orchestrator|http://127.0.0.1:3006/healthz|PORT=3006 node --env-file=\"$ENV_FILE\" services/payment-orchestrator/dist/index.js"
+  "marketplace-service|http://127.0.0.1:3007/healthz|PORT=3007 node --env-file=\"$ENV_FILE\" services/marketplace-service/dist/index.js"
+  "checkin-service|http://127.0.0.1:3008/healthz|PORT=3008 node --env-file=\"$ENV_FILE\" services/checkin-service/dist/index.js"
+  "refund-service|http://127.0.0.1:3009/healthz|PORT=3009 node --env-file=\"$ENV_FILE\" services/refund-service/dist/index.js"
+  "worker-mint|http://127.0.0.1:3010/healthz|PORT=3010 node --env-file=\"$ENV_FILE\" services/worker-mint/dist/index.js"
+  "recovery-service|http://127.0.0.1:3011/healthz|PORT=3011 node --env-file=\"$ENV_FILE\" services/recovery-service/dist/index.js"
+  "dispute-service|http://127.0.0.1:3012/healthz|PORT=3012 node --env-file=\"$ENV_FILE\" services/dispute-service/dist/index.js"
+  "notification-service|http://127.0.0.1:3013/healthz|PORT=3013 node --env-file=\"$ENV_FILE\" services/notification-service/dist/index.js"
+  "contract-sync-service|http://127.0.0.1:3014/healthz|PORT=3014 node --env-file=\"$ENV_FILE\" services/contract-sync-service/dist/index.js"
+  "api-gateway|http://127.0.0.1:3000/healthz|PORT=3000 node --env-file=\"$ENV_FILE\" services/api-gateway/dist/index.js"
+  "ui-simulator|http://127.0.0.1:4310|UI_PORT=4310 node --env-file=\"$ENV_FILE\" apps/ui-simulator/server.mjs"
 )
 
 ensure_env() {
   if [[ ! -f "$ENV_FILE" || ! -s "$ENV_FILE" ]]; then
     cp "$ROOT_DIR/.env.example" "$ENV_FILE"
-    echo "Created .env from .env.example"
+    echo "Created $STACK_ENV_FILE_REL from .env.example"
   fi
+}
+
+load_env() {
+  set -a
+  source "$ENV_FILE"
+  set +a
 }
 
 can_use_docker() {
@@ -228,6 +235,7 @@ status_service() {
 
 cmd_up() {
   ensure_env
+  load_env
   start_infra true
 
   echo "== Building workspace =="
@@ -251,6 +259,7 @@ cmd_up() {
 
 cmd_infra_up() {
   ensure_env
+  load_env
   start_infra true
 }
 
@@ -299,6 +308,7 @@ cmd_logs() {
 
 cmd_smoke() {
   ensure_env
+  load_env
   local checks=(
     "http://127.0.0.1:3000/healthz"
     "http://127.0.0.1:3001/healthz"
