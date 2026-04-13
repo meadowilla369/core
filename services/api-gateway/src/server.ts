@@ -9,6 +9,20 @@ function sendJson(res: ServerResponse, statusCode: number, payload: unknown): vo
   res.end(JSON.stringify(payload));
 }
 
+function applyCorsHeaders(req: IncomingMessage, res: ServerResponse): void {
+  const requestedHeaders = req.headers["access-control-request-headers"];
+
+  res.setHeader("access-control-allow-origin", "*");
+  res.setHeader("access-control-allow-methods", "GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS");
+  res.setHeader(
+    "access-control-allow-headers",
+    typeof requestedHeaders === "string"
+      ? requestedHeaders
+      : "content-type,x-user-id,x-webhook-signature,x-webhook-timestamp,x-webhook-nonce,idempotency-key"
+  );
+  res.setHeader("access-control-max-age", "600");
+}
+
 function safeHeaders(headers: IncomingMessage["headers"]): Record<string, string> {
   const forwarded: Record<string, string> = {};
 
@@ -119,6 +133,14 @@ export function createGatewayServer(config: GatewayConfig) {
     try {
       const method = req.method ?? "GET";
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+
+      applyCorsHeaders(req, res);
+
+      if (method === "OPTIONS") {
+        res.statusCode = 204;
+        res.end();
+        return;
+      }
 
       if (method === "GET" && url.pathname === "/healthz") {
         return sendJson(res, 200, {
