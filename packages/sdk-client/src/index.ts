@@ -114,6 +114,59 @@ export interface TicketPurchaseData extends TicketReservationData {
   ticketsIssued?: number;
 }
 
+export interface WalletRegistrationData {
+  walletAddress: string;
+  prefunded: boolean;
+  prefundTxHash: string;
+  amountWei: string;
+  fundedAt: string;
+}
+
+export interface PaymentIntentData {
+  paymentId: string;
+  orderId: string;
+  reservationId: string;
+  userId: string;
+  amount: number;
+  currency: "VND";
+  gateway: "momo" | "vnpay";
+  status: "pending" | "confirmed" | "failed" | "cancelled";
+  gatewayTransactionId?: string;
+  eventId?: number;
+  ticketTypeId?: number;
+  quantity?: number;
+  ticketIds: string[];
+  buyerWalletAddress?: string;
+  createdAt: string;
+  updatedAt: string;
+  paymentUrl?: string;
+}
+
+export interface PaymentHashData {
+  orderId: string;
+  paymentId: string;
+  paymentStatus: "pending" | "confirmed" | "failed" | "cancelled";
+  status: "pending" | "ready" | "expired" | "failed" | "cancelled" | "unavailable";
+  paymentHash: `0x${string}` | null;
+  signature: `0x${string}` | null;
+  nonce: `0x${string}` | null;
+  signerAddress: string | null;
+  buyer: string | null;
+  eventId: number | null;
+  ticketTypeId: number | null;
+  quantity: number | null;
+  amount: number;
+  ticketIds: string[];
+  issuedAt?: string | null;
+  expiresAt?: string | null;
+  domain: {
+    name: string;
+    version: string;
+    chainId: number;
+    verifyingContract: `0x${string}`;
+  } | null;
+}
+
 export interface TicketRecord {
   tokenId: string;
   eventId: string;
@@ -291,6 +344,68 @@ export class ApiClient {
 
   async getEvent(eventId: string): Promise<ApiSuccessResponse<EventDetail>> {
     return this.request(`/v1/events/${eventId}`, { method: "GET" });
+  }
+
+  async registerPaymentWallet(
+    input: { walletAddress: string },
+    ctx: { userId: string }
+  ): Promise<ApiSuccessResponse<WalletRegistrationData>> {
+    return this.request("/v1/wallet/register", {
+      method: "POST",
+      body: input,
+      headers: {
+        "x-user-id": ctx.userId
+      }
+    });
+  }
+
+  async createPaymentIntent(
+    input: {
+      orderId?: string;
+      reservationId?: string;
+      amount: number;
+      currency: "VND";
+      gateway: "momo" | "vnpay";
+      eventId: number;
+      ticketTypeId: number;
+      quantity: number;
+      ticketIds?: string[];
+      buyerWalletAddress: string;
+    },
+    ctx: { userId: string; idempotencyKey?: string }
+  ): Promise<ApiSuccessResponse<PaymentIntentData>> {
+    return this.request("/v1/payments/intents", {
+      method: "POST",
+      body: input,
+      headers: {
+        "x-user-id": ctx.userId,
+        ...(ctx.idempotencyKey ? { "idempotency-key": ctx.idempotencyKey } : {})
+      }
+    });
+  }
+
+  async getPaymentHash(orderId: string): Promise<ApiSuccessResponse<PaymentHashData>> {
+    return this.request(`/v1/payments/hash/${orderId}`, { method: "GET" });
+  }
+
+  async submitPaymentWebhook(
+    gateway: "momo" | "vnpay",
+    input: Record<string, unknown>,
+    headers: {
+      signature: string;
+      timestamp: string;
+      nonce: string;
+    }
+  ): Promise<ApiSuccessResponse<Record<string, unknown>>> {
+    return this.request(`/v1/webhooks/${gateway}`, {
+      method: "POST",
+      body: input,
+      headers: {
+        "x-webhook-signature": headers.signature,
+        "x-webhook-timestamp": headers.timestamp,
+        "x-webhook-nonce": headers.nonce
+      }
+    });
   }
 
   async reserveTickets(
@@ -477,6 +592,12 @@ export class ApiClient {
 
     const suffix = search.toString();
     return this.request(`/v1/internal/contracts/tokens${suffix ? `?${suffix}` : ""}`, {
+      method: "GET"
+    });
+  }
+
+  async getSyncedToken(tokenId: string): Promise<ApiSuccessResponse<ContractSyncedTokenData>> {
+    return this.request(`/v1/internal/contracts/tokens/${tokenId}`, {
       method: "GET"
     });
   }

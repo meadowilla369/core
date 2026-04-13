@@ -91,7 +91,11 @@ async function proxyRequest(
   }
 }
 
-async function checkServiceReady(config: GatewayConfig, serviceName: string, baseUrl: string): Promise<boolean> {
+async function checkServiceReady(
+  config: GatewayConfig,
+  serviceName: string,
+  baseUrl: string
+): Promise<boolean> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
 
@@ -143,20 +147,20 @@ export function createGatewayServer(config: GatewayConfig) {
           notificationReady,
           contractSyncReady
         ] = await Promise.all([
-            checkServiceReady(config, "auth-service", config.authServiceBaseUrl),
-            checkServiceReady(config, "user-service", config.userServiceBaseUrl),
-            checkServiceReady(config, "kyc-service", config.kycServiceBaseUrl),
-            checkServiceReady(config, "event-service", config.eventServiceBaseUrl),
-            checkServiceReady(config, "ticketing-service", config.ticketingServiceBaseUrl),
-            checkServiceReady(config, "payment-orchestrator", config.paymentOrchestratorBaseUrl),
-            checkServiceReady(config, "marketplace-service", config.marketplaceServiceBaseUrl),
-            checkServiceReady(config, "checkin-service", config.checkinServiceBaseUrl),
-            checkServiceReady(config, "refund-service", config.refundServiceBaseUrl),
-            checkServiceReady(config, "recovery-service", config.recoveryServiceBaseUrl),
-            checkServiceReady(config, "dispute-service", config.disputeServiceBaseUrl),
-            checkServiceReady(config, "notification-service", config.notificationServiceBaseUrl),
-            checkServiceReady(config, "contract-sync-service", config.contractSyncServiceBaseUrl)
-          ]);
+          checkServiceReady(config, "auth-service", config.authServiceBaseUrl),
+          checkServiceReady(config, "user-service", config.userServiceBaseUrl),
+          checkServiceReady(config, "kyc-service", config.kycServiceBaseUrl),
+          checkServiceReady(config, "event-service", config.eventServiceBaseUrl),
+          checkServiceReady(config, "ticketing-service", config.ticketingServiceBaseUrl),
+          checkServiceReady(config, "payment-orchestrator", config.paymentOrchestratorBaseUrl),
+          checkServiceReady(config, "marketplace-service", config.marketplaceServiceBaseUrl),
+          checkServiceReady(config, "checkin-service", config.checkinServiceBaseUrl),
+          checkServiceReady(config, "refund-service", config.refundServiceBaseUrl),
+          checkServiceReady(config, "recovery-service", config.recoveryServiceBaseUrl),
+          checkServiceReady(config, "dispute-service", config.disputeServiceBaseUrl),
+          checkServiceReady(config, "notification-service", config.notificationServiceBaseUrl),
+          checkServiceReady(config, "contract-sync-service", config.contractSyncServiceBaseUrl)
+        ]);
 
         const ready =
           authReady &&
@@ -254,6 +258,18 @@ export function createGatewayServer(config: GatewayConfig) {
       }
 
       if (url.pathname === "/v1/payments" || url.pathname.startsWith("/v1/payments/")) {
+        return proxyRequest(
+          req,
+          res,
+          config,
+          config.paymentOrchestratorBaseUrl,
+          "payment-orchestrator",
+          url.pathname,
+          url.search
+        );
+      }
+
+      if (url.pathname === "/v1/wallet" || url.pathname.startsWith("/v1/wallet/")) {
         return proxyRequest(
           req,
           res,

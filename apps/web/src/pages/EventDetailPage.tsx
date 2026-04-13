@@ -1,4 +1,5 @@
-import { useParams } from "react-router-dom";
+import { useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Heart, Share2, MapPin, Calendar, Clock, Users } from "lucide-react";
 import { Link } from "react-router-dom";
 import MobileLayout from "@/components/mobile/MobileLayout";
@@ -7,9 +8,14 @@ import { useEventDetail } from "@/hooks/use-events";
 
 const EventDetailPage = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { data, isError } = useEventDetail(id);
   const eventData = data?.event ?? eventDetailFallback;
   const ticketTiers = data?.tiers ?? eventTicketTierFallback;
+  const [selectedTierIndex, setSelectedTierIndex] = useState(0);
+
+  const safeSelectedTierIndex =
+    selectedTierIndex >= 0 && selectedTierIndex < ticketTiers.length ? selectedTierIndex : 0;
 
   return (
     <MobileLayout>
@@ -123,10 +129,15 @@ const EventDetailPage = () => {
       <section className="p-4">
         <h2 className="font-mono text-xs tracking-widest text-foreground/60 mb-4">[ CHỌN VÉ ]</h2>
         <div className="space-y-3">
-          {ticketTiers.map((tier) => (
+          {ticketTiers.map((tier, index) => (
             <button
               key={tier.name}
-              className="w-full p-4 border border-foreground/20 text-left hover:bg-foreground/5 transition-colors group"
+              onClick={() => setSelectedTierIndex(index)}
+              className={`w-full p-4 border text-left transition-colors group ${
+                ticketTiers[safeSelectedTierIndex]?.name === tier.name
+                  ? "border-foreground bg-foreground/5"
+                  : "border-foreground/20 hover:bg-foreground/5"
+              }`}
             >
               <div className="flex items-center justify-between mb-2">
                 <span className="font-medium">{tier.name}</span>
@@ -146,8 +157,17 @@ const EventDetailPage = () => {
 
       {/* Sticky CTA */}
       <div className="sticky bottom-16 left-0 right-0 p-4 bg-background/95 backdrop-blur-sm border-t border-foreground/10">
-        <button className="w-full py-4 bg-foreground text-background font-mono text-sm tracking-wider hover:bg-foreground/90 transition-colors">
-          MUA VÉ — TỪ {eventData.price.min.toLocaleString()}₫
+        <button
+          onClick={() => {
+            if (!id) {
+              return;
+            }
+            navigate(`/event/${id}/purchase?tier=${safeSelectedTierIndex}`);
+          }}
+          className="w-full py-4 bg-foreground text-background font-mono text-sm tracking-wider hover:bg-foreground/90 transition-colors"
+        >
+          MUA {ticketTiers[safeSelectedTierIndex]?.name?.toUpperCase() ?? "VÉ"} —{" "}
+          {ticketTiers[safeSelectedTierIndex]?.price ?? `${eventData.price.min.toLocaleString()}₫`}
         </button>
       </div>
     </MobileLayout>

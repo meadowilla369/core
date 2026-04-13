@@ -5,6 +5,7 @@ export type {
   Eip7702BatchPayload,
   Tx4Request
 } from "./types.js";
+export { buildPurchaseTx, type PurchaseTxParams, type PurchaseTxUnsigned } from "./purchase.js";
 export {
   buildMarketplaceBuyTx,
   type MarketplaceBuyTxParams,

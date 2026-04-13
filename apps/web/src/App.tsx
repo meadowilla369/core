@@ -5,6 +5,7 @@ import DiscoverPage from "./pages/DiscoverPage";
 import TicketsPage from "./pages/TicketsPage";
 import ProfilePage from "./pages/ProfilePage";
 import EventDetailPage from "./pages/EventDetailPage";
+import PrimaryPurchasePage from "./pages/PrimaryPurchasePage";
 import MarketplacePage from "./pages/MarketplacePage";
 import ResalePurchasePage from "./pages/ResalePurchasePage";
 import ResaleSalePage from "./pages/ResaleSalePage";
@@ -23,6 +24,7 @@ const App = () => (
         <Route path="/tickets" element={<TicketsPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/event/:id" element={<EventDetailPage />} />
+        <Route path="/event/:id/purchase" element={<PrimaryPurchasePage />} />
         <Route path="/marketplace" element={<MarketplacePage />} />
         <Route path="/marketplace/buy/:ticketId" element={<ResalePurchasePage />} />
         <Route path="/marketplace/sell" element={<ResaleSalePage />} />
