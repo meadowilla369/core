@@ -1,4 +1,4 @@
-export * from "./tx-builder/index.js";
+export * from "../dist/tx-builder/index.js";
 
 export interface ApiClientConfig {
   baseUrl: string;
@@ -36,14 +36,16 @@ export class ApiClientError extends Error {
 }
 
 export interface OtpRequestInput {
-  phoneNumber: string;
+  phone: string;
 }
 
 export interface OtpVerifyInput {
-  phoneNumber: string;
-  otpCode: string;
-  deviceFingerprint?: string;
+  phone: string;
+  requestId: string;
+  otp: string;
+  deviceId?: string;
   deviceName?: string;
+  platform?: string;
 }
 
 export interface RefreshInput {
@@ -55,7 +57,16 @@ export interface AuthTokenData {
   refreshToken: string;
   userId: string;
   sessionId: string;
-  expiresInSec: number;
+  accessTokenExpiresAt: string;
+  refreshTokenExpiresAt: string;
+}
+
+export interface WalletPrefundStatusData {
+  walletAddress: string;
+  funded: boolean;
+  txHash: string | null;
+  amountWei: string | null;
+  fundedAt: string | null;
 }
 
 export interface UserProfileData {
@@ -301,14 +312,25 @@ export class ApiClient {
     return this.config.baseUrl;
   }
 
-  async requestOtp(
-    input: OtpRequestInput
-  ): Promise<ApiSuccessResponse<{ otpSessionId: string; expiresAt: string }>> {
+  async requestOtp(input: OtpRequestInput): Promise<
+    ApiSuccessResponse<{
+      requestId: string;
+      expiresIn: number;
+      retryAfter: number;
+      otpCode?: string;
+    }>
+  > {
     return this.request("/v1/auth/otp/request", { method: "POST", body: input });
   }
 
   async verifyOtp(input: OtpVerifyInput): Promise<ApiSuccessResponse<AuthTokenData>> {
     return this.request("/v1/auth/otp/verify", { method: "POST", body: input });
+  }
+
+  async getWalletPrefundStatus(
+    walletAddress: string
+  ): Promise<ApiSuccessResponse<WalletPrefundStatusData>> {
+    return this.request(`/v1/wallet/prefund/${walletAddress}`, { method: "GET" });
   }
 
   async refreshToken(input: RefreshInput): Promise<ApiSuccessResponse<AuthTokenData>> {
