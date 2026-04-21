@@ -10,6 +10,7 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
+    "test:ui-home-discover": "node --test --experimental-strip-types src/features/discover/event-posters.test.ts",
     "typecheck": "tsc -p tsconfig.app.json --noEmit"
   },
   "dependencies": {

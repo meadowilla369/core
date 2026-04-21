@@ -1,127 +1,182 @@
 import { useState } from "react";
-import { Bell, Settings } from "lucide-react";
+import { Bell, Settings, ShieldCheck } from "lucide-react";
 import { Link } from "react-router-dom";
-import MobileLayout from "@/components/mobile/MobileLayout";
-import EventCard from "@/components/mobile/EventCard";
+
+import EditorialSectionBlock from "@/components/mobile/EditorialSectionBlock";
 import CategoryPill from "@/components/mobile/CategoryPill";
-import { homeFeaturedFallback, homeUpcomingFallback } from "@/lib/fallback-data";
+import EventPosterCard from "@/components/mobile/EventPosterCard";
+import MobileLayout from "@/components/mobile/MobileLayout";
+import PosterSpotlightHero from "@/components/mobile/PosterSpotlightHero";
+import QuickPreviewModal from "@/components/mobile/QuickPreviewModal";
+import TrustInfoModal from "@/components/mobile/TrustInfoModal";
+import {
+  buildHomeSections,
+  getPosterCategories,
+  toPosterEventViews,
+  type PosterEventView
+} from "@/features/discover/event-posters";
 import { useEventCatalog } from "@/hooks/use-events";
+import { homeFeaturedFallback, homeUpcomingFallback } from "@/lib/fallback-data";
 
 const HomePage = () => {
   const [activeCategory, setActiveCategory] = useState("Tất cả");
+  const [previewEvent, setPreviewEvent] = useState<PosterEventView>();
+  const [trustOpen, setTrustOpen] = useState(false);
   const { data, isError, isLoading } = useEventCatalog();
+
   const catalog =
     data && data.length > 0 ? data : [...homeFeaturedFallback, ...homeUpcomingFallback];
-  const categories = ["Tất cả", ...Array.from(new Set(catalog.map((item) => item.category)))];
-  const filteredCatalog =
+  const posterEvents = toPosterEventViews(catalog);
+  const categories = getPosterCategories(posterEvents);
+  const filteredEvents =
     activeCategory === "Tất cả"
-      ? catalog
-      : catalog.filter((item) => item.category.toLowerCase() === activeCategory.toLowerCase());
-  const featuredEvents = filteredCatalog.slice(0, 4);
-  const upcomingEvents = filteredCatalog.slice(4);
-  const trendingCategories = Array.from(
-    filteredCatalog.reduce((map, item) => {
-      map.set(item.category, (map.get(item.category) ?? 0) + 1);
-      return map;
-    }, new Map<string, number>())
-  ).slice(0, 4);
+      ? posterEvents
+      : posterEvents.filter((event) => event.category === activeCategory);
+  const sections = buildHomeSections(filteredEvents.length > 0 ? filteredEvents : posterEvents);
 
   return (
     <MobileLayout>
-      {/* Header */}
-      <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-foreground/10">
-        <div className="flex items-center justify-between p-4">
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-background/92 backdrop-blur-md">
+        <div className="flex items-center justify-between px-4 py-4">
           <div>
-            <span className="text-2xl font-medium tracking-tighter">Entr</span>
+            <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-foreground/40">
+              Ticket Platform
+            </p>
+            <span className="text-2xl font-semibold tracking-[-0.05em]">Entr</span>
           </div>
-          <div className="flex items-center gap-3">
-            <button className="w-10 h-10 flex items-center justify-center border border-foreground/20 hover:bg-foreground/10 transition-colors">
-              <Bell className="w-4 h-4" />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setTrustOpen(true)}
+              className="inline-flex h-10 w-10 items-center justify-center border border-white/10 bg-white/[0.03] transition-colors hover:bg-white/[0.08]"
+              aria-label="Mở giải thích trust"
+            >
+              <ShieldCheck className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              className="inline-flex h-10 w-10 items-center justify-center border border-white/10 bg-white/[0.03] transition-colors hover:bg-white/[0.08]"
+              aria-label="Thông báo"
+            >
+              <Bell className="h-4 w-4" />
             </button>
             <Link
               to="/profile"
-              className="w-10 h-10 flex items-center justify-center border border-foreground/20 hover:bg-foreground/10 transition-colors"
+              className="inline-flex h-10 w-10 items-center justify-center border border-white/10 bg-white/[0.03] transition-colors hover:bg-white/[0.08]"
+              aria-label="Hồ sơ"
             >
-              <Settings className="w-4 h-4" />
+              <Settings className="h-4 w-4" />
             </Link>
           </div>
         </div>
-
-        {/* Categories */}
-        <div className="flex gap-2 px-4 pb-4 overflow-x-auto scrollbar-hide">
-          {categories.map((cat) => (
+        <div className="flex gap-2 overflow-x-auto px-4 pb-4 scrollbar-hide">
+          {categories.map((category) => (
             <CategoryPill
-              key={cat}
-              name={cat}
-              active={activeCategory === cat}
-              onClick={() => setActiveCategory(cat)}
+              key={category}
+              name={category}
+              active={category === activeCategory}
+              onClick={() => setActiveCategory(category)}
             />
           ))}
         </div>
       </header>
 
       {isError && (
-        <div className="px-4 py-3 border-b border-yellow-500/30 bg-yellow-500/10">
-          <p className="font-mono text-[10px] text-yellow-200">
-            Không tải được event-service. Đang hiển thị dữ liệu fallback.
+        <div className="mx-4 mt-4 border border-yellow-500/20 bg-yellow-500/10 px-4 py-3">
+          <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-yellow-100/80">
+            event-service chua san sang, dang hien thi poster fallback.
           </p>
         </div>
       )}
 
-      {/* Featured Section */}
-      <section className="p-4">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-mono text-xs tracking-widest text-foreground/60">[ NỔI BẬT ]</h2>
-          <Link
-            to="/discover"
-            className="font-mono text-[10px] tracking-wider text-foreground/40 hover:text-foreground transition-colors"
+      {isLoading ? (
+        <section className="space-y-4 px-4 pt-4">
+          <div className="min-h-[28rem] animate-pulse border border-white/10 bg-white/[0.04]" />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="aspect-[4/5] animate-pulse border border-white/10 bg-white/[0.04]" />
+            <div className="aspect-[4/5] animate-pulse border border-white/10 bg-white/[0.04]" />
+          </div>
+        </section>
+      ) : (
+        <>
+          {sections.hero && (
+            <PosterSpotlightHero
+              event={sections.hero}
+              onPreview={setPreviewEvent}
+              onTrustOpen={() => setTrustOpen(true)}
+            />
+          )}
+
+          <EditorialSectionBlock
+            label="[ HOT NOW ]"
+            title="Poster dang duoc mo nhieu nhat"
+            description="Cac event co nhiet browse cao va trust metadata ro rang."
+            actionLabel="Mo discover"
+            actionHref="/discover"
           >
-            XEM TẤT CẢ →
-          </Link>
-        </div>
+            <div className="grid grid-cols-2 gap-3">
+              {sections.hotNow.map((event, index) => (
+                <EventPosterCard
+                  key={event.id}
+                  event={event}
+                  onPreview={setPreviewEvent}
+                  className={index === 0 ? "col-span-2" : ""}
+                  variant={index === 0 ? "feature" : "default"}
+                />
+              ))}
+            </div>
+          </EditorialSectionBlock>
 
-        <div className="grid grid-cols-2 gap-3">
-          {featuredEvents.map((event) => (
-            <EventCard key={event.id} {...event} featured />
-          ))}
-        </div>
+          <EditorialSectionBlock
+            label="[ NEAR YOU ]"
+            title="Nhip su kien de quyet nhanh"
+            description="Gan voi cach nguoi dung browse theo khu vuc va nhung dem de di."
+          >
+            <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide">
+              {sections.nearYou.map((event) => (
+                <div key={event.id} className="min-w-[17rem] flex-1">
+                  <EventPosterCard event={event} onPreview={setPreviewEvent} />
+                </div>
+              ))}
+            </div>
+          </EditorialSectionBlock>
 
-        {isLoading && (
-          <p className="mt-3 font-mono text-[10px] text-foreground/40">Đang đồng bộ sự kiện...</p>
-        )}
-      </section>
+          <EditorialSectionBlock
+            label="[ EDITOR PICKS ]"
+            title="Duoc sap dat de giu chat ticket platform"
+            description="Van image-led, nhung uu tien event co trust story dep va de ra quyet dinh."
+          >
+            <div className="space-y-3">
+              {sections.editorPicks.map((event) => (
+                <EventPosterCard key={event.id} event={event} onPreview={setPreviewEvent} />
+              ))}
+            </div>
+          </EditorialSectionBlock>
 
-      {/* Upcoming Section */}
-      <section className="mt-6">
-        <div className="flex items-center justify-between px-4 mb-2">
-          <h2 className="font-mono text-xs tracking-widest text-foreground/60">[ SẮP DIỄN RA ]</h2>
-        </div>
+          <EditorialSectionBlock
+            label="[ BY MOOD ]"
+            title="Browse theo vibe thay vi chi theo category"
+            description="Giup Home co nhieu nhip hon ma van khong bi xa roi logic ban ve."
+          >
+            <div className="grid grid-cols-2 gap-3">
+              {sections.byMood.map((event) => (
+                <EventPosterCard key={event.id} event={event} onPreview={setPreviewEvent} />
+              ))}
+            </div>
+          </EditorialSectionBlock>
+        </>
+      )}
 
-        <div className="divide-y divide-foreground/10">
-          {upcomingEvents.map((event) => (
-            <EventCard key={event.id} {...event} />
-          ))}
-        </div>
-      </section>
-
-      {/* Trending Categories */}
-      <section className="p-4 mt-6">
-        <h2 className="font-mono text-xs tracking-widest text-foreground/60 mb-4">[ XU HƯỚNG ]</h2>
-        <div className="grid grid-cols-2 gap-3">
-          {trendingCategories.map(([name, count]) => (
-            <Link
-              key={name}
-              to={`/discover?category=${name.toLowerCase()}`}
-              className="group aspect-[2/1] border border-foreground/20 p-4 flex flex-col justify-end hover:bg-foreground hover:text-background transition-colors"
-            >
-              <span className="text-xl font-medium tracking-tight">{name}</span>
-              <span className="font-mono text-[10px] text-foreground/50 group-hover:text-background/50 mt-1">
-                {count} sự kiện
-              </span>
-            </Link>
-          ))}
-        </div>
-      </section>
+      <QuickPreviewModal
+        event={previewEvent}
+        open={Boolean(previewEvent)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPreviewEvent(undefined);
+          }
+        }}
+      />
+      <TrustInfoModal open={trustOpen} onOpenChange={setTrustOpen} />
     </MobileLayout>
   );
 };
