@@ -8,6 +8,207 @@ This repository now contains:
 - Infrastructure scaffolding (`infra/`).
 - Delivery checklist (`IMPLEMENTATION_CHECKLIST.md`).
 
+## End-to-End Runbook
+
+Use this section when you want to boot the whole local system quickly: contracts on local chain, backend services, infra, and frontend.
+
+### Prerequisites
+
+Required tools:
+
+- Node.js + npm
+- Docker Desktop or a working Docker daemon
+- Foundry tools: `anvil`, `forge`, `cast`
+
+Quick checks:
+
+```bash
+node --version
+npm --version
+docker info
+anvil --version
+forge --version
+cast --version
+```
+
+### One-Time Setup
+
+Run these once after cloning or after dependency changes:
+
+```bash
+npm run bootstrap
+PATH="$PWD/bin:$PATH" pnpm install
+cp .env.example .env
+npm run build
+```
+
+Notes:
+
+- `npm run bootstrap` makes local helper scripts executable and creates `.env` from `.env.example` if missing.
+- `PATH="$PWD/bin:$PATH" pnpm install` uses the repo-local `pnpm` shim in `./bin/pnpm`.
+- `.env` is the default env for the normal local stack.
+- `.env.localchain` is generated automatically when you start the local chain flow.
+
+### Fastest Way To Run Everything
+
+If you want the full local system with local contracts, local backend, and frontend wired together, use this flow:
+
+#### Terminal 1: start local chain + backend + infra
+
+```bash
+npm run stack:localchain:up
+```
+
+What this does:
+
+1. Starts Anvil at `http://127.0.0.1:8545`
+2. Deploys local contracts
+3. Generates `.env.localchain`
+4. Starts Docker infra: Postgres, Redis, MinIO
+5. Builds the workspace
+6. Starts backend services and the API gateway using `.env.localchain`
+7. Runs smoke checks, including an on-chain transaction and a frontend preview probe
+
+#### Terminal 2: start the real web frontend against local chain backend
+
+```bash
+npm run web:localchain:dev
+```
+
+Open:
+
+- Frontend: `http://127.0.0.1:8080`
+- API gateway health: `http://127.0.0.1:3000/healthz`
+- UI simulator: `http://127.0.0.1:4310`
+- Anvil RPC: `http://127.0.0.1:8545`
+
+### Split Flow For Debugging
+
+Use this when you want to bring pieces up separately.
+
+#### A. Start or redeploy only the local chain and contracts
+
+```bash
+npm run chain:up
+```
+
+This:
+
+- starts Anvil if needed
+- deploys `TicketLedger`, `MarketplaceV2`, `TicketPaymaster`, and `Handler`
+- writes fresh addresses into `.env.localchain`
+
+Useful checks:
+
+```bash
+npm run chain:status
+npm run chain:deploy
+```
+
+#### B. Start backend + infra against `.env.localchain`
+
+```bash
+STACK_ENV_FILE=.env.localchain ./scripts/dev-stack.sh up
+```
+
+Useful checks:
+
+```bash
+STACK_ENV_FILE=.env.localchain ./scripts/dev-stack.sh status
+STACK_ENV_FILE=.env.localchain ./scripts/dev-stack.sh logs
+STACK_ENV_FILE=.env.localchain ./scripts/dev-stack.sh logs api-gateway
+```
+
+#### C. Run the local-chain smoke suite only
+
+```bash
+npm run stack:localchain:smoke
+```
+
+This validates:
+
+- Anvil chain id
+- deployed contract bytecode
+- API gateway `healthz` and `readyz`
+- `contract-sync-service` health and sync status
+- a real on-chain purchase flow
+- frontend production preview reachability
+
+#### D. Start only the frontend against local chain backend
+
+```bash
+npm run web:localchain:dev
+```
+
+This uses values from `.env.localchain`, including:
+
+- `VITE_API_BASE_URL=http://127.0.0.1:3000`
+- `VITE_RPC_URL=http://127.0.0.1:8545`
+- deployed `VITE_HANDLER_ADDRESS`
+
+### Normal Local Stack Without Local Chain
+
+Use this when you only want the backend stack and browser simulator, without live local RPC sync.
+
+```bash
+npm run stack:up
+npm run stack:status
+npm run stack:smoke
+```
+
+This flow uses `.env`, not `.env.localchain`.
+
+### Watch Mode For Day-to-Day Development
+
+```bash
+npm run dev
+```
+
+This starts Docker infra first, then runs the Turbo watch processes across the workspace.
+
+### Useful URLs And Ports
+
+| Component                        | URL / Port              |
+| -------------------------------- | ----------------------- |
+| Frontend dev server (`apps/web`) | `http://127.0.0.1:8080` |
+| API gateway                      | `http://127.0.0.1:3000` |
+| Auth service                     | `http://127.0.0.1:3001` |
+| User service                     | `http://127.0.0.1:3002` |
+| KYC service                      | `http://127.0.0.1:3003` |
+| Event service                    | `http://127.0.0.1:3004` |
+| Ticketing service                | `http://127.0.0.1:3005` |
+| Payment orchestrator             | `http://127.0.0.1:3006` |
+| Marketplace service              | `http://127.0.0.1:3007` |
+| Check-in service                 | `http://127.0.0.1:3008` |
+| Refund service                   | `http://127.0.0.1:3009` |
+| Worker mint                      | `http://127.0.0.1:3010` |
+| Recovery service                 | `http://127.0.0.1:3011` |
+| Dispute service                  | `http://127.0.0.1:3012` |
+| Notification service             | `http://127.0.0.1:3013` |
+| Contract sync service            | `http://127.0.0.1:3014` |
+| UI simulator                     | `http://127.0.0.1:4310` |
+| Anvil RPC                        | `http://127.0.0.1:8545` |
+| Postgres                         | `127.0.0.1:5432`        |
+| Redis                            | `127.0.0.1:6379`        |
+| MinIO API                        | `http://127.0.0.1:9000` |
+| MinIO Console                    | `http://127.0.0.1:9001` |
+
+### Shutdown
+
+Stop the local chain stack:
+
+```bash
+npm run stack:localchain:down
+```
+
+Stop the normal local stack:
+
+```bash
+npm run stack:down
+```
+
+If `npm run web:localchain:dev` is running in its own terminal, stop it with `Ctrl+C`.
+
 ## Quick Start
 
 ### 1) Bootstrap local development
@@ -117,6 +318,19 @@ npm run web:localchain:dev
 
 This starts `apps/web` with `VITE_API_BASE_URL=http://127.0.0.1:3000` and the deployed
 `HANDLER_ADDRESS` from `.env.localchain`.
+
+### 5b) Use the Codex UI/UX skill for `apps/web`
+
+After installing the local Codex skill `ui-ux-pro-max` and restarting Codex, use it for
+frontend work in `apps/web` (React + Vite + Tailwind + shadcn/ui).
+
+Typical prompts:
+
+```text
+Use ui-ux-pro-max to redesign the attendee dashboard in apps/web.
+Use ui-ux-pro-max to review the mobile check-in flow in apps/web for accessibility and touch targets.
+Use ui-ux-pro-max to propose a design system for the Ticket Platform marketplace screens.
+```
 
 ### 6) Run only the browser UI simulator
 
