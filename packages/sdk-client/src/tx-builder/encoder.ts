@@ -120,6 +120,9 @@ export function buildAuthorizationTuple(params: {
  *   - `authorizationList` → `tx.authorizationList`
  *   - `encodedCalldata`   → `tx.data`
  *
+ * For this repo's delegated-EOA pattern, the eventual transaction `to` should be
+ * the buyer/seller EOA address that is temporarily delegated to the Handler.
+ *
  * @param calls              Batch of calls to execute.
  * @param signedAuth         The signed EIP-7702 authorization (from wallet).
  */
@@ -142,7 +145,7 @@ export function buildEip7702BatchPayload(
  * so the caller can fill them in from the wallet session + an RPC fee-estimation call.
  *
  * @param payload     The assembled EIP-7702 batch payload (from buildEip7702BatchPayload).
- * @param from        The EOA address that will sign + send (optional — set after wallet auth).
+ * @param from        The delegated EOA address that will sign + send (optional — set after wallet auth).
  * @returns           A Tx4Request ready for fee-estimation and broadcast.
  */
 export function assembleTx4(payload: Eip7702BatchPayload, from?: `0x${string}`): Tx4Request {
@@ -153,7 +156,7 @@ export function assembleTx4(payload: Eip7702BatchPayload, from?: `0x${string}`):
   return {
     type: 4,
     from: from,
-    to: auth.address,
+    to: from,
     data: payload.encodedCalldata,
     value: 0n,
     authorizationList: payload.authorizationList,

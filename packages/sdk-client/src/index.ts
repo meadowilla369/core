@@ -1,4 +1,4 @@
-export * from "../dist/tx-builder/index.js";
+export * from "./tx-builder/index.js";
 
 export interface ApiClientConfig {
   baseUrl: string;

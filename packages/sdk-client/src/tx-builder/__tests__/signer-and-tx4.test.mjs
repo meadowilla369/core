@@ -66,9 +66,9 @@ test("MockEOASigner: signAuthorization resolves to a SignedAuthorization", async
   const signer = new MockEOASigner(EOA_ADDR);
   const signed = await signer.signAuthorization(tuple, authHash);
 
-  assert.equal(signed.chainId, tuple.chainId);
+  assert.equal(signed.chainId, Number(tuple.chainId));
   assert.equal(signed.address, tuple.address);
-  assert.equal(signed.nonce, tuple.nonce);
+  assert.equal(signed.nonce, Number(tuple.nonce));
   assert.ok(signed.yParity === 0 || signed.yParity === 1, "yParity must be 0 or 1");
   assert.ok(signed.r.startsWith("0x") && signed.r.length === 66, "r must be 32-byte hex");
   assert.ok(signed.s.startsWith("0x") && signed.s.length === 66, "s must be 32-byte hex");
@@ -111,10 +111,10 @@ test("assembleTx4: type is always 4", async () => {
   assert.equal(tx4.type, 4);
 });
 
-test("assembleTx4: to equals handler address from authorizationList[0]", async () => {
+test("assembleTx4: to equals delegated EOA address when from is provided", async () => {
   const payload = await makePayload();
   const tx4 = assembleTx4(payload, EOA_ADDR);
-  assert.equal(tx4.to, HANDLER_ADDR);
+  assert.equal(tx4.to, EOA_ADDR);
 });
 
 test("assembleTx4: data equals encodedCalldata from payload", async () => {
@@ -138,7 +138,7 @@ test("assembleTx4: authorizationList is forwarded verbatim", async () => {
 test("assembleTx4: chainId matches authorization tuple", async () => {
   const payload = await makePayload();
   const tx4 = assembleTx4(payload, EOA_ADDR);
-  assert.equal(tx4.chainId, tuple.chainId);
+  assert.equal(tx4.chainId, Number(tuple.chainId));
 });
 
 test("assembleTx4: from is set when provided", async () => {
@@ -151,6 +151,7 @@ test("assembleTx4: from is undefined when omitted", async () => {
   const payload = await makePayload();
   const tx4 = assembleTx4(payload);
   assert.equal(tx4.from, undefined);
+  assert.equal(tx4.to, undefined);
 });
 
 test("assembleTx4: RPC-dependent fields are undefined (gap is explicit)", async () => {

@@ -14,7 +14,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   assembleTx4,
   buildMarketplaceBuyTx,
-  MockEOASigner,
+  type SignedAuthorization,
   type MarketplaceBroadcastData,
   type MarketplaceBuyHashData
 } from "@ticket-platform/sdk-client";
@@ -23,7 +23,7 @@ import { useMarketplaceListing } from "@/hooks/use-marketplace-listing";
 import { eventDetailFallback } from "@/lib/fallback-data";
 import { formatMediumEventDate, formatTime, formatVnd } from "@/lib/format";
 import { webAppConfig } from "@/lib/config";
-import { getSessionUserId, getSessionWalletAddress } from "@/lib/session";
+import { getSessionUserId, getSessionWalletAddress, signSessionAuthorization } from "@/lib/session";
 import { useApiClient } from "@/providers/AppProviders";
 import { toast } from "@ticket-platform/shared-ui";
 
@@ -33,7 +33,8 @@ interface PreparedBuyState {
 }
 
 interface BroadcastedBuyState {
-  signedAuthorization: Awaited<ReturnType<MockEOASigner["signAuthorization"]>>;
+  txDraft: ReturnType<typeof buildMarketplaceBuyTx>;
+  signedAuthorization: SignedAuthorization;
   tx: ReturnType<typeof assembleTx4>;
   backend: MarketplaceBroadcastData;
 }
@@ -55,7 +56,6 @@ const ResalePurchasePage = () => {
   const queryClient = useQueryClient();
   const { data, isError, isLoading } = useMarketplaceListing(ticketId);
   const [onChainListingId, setOnChainListingId] = useState("1");
-  const [authorizationNonce, setAuthorizationNonce] = useState("0");
   const [prepared, setPrepared] = useState<PreparedBuyState | null>(null);
   const [broadcasted, setBroadcasted] = useState<BroadcastedBuyState | null>(null);
 
@@ -114,7 +114,7 @@ const ResalePurchasePage = () => {
         paymentHash: response.data.paymentHash,
         signature: response.data.signature,
         chainId: BigInt(response.data.domain.chainId),
-        nonce: BigInt(Number(authorizationNonce))
+        nonce: 0n
       });
 
       return {
@@ -146,17 +146,27 @@ const ResalePurchasePage = () => {
         throw new Error("Buy flow has not been prepared");
       }
 
-      const signer = new MockEOASigner(getSessionWalletAddress() as `0x${string}`);
-      const signedAuthorization = await signer.signAuthorization(
-        prepared.txDraft.authorizationTuple,
-        prepared.txDraft.authorizationHash
-      );
-      const payload = prepared.txDraft.assemble(signedAuthorization);
-      const tx = assembleTx4(payload, signer.address);
+      const signedAuthorization = await signSessionAuthorization({
+        authorization: {
+          address: prepared.txDraft.authorizationTuple.address,
+          chainId: prepared.txDraft.authorizationTuple.chainId
+        }
+      });
+      const txDraft = buildMarketplaceBuyTx({
+        marketplaceAddress: prepared.backend.domain.verifyingContract,
+        handlerAddress: webAppConfig.handlerAddress,
+        listingId: BigInt(Number(onChainListingId)),
+        paymentHash: prepared.backend.paymentHash,
+        signature: prepared.backend.signature,
+        chainId: BigInt(prepared.backend.domain.chainId),
+        nonce: BigInt(signedAuthorization.nonce)
+      });
+      const payload = txDraft.assemble(signedAuthorization);
+      const tx = assembleTx4(payload, getSessionWalletAddress() as `0x${string}`);
       const response = await client.broadcastMarketplaceBuy(
         ticketId,
         {
-          authorizationHash: prepared.txDraft.authorizationHash,
+          authorizationHash: txDraft.authorizationHash,
           signedAuthorization,
           tx: {
             to: tx.to,
@@ -174,6 +184,7 @@ const ResalePurchasePage = () => {
       );
 
       return {
+        txDraft,
         signedAuthorization,
         tx,
         backend: response.data
@@ -353,16 +364,6 @@ const ResalePurchasePage = () => {
               <input
                 value={onChainListingId}
                 onChange={(event) => setOnChainListingId(event.target.value)}
-                className="w-full bg-transparent border border-foreground/20 px-3 py-2 font-mono text-xs outline-none"
-              />
-            </label>
-            <label className="block">
-              <span className="font-mono text-[10px] text-foreground/50 block mb-2">
-                Authorization nonce
-              </span>
-              <input
-                value={authorizationNonce}
-                onChange={(event) => setAuthorizationNonce(event.target.value)}
                 className="w-full bg-transparent border border-foreground/20 px-3 py-2 font-mono text-xs outline-none"
               />
             </label>

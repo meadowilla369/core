@@ -9,6 +9,7 @@
 
 import { createPublicClient, http, webSocket, type Abi, type PublicClient } from "viem";
 
+import type { EventProcessingResult } from "./server.js";
 import type { ContractEventInput, RawLogMeta } from "./event-mapper.js";
 import {
   mapListed,
@@ -182,7 +183,7 @@ export interface RpcListenerConfig {
   serviceName: string;
 }
 
-export type IngestFn = (events: ContractEventInput[]) => void;
+export type IngestFn = (events: ContractEventInput[]) => EventProcessingResult[];
 
 type UnwatchFn = () => void;
 
@@ -267,8 +268,18 @@ export class RpcListener {
       return;
     }
 
-    this.log(this.config.serviceName, "info", message, { count: events.length });
-    this.ingest(events);
+    const results = this.ingest(events);
+    const processed = results.filter((result) => result.status === "processed").length;
+    const duplicates = results.filter((result) => result.status === "duplicate").length;
+    const rejected = results.filter((result) => result.status === "rejected");
+
+    this.log(this.config.serviceName, rejected.length > 0 ? "warn" : "info", message, {
+      count: events.length,
+      processed,
+      duplicates,
+      rejected: rejected.length,
+      rejectedReasons: rejected.map((result) => result.reason).filter(Boolean)
+    });
   }
 
   private watchLegacyTicketContract(address: `0x${string}`, chainId: number): void {

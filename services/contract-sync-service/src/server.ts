@@ -37,7 +37,7 @@ interface TokenSyncState {
   updatedAt: string;
 }
 
-interface EventProcessingResult {
+export interface EventProcessingResult {
   eventKey: string;
   status: "processed" | "duplicate" | "rejected";
   reason?: string;
@@ -106,7 +106,7 @@ function getPayloadString(
 export interface ContractSyncApp {
   server: Server;
   /** Directly ingest a batch of pre-mapped events (used by RpcListener). */
-  ingestEvents: (events: ContractEventInput[]) => void;
+  ingestEvents: (events: ContractEventInput[]) => EventProcessingResult[];
 }
 
 export function createContractSyncServer(config: ContractSyncConfig): Server {
@@ -260,10 +260,8 @@ export function createContractSyncApp(config: ContractSyncConfig): ContractSyncA
     };
   };
 
-  const ingestEvents = (events: ContractEventInput[]): void => {
-    for (const event of events) {
-      applyEvent(event);
-    }
+  const ingestEvents = (events: ContractEventInput[]): EventProcessingResult[] => {
+    return events.map((event) => applyEvent(event));
   };
 
   const server = createServer(async (req, res) => {

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -25,6 +26,9 @@ test("flow 1 end-to-end: issued payment authorization is consumed by Handler -> 
     "services/payment-orchestrator/dist/server.js"
   );
   const flow1 = flow1HarnessDefaults();
+  const runId = randomUUID().replace(/-/g, "").slice(0, 12);
+  const orderId = `ord_flow1_${runId}`;
+  const reservationId = `res_flow1_${runId}`;
 
   const paymentServer = createPaymentOrchestratorServer({
     serviceName: "payment-orchestrator",
@@ -64,32 +68,32 @@ test("flow 1 end-to-end: issued payment authorization is consumed by Handler -> 
           "x-user-id": "usr_flow1_001"
         },
         body: {
-          orderId: "ord_flow1_001",
-          reservationId: "res_flow1_001",
+          orderId,
+          reservationId,
           amount: 1800000,
           currency: "VND",
           gateway: "momo",
           eventId: 1,
           ticketTypeId: 2,
           quantity: 2,
-          ticketIds: ["res_flow1_001:1", "res_flow1_001:2"],
+          ticketIds: [`${reservationId}:1`, `${reservationId}:2`],
           buyerWalletAddress: flow1.buyerAddress
         }
       })
     );
 
     const webhookBody = {
-      eventId: "evt_flow1_001",
+      eventId: `evt_flow1_${runId}`,
       orderId: paymentIntent.orderId,
       paymentId: paymentIntent.paymentId,
       status: "success",
       amount: paymentIntent.amount,
       currency: "VND",
-      gatewayTransactionId: "momo_txn_flow1_001"
+      gatewayTransactionId: `momo_txn_flow1_${runId}`
     };
     const rawBody = JSON.stringify(webhookBody);
     const timestamp = String(Math.floor(Date.now() / 1000));
-    const nonce = "nonce_flow1_001";
+    const nonce = `nonce_flow1_${runId}`;
     const signature = createWebhookSignature({
       timestamp,
       nonce,

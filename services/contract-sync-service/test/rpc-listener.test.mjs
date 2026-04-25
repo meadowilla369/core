@@ -222,7 +222,8 @@ test("ingestEvents: Transfer event from mapper updates token ownership", () => {
     { ...BASE_META, transactionHash: "0xingest1", logIndex: 0 }
   );
 
-  ingestEvents([ev]);
+  const results = ingestEvents([ev]);
+  assert.equal(results[0].status, "processed");
 
   // We can't query the token state directly without an HTTP request,
   // but ingestEvents is synchronous, so no exception means it was accepted.

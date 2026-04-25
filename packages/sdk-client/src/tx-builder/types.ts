@@ -61,7 +61,7 @@ export interface Eip7702BatchPayload {
  *
  * Fields left as `undefined` must be filled in by the broadcast layer:
  *  - `from`    — the EOA address (known after wallet sign-in)
- *  - `to`      — the Handler address (same as authorizationList[0].address)
+ *  - `to`      — the delegated EOA address that executes Handler code for this tx
  *  - `nonce`   — transaction nonce (may differ from authorization nonce)
  *  - `gas`     — estimated gas (requires RPC call to eth_estimateGas)
  *  - `maxFeePerGas` / `maxPriorityFeePerGas` — requires RPC fee data
@@ -71,8 +71,8 @@ export interface Tx4Request {
   type: 4;
   /** The EOA address sending the transaction. Fill in from authenticated wallet. */
   from: `0x${string}` | undefined;
-  /** Handler contract address (receives the executeBatch call). */
-  to: `0x${string}`;
+  /** Delegated EOA address whose temporary code executes the batch. */
+  to: `0x${string}` | undefined;
   /** ABI-encoded Handler.executeBatch(calls) calldata. */
   data: `0x${string}`;
   /** ETH value forwarded with the transaction (in wei). 0n for pure state changes. */

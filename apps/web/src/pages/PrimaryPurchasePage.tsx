@@ -14,7 +14,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   assembleTx4,
   buildPurchaseTx,
-  MockEOASigner,
+  type SignedAuthorization,
   type ContractSyncedTokenData,
   type PaymentHashData,
   type PaymentIntentData,
@@ -26,10 +26,19 @@ import { formatMediumEventDate, formatTime, formatVnd } from "@/lib/format";
 import { webAppConfig } from "@/lib/config";
 import {
   extractPurchasedTokenId,
+  getOnchainTicketOwner,
+  listOnchainOwnerTicketIds,
+  selectNewTokenId,
+  selectNewlySyncedToken,
   sendLocalchainTransaction,
   waitForTransactionReceipt
 } from "@/lib/localchain";
-import { getSessionUserId, getSessionWalletAddress } from "@/lib/session";
+import {
+  getSessionUserId,
+  getSessionWalletAddress,
+  getSignedSessionTransactionInput,
+  signSessionAuthorization
+} from "@/lib/session";
 import { useApiClient } from "@/providers/AppProviders";
 import { toast } from "@ticket-platform/shared-ui";
 
@@ -40,14 +49,16 @@ interface PreparedPrimaryState {
 }
 
 interface SignedPrimaryState {
-  signedAuthorization: Awaited<ReturnType<MockEOASigner["signAuthorization"]>>;
+  txDraft: ReturnType<typeof buildPurchaseTx>;
+  signedAuthorization: SignedAuthorization;
   tx: ReturnType<typeof assembleTx4>;
 }
 
 interface BroadcastedPrimaryState {
   transactionHash: `0x${string}`;
   tokenId: string;
-  syncedToken: ContractSyncedTokenData;
+  syncStatus: "confirmed" | "degraded";
+  syncedToken: ContractSyncedTokenData | null;
 }
 
 async function createDemoWebhookSignature(input: {
@@ -85,7 +96,6 @@ const PrimaryPurchasePage = () => {
   const client = useApiClient();
   const initialTierIndex = Math.max(0, Number(searchParams.get("tier") ?? "0") || 0);
   const [quantity, setQuantity] = useState("1");
-  const [authorizationNonce, setAuthorizationNonce] = useState("0");
   const [onChainEventId, setOnChainEventId] = useState("1");
   const [onChainTicketTypeId, setOnChainTicketTypeId] = useState(String(initialTierIndex + 1));
   const [walletBootstrap, setWalletBootstrap] = useState<WalletRegistrationData | null>(null);
@@ -258,7 +268,7 @@ const PrimaryPurchasePage = () => {
         paymentHash: paymentHash.data.paymentHash,
         signature: paymentHash.data.signature,
         chainId: BigInt(paymentHash.data.domain.chainId),
-        nonce: BigInt(Number(authorizationNonce))
+        nonce: 0n
       });
 
       return {
@@ -291,15 +301,28 @@ const PrimaryPurchasePage = () => {
         throw new Error("Purchase tx chưa được prepare");
       }
 
-      const signer = new MockEOASigner(getSessionWalletAddress() as `0x${string}`);
-      const signedAuthorization = await signer.signAuthorization(
-        prepared.txDraft.authorizationTuple,
-        prepared.txDraft.authorizationHash
-      );
-      const payload = prepared.txDraft.assemble(signedAuthorization);
-      const tx = assembleTx4(payload, signer.address);
+      const signedAuthorization = await signSessionAuthorization({
+        authorization: {
+          address: prepared.txDraft.authorizationTuple.address,
+          chainId: prepared.txDraft.authorizationTuple.chainId
+        }
+      });
+      const txDraft = buildPurchaseTx({
+        ticketLedgerAddress: prepared.paymentHash.domain.verifyingContract,
+        handlerAddress: webAppConfig.handlerAddress,
+        eventId: BigInt(prepared.paymentHash.eventId),
+        ticketTypeId: BigInt(prepared.paymentHash.ticketTypeId),
+        quantity: BigInt(prepared.paymentHash.quantity),
+        paymentHash: prepared.paymentHash.paymentHash,
+        signature: prepared.paymentHash.signature,
+        chainId: BigInt(prepared.paymentHash.domain.chainId),
+        nonce: BigInt(signedAuthorization.nonce)
+      });
+      const payload = txDraft.assemble(signedAuthorization);
+      const tx = assembleTx4(payload, getSessionWalletAddress() as `0x${string}`);
 
       return {
+        txDraft,
         signedAuthorization,
         tx
       };
@@ -322,41 +345,60 @@ const PrimaryPurchasePage = () => {
   });
 
   const broadcastPurchaseMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<BroadcastedPrimaryState> => {
       if (!prepared) {
         throw new Error("Purchase tx chưa được prepare");
       }
+      if (!signed) {
+        throw new Error("Primary tx chưa được ký");
+      }
+
+      const ownerWalletAddress = getSessionWalletAddress();
+      const ticketLedgerAddress =
+        prepared.paymentHash.domain?.verifyingContract ?? signed.txDraft.calls[0].target;
+      const ownedTokensBefore = await client.listSyncedTokens({ ownerWalletAddress });
+      const previousTokenIds = new Set(ownedTokensBefore.data.map((token) => token.tokenId));
+      const ownedOnchainBefore = await listOnchainOwnerTicketIds({
+        rpcUrl: webAppConfig.rpcUrl,
+        chainId: signed.tx.chainId,
+        ledgerAddress: ticketLedgerAddress,
+        ownerWalletAddress: ownerWalletAddress as `0x${string}`
+      });
+      const previousOnchainTokenIds = new Set(ownedOnchainBefore);
 
       const transactionHash = await sendLocalchainTransaction({
         rpcUrl: webAppConfig.rpcUrl,
-        from: getSessionWalletAddress() as `0x${string}`,
-        to: prepared.txDraft.calls[0].target,
-        data: prepared.txDraft.businessCalldata
+        ...getSignedSessionTransactionInput(signed.tx)
       });
 
       const receipt = await waitForTransactionReceipt({
         rpcUrl: webAppConfig.rpcUrl,
         transactionHash
       });
-      const tokenId = extractPurchasedTokenId(
-        receipt,
-        prepared.paymentHash.domain?.verifyingContract ?? prepared.txDraft.calls[0].target
-      );
-
-      if (!tokenId) {
-        throw new Error("Không đọc được tokenId từ receipt TicketPurchased");
-      }
+      const tokenId = extractPurchasedTokenId(receipt, ticketLedgerAddress);
 
       for (let attempt = 0; attempt < 30; attempt += 1) {
         try {
-          const token = await client.getSyncedToken(tokenId);
-          if (
-            token.data.ownerWalletAddress?.toLowerCase() === getSessionWalletAddress().toLowerCase()
-          ) {
+          if (tokenId) {
+            const token = await client.getSyncedToken(tokenId);
+            if (token.data.ownerWalletAddress?.toLowerCase() === ownerWalletAddress.toLowerCase()) {
+              return {
+                transactionHash,
+                tokenId,
+                syncStatus: "confirmed",
+                syncedToken: token.data
+              };
+            }
+          }
+
+          const syncedTokens = await client.listSyncedTokens({ ownerWalletAddress });
+          const newToken = selectNewlySyncedToken(previousTokenIds, syncedTokens.data);
+          if (newToken) {
             return {
               transactionHash,
-              tokenId,
-              syncedToken: token.data
+              tokenId: newToken.tokenId,
+              syncStatus: "confirmed",
+              syncedToken: newToken
             };
           }
         } catch {
@@ -366,13 +408,58 @@ const PrimaryPurchasePage = () => {
         await new Promise((resolve) => window.setTimeout(resolve, 1_000));
       }
 
-      throw new Error("Đã broadcast nhưng contract-sync-service chưa xác nhận owner mới");
+      const ownedOnchainAfter = await listOnchainOwnerTicketIds({
+        rpcUrl: webAppConfig.rpcUrl,
+        chainId: signed.tx.chainId,
+        ledgerAddress: ticketLedgerAddress,
+        ownerWalletAddress: ownerWalletAddress as `0x${string}`
+      });
+      const onchainTokenId = selectNewTokenId(previousOnchainTokenIds, ownedOnchainAfter);
+      if (onchainTokenId) {
+        return {
+          transactionHash,
+          tokenId: onchainTokenId,
+          syncStatus: "degraded",
+          syncedToken: null
+        };
+      }
+
+      const receiptTokenOwner =
+        tokenId === null
+          ? null
+          : await getOnchainTicketOwner({
+              rpcUrl: webAppConfig.rpcUrl,
+              chainId: signed.tx.chainId,
+              ledgerAddress: ticketLedgerAddress,
+              tokenId
+            }).catch(() => null);
+
+      const diagnostic = {
+        txHash: transactionHash,
+        walletAddress: ownerWalletAddress,
+        ticketLedgerAddress,
+        receiptTokenId: tokenId,
+        receiptTokenOwner,
+        onchainBefore: ownedOnchainBefore,
+        onchainAfter: ownedOnchainAfter
+      };
+      console.error("primary-purchase-sync-miss", diagnostic);
+
+      throw new Error(
+        `Đã broadcast nhưng cả contract-sync và on-chain owner snapshot đều chưa phản ánh token mới. wallet=${ownerWalletAddress} ledger=${ticketLedgerAddress} tx=${transactionHash} receiptTokenId=${tokenId ?? "none"} receiptTokenOwner=${receiptTokenOwner ?? "unknown"}`
+      );
     },
     onSuccess: (result) => {
       setBroadcasted(result);
       toast({
-        title: "Primary purchase đã hoàn tất",
-        description: `Tx ${result.transactionHash.slice(0, 10)}... đã được broadcast và sync token #${result.tokenId}.`
+        title:
+          result.syncStatus === "confirmed"
+            ? "Primary purchase đã hoàn tất"
+            : "Primary purchase đã lên chain",
+        description:
+          result.syncStatus === "confirmed"
+            ? `Tx ${result.transactionHash.slice(0, 10)}... đã được broadcast và sync token #${result.tokenId}.`
+            : `Tx ${result.transactionHash.slice(0, 10)}... đã mint token #${result.tokenId} on-chain, nhưng contract-sync chưa catch up.`
       });
     },
     onError: (error) => {
@@ -526,16 +613,6 @@ const PrimaryPurchasePage = () => {
                 className="w-full bg-transparent border border-foreground/20 px-3 py-2 font-mono text-xs outline-none"
               />
             </label>
-            <label className="block">
-              <span className="font-mono text-[10px] text-foreground/50 block mb-2">
-                Authorization nonce
-              </span>
-              <input
-                value={authorizationNonce}
-                onChange={(event) => setAuthorizationNonce(event.target.value)}
-                className="w-full bg-transparent border border-foreground/20 px-3 py-2 font-mono text-xs outline-none"
-              />
-            </label>
           </div>
 
           <div className="border border-green-600/30 bg-green-600/5 p-3 flex items-start gap-3">
@@ -619,7 +696,10 @@ const PrimaryPurchasePage = () => {
                 <Ticket className="w-4 h-4 text-foreground/40" />
               )}
               <span>
-                On-chain purchase: {broadcasted ? broadcasted.transactionHash : "chưa broadcast"}
+                On-chain purchase:{" "}
+                {broadcasted
+                  ? `${broadcasted.transactionHash} (${broadcasted.syncStatus})`
+                  : "chưa broadcast"}
               </span>
             </div>
           </div>
@@ -809,7 +889,9 @@ const PrimaryPurchasePage = () => {
                         ? "KÝ & ASSEMBLE TYPE-4 TX"
                         : !broadcasted
                           ? "BROADCAST PURCHASE LÊN LOCALCHAIN"
-                          : "PURCHASE ĐÃ SYNC XONG"}
+                          : broadcasted.syncStatus === "confirmed"
+                            ? "PURCHASE ĐÃ SYNC XONG"
+                            : "PURCHASE ĐÃ LÊN CHAIN"}
         </button>
       </div>
     </MobileLayout>

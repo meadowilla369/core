@@ -9,6 +9,8 @@ import "../src/TicketLedger.sol";
 import "../src/TicketPaymaster.sol";
 
 contract DeployLocalPlatform is Script {
+    uint256 internal constant DEFAULT_PAYMASTER_INITIAL_DEPOSIT = 1 ether;
+
     struct DeploymentResult {
         address ticketLedger;
         address marketplaceV2;
@@ -19,7 +21,8 @@ contract DeployLocalPlatform is Script {
     function run() external returns (DeploymentResult memory result) {
         address admin = vm.envAddress("DEPLOY_ADMIN");
         uint256 paymasterMaxRefillPerTx = vm.envOr("PAYMASTER_MAX_REFILL_PER_TX", uint256(0.01 ether));
-        uint256 paymasterInitialDeposit = vm.envOr("PAYMASTER_INITIAL_DEPOSIT", uint256(0));
+        uint256 paymasterInitialDeposit =
+            vm.envOr("PAYMASTER_INITIAL_DEPOSIT", DEFAULT_PAYMASTER_INITIAL_DEPOSIT);
 
         vm.startBroadcast();
 
