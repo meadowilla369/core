@@ -27,6 +27,8 @@ interface RunCastInput {
   action: string;
 }
 
+type CastRunner = (input: RunCastInput) => string;
+
 interface ComputePaymentHashInput {
   castBinaryPath?: string;
   orderId: string;
@@ -40,6 +42,19 @@ interface SignTypedDataInput {
   castBinaryPath?: string;
   privateKey: string;
   typedData: PurchaseTypedData;
+}
+
+interface NativeBalanceInput {
+  rpcUrl: string;
+  walletAddress: string;
+}
+
+interface SendNativePrefundInput {
+  rpcUrl: string;
+  privateKey: string;
+  walletAddress: string;
+  amountWei: string;
+  castBinaryPath?: string;
 }
 
 const DEFAULT_CAST_BINARY = "cast";
@@ -91,6 +106,28 @@ function runCast(input: RunCastInput): string {
   }
 
   return result.stdout.trim();
+}
+
+async function jsonRpcRequest<T>(rpcUrl: string, method: string, params: unknown[]): Promise<T> {
+  const response = await fetch(rpcUrl, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method,
+      params
+    })
+  });
+
+  const payload = (await response.json()) as { result?: T; error?: { message?: string } };
+  if (!response.ok || payload.error) {
+    throw new Error(payload.error?.message ?? `RPC ${method} failed with HTTP ${response.status}`);
+  }
+
+  return payload.result as T;
 }
 
 export function buildPurchaseTypedData(input: {
@@ -178,4 +215,57 @@ export function deriveAddressFromPrivateKey(privateKey: string, castBinaryPath?:
     action: "Deriving backend signer address",
     args: ["wallet", "address", "--private-key", normalizePrivateKey(privateKey)]
   }).toLowerCase();
+}
+
+export function computePrefundShortfall(
+  minimumBalanceWei: string,
+  currentBalanceWei: bigint
+): bigint {
+  const minimumBalance = BigInt(minimumBalanceWei);
+  if (currentBalanceWei >= minimumBalance) {
+    return 0n;
+  }
+
+  return minimumBalance - currentBalanceWei;
+}
+
+export function extractTransactionHash(output: string): string {
+  const match = output.match(/0x[a-fA-F0-9]{64}/);
+  if (!match) {
+    throw new Error(`Could not parse transaction hash from cast output: ${output}`);
+  }
+
+  return match[0].toLowerCase();
+}
+
+export async function getNativeBalanceWei(input: NativeBalanceInput): Promise<bigint> {
+  const balanceHex = await jsonRpcRequest<string>(input.rpcUrl, "eth_getBalance", [
+    normalizeAddress(input.walletAddress),
+    "latest"
+  ]);
+
+  return BigInt(balanceHex);
+}
+
+export function sendNativePrefund(
+  input: SendNativePrefundInput,
+  runner: CastRunner = runCast
+): string {
+  const output = runner({
+    castBinaryPath: input.castBinaryPath,
+    action: "Sending wallet prefund transaction",
+    args: [
+      "send",
+      "--async",
+      "--rpc-url",
+      input.rpcUrl,
+      "--private-key",
+      normalizePrivateKey(input.privateKey),
+      "--value",
+      input.amountWei,
+      normalizeAddress(input.walletAddress)
+    ]
+  });
+
+  return extractTransactionHash(output);
 }

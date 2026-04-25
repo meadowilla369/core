@@ -1,7 +1,14 @@
+/**
+ * auth-wallet-client.test.mjs
+ *
+ * Unit tests for the SDK auth and wallet bootstrap client flows.
+ * Imports from compiled dist/ — the package build must run first.
+ */
+
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ApiClient } from "./index.ts";
+import { ApiClient } from "../dist/index.js";
 
 test("requestOtp sends backend-compatible phone payload and returns request metadata", async () => {
   const calls = [];

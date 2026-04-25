@@ -15,8 +15,11 @@ import {
 } from "./config.js";
 import {
   buildPurchaseTypedData,
+  computePrefundShortfall,
   computePaymentHash,
   deriveAddressFromPrivateKey,
+  getNativeBalanceWei,
+  sendNativePrefund,
   signPurchaseTypedData,
   type PurchaseTypedData
 } from "./ethereum.js";
@@ -766,6 +769,7 @@ async function getPaymentHashByOrderId(
 
 export async function createPaymentOrchestratorServer(config: PaymentOrchestratorConfig) {
   const castBinaryPath = config.castBinaryPath ?? "cast";
+  const rpcUrl = config.rpcUrl?.trim() ? config.rpcUrl.trim() : undefined;
   const paymentHashTtlSec = config.paymentHashTtlSec ?? DEFAULT_PAYMENT_HASH_TTL_SEC;
   const backendSignerPrivateKey =
     config.backendSignerPrivateKey ?? DEFAULT_BACKEND_SIGNER_PRIVATE_KEY;
@@ -815,6 +819,40 @@ export async function createPaymentOrchestratorServer(config: PaymentOrchestrato
     if (!payment.quantity && payment.ticketIds.length > 0) {
       payment.quantity = payment.ticketIds.length;
     }
+  };
+
+  const ensureWalletPrefund = async (
+    walletAddress: string
+  ): Promise<{
+    txHash: string | null;
+    amountWei: string;
+  }> => {
+    if (!rpcUrl) {
+      return {
+        txHash: null,
+        amountWei: prefundAmountWei
+      };
+    }
+
+    const currentBalanceWei = await getNativeBalanceWei({ rpcUrl, walletAddress });
+    const shortfallWei = computePrefundShortfall(prefundAmountWei, currentBalanceWei);
+    if (shortfallWei === 0n) {
+      return {
+        txHash: null,
+        amountWei: "0"
+      };
+    }
+
+    return {
+      txHash: sendNativePrefund({
+        rpcUrl,
+        privateKey: backendSignerPrivateKey,
+        walletAddress,
+        amountWei: shortfallWei.toString(),
+        castBinaryPath
+      }),
+      amountWei: shortfallWei.toString()
+    };
   };
 
   const canIssuePaymentHash = (
@@ -1172,6 +1210,23 @@ export async function createPaymentOrchestratorServer(config: PaymentOrchestrato
         }
 
         if (existing && existing.user_id === userId) {
+          const prefund = await ensureWalletPrefund(walletAddress);
+          if (prefund.txHash) {
+            const repairedAt = new Date().toISOString();
+            await pool.query(
+              `
+                UPDATE payment_wallet_prefunds
+                SET prefund_tx_hash = $2, amount_wei = $3, funded_at = $4::timestamptz, updated_at = $4::timestamptz
+                WHERE wallet_address = $1
+              `,
+              [walletAddress, prefund.txHash, prefund.amountWei, repairedAt]
+            );
+            existing.prefund_tx_hash = prefund.txHash;
+            existing.amount_wei = prefund.amountWei;
+            existing.funded_at = repairedAt;
+            existing.updated_at = repairedAt;
+          }
+
           const record = mapWalletBootstrap(existing);
           return sendJson(res, 200, {
             success: true,
@@ -1186,7 +1241,8 @@ export async function createPaymentOrchestratorServer(config: PaymentOrchestrato
         }
 
         const fundedAt = new Date().toISOString();
-        const prefundTxHash = buildPrefundTxHash(walletAddress, fundedAt);
+        const prefund = await ensureWalletPrefund(walletAddress);
+        const prefundTxHash = prefund.txHash ?? buildPrefundTxHash(walletAddress, fundedAt);
         await pool.query(
           `
             INSERT INTO payment_wallet_prefunds (
@@ -1194,7 +1250,7 @@ export async function createPaymentOrchestratorServer(config: PaymentOrchestrato
             )
             VALUES ($1, $2, $3, $4, $5::timestamptz, $5::timestamptz)
           `,
-          [walletAddress, userId, prefundTxHash, prefundAmountWei, fundedAt]
+          [walletAddress, userId, prefundTxHash, prefund.amountWei, fundedAt]
         );
 
         return sendJson(res, 200, {
@@ -1203,7 +1259,7 @@ export async function createPaymentOrchestratorServer(config: PaymentOrchestrato
             walletAddress,
             prefunded: true,
             prefundTxHash,
-            amountWei: prefundAmountWei,
+            amountWei: prefund.amountWei,
             fundedAt
           }
         });

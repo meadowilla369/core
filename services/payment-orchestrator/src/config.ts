@@ -4,6 +4,7 @@ export interface PaymentOrchestratorConfig {
   serviceName: string;
   host: string;
   port: number;
+  rpcUrl?: string;
   allowedGateways: PaymentGateway[];
   momoWebhookSecret: string;
   vnpayWebhookSecret: string;
@@ -66,10 +67,13 @@ function parsePositiveIntegerString(value: string | undefined, fallback: string)
 }
 
 export function loadConfig(): PaymentOrchestratorConfig {
+  const rpcUrl = process.env.RPC_URL?.trim();
+
   return {
     serviceName: process.env.SERVICE_NAME ?? "payment-orchestrator",
     host: process.env.HOST ?? "127.0.0.1",
     port: parseNumber(process.env.PORT, 3006),
+    rpcUrl: rpcUrl ? rpcUrl : undefined,
     allowedGateways: parseGateways(process.env.ALLOWED_PAYMENT_GATEWAYS),
     momoWebhookSecret: process.env.MOMO_WEBHOOK_SECRET ?? "momo_dev_secret",
     vnpayWebhookSecret: process.env.VNPAY_WEBHOOK_SECRET ?? "vnpay_dev_secret",

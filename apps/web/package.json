@@ -10,6 +10,7 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
+    "test:onboarding": "node --test --experimental-strip-types src/features/onboarding/onboarding-machine.test.ts",
     "test:ui-home-discover": "node --test --experimental-strip-types src/features/discover/event-posters.test.ts",
     "typecheck": "tsc -p tsconfig.app.json --noEmit"
   },
@@ -65,6 +66,7 @@
     "sonner": "^1.7.4",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
+    "viem": "^2.21.0",
     "vaul": "^0.9.9",
     "zod": "^3.25.76"
   },

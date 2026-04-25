@@ -5,6 +5,7 @@ import DiscoverPage from "./pages/DiscoverPage";
 import TicketsPage from "./pages/TicketsPage";
 import ProfilePage from "./pages/ProfilePage";
 import EventDetailPage from "./pages/EventDetailPage";
+import OnboardingPage from "./pages/OnboardingPage";
 import PrimaryPurchasePage from "./pages/PrimaryPurchasePage";
 import MarketplacePage from "./pages/MarketplacePage";
 import ResalePurchasePage from "./pages/ResalePurchasePage";
@@ -20,6 +21,7 @@ const App = () => (
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<HomePage />} />
+        <Route path="/onboarding" element={<OnboardingPage />} />
         <Route path="/discover" element={<DiscoverPage />} />
         <Route path="/tickets" element={<TicketsPage />} />
         <Route path="/profile" element={<ProfilePage />} />
