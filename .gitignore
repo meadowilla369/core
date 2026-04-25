@@ -1,6 +1,6 @@
 # Foundry artifacts
 out/
-lib/
+/lib/
 cache/
 
 # Node/monorepo artifacts
@@ -18,6 +18,8 @@ package-lock.json
 .env.*.local
 contracts/deployments/localchain-addresses.json
 contracts/deployments/localchain-smoke.json
+contracts/broadcast/
+.env.localchain
 
 # Logs
 *.log
@@ -29,3 +31,7 @@ pnpm-debug.log*
 .DS_Store
 .idea/
 .vscode/
+*.session.sql
+
+# Local generated design exports
+apps/figma-ui/
