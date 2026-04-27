@@ -1,0 +1,62 @@
+.markdown-preview.markdown-preview {
+  @media print {
+    #use-case-descriptions + table {
+      width: 100%;
+      table-layout: fixed;
+      border-collapse: collapse;
+      font-size: 14px;
+      font-weight: 400;
+    }
+
+    #use-case-descriptions + table th,
+    #use-case-descriptions + table td {
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      vertical-align: top;
+      font-weight: 400;
+    }
+
+    #use-case-descriptions + table th {
+      font-weight: 600;
+    }
+
+    #use-case-descriptions + table th:nth-child(1),
+    #use-case-descriptions + table td:nth-child(1) { width: 10%; }
+
+    #use-case-descriptions + table th:nth-child(2),
+    #use-case-descriptions + table td:nth-child(2) { width: 8%; }
+
+    #use-case-descriptions + table th:nth-child(3),
+    #use-case-descriptions + table td:nth-child(3) { width: 11%; }
+
+    #use-case-descriptions + table th:nth-child(4),
+    #use-case-descriptions + table td:nth-child(4) { width: 13%; }
+
+    #use-case-descriptions + table th:nth-child(5),
+    #use-case-descriptions + table td:nth-child(5) { width: 12%; }
+
+    #use-case-descriptions + table th:nth-child(6),
+    #use-case-descriptions + table td:nth-child(6) { width: 14%; }
+
+    #use-case-descriptions + table th:nth-child(7),
+    #use-case-descriptions + table td:nth-child(7) { width: 18%; }
+
+    #use-case-descriptions + table th:nth-child(8),
+    #use-case-descriptions + table td:nth-child(8) { width: 14%; }
+
+
+    .mermaid {
+      text-align: center;
+      break-inside: avoid;
+      page-break-inside: avoid;
+      margin: 8px auto;
+    }
+
+    .mermaid svg {
+      max-width: 100% !important;
+      max-height: 280mm !important;
+      width: auto !important;
+      height: auto !important;
+    }
+  }
+}
