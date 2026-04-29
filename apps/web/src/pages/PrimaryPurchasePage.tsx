@@ -461,6 +461,7 @@ const PrimaryPurchasePage = () => {
           ownerUserId: getSessionUserId(),
           ownerWalletAddress: getSessionWalletAddress(),
           transactionHash: result.transactionHash,
+          source: "primary-purchase",
           createdAt: result.syncedToken?.updatedAt ?? now
         });
         queryClient.invalidateQueries({ queryKey: ["tickets", "me"] });
