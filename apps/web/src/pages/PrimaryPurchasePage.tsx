@@ -465,6 +465,7 @@ const PrimaryPurchasePage = () => {
           createdAt: result.syncedToken?.updatedAt ?? now
         });
         queryClient.invalidateQueries({ queryKey: ["tickets", "me"] });
+        queryClient.invalidateQueries({ queryKey: ["profile", "summary"] });
       }
       setBroadcasted(result);
       toast({

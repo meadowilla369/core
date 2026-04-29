@@ -50,17 +50,23 @@ const ProfilePage = () => {
       </section>
 
       {/* Stats */}
-      <section className="grid grid-cols-3 border-b border-foreground/10">
-        <div className="p-4 text-center border-r border-foreground/10">
-          <span className="text-2xl font-medium">{profile.attendedEvents}</span>
+      <section className="grid min-w-0 grid-cols-3 border-b border-foreground/10">
+        <div className="min-w-0 px-2 py-4 text-center border-r border-foreground/10 sm:px-4">
+          <span className="block text-2xl font-medium leading-tight tabular-nums">
+            {profile.attendedEvents}
+          </span>
           <p className="font-mono text-[10px] text-foreground/50 mt-1">Sự kiện</p>
         </div>
-        <div className="p-4 text-center border-r border-foreground/10">
-          <span className="text-2xl font-medium">{profile.upcomingEvents}</span>
+        <div className="min-w-0 px-2 py-4 text-center border-r border-foreground/10 sm:px-4">
+          <span className="block text-2xl font-medium leading-tight tabular-nums">
+            {profile.upcomingEvents}
+          </span>
           <p className="font-mono text-[10px] text-foreground/50 mt-1">Sắp tới</p>
         </div>
-        <div className="p-4 text-center">
-          <span className="text-2xl font-medium">{profile.spendSummary}</span>
+        <div className="min-w-0 px-2 py-4 text-center sm:px-4">
+          <span className="block w-full max-w-full whitespace-normal break-words text-[clamp(0.875rem,4.6vw,1.5rem)] font-medium leading-tight tabular-nums [overflow-wrap:anywhere]">
+            {profile.spendSummary}
+          </span>
           <p className="font-mono text-[10px] text-foreground/50 mt-1">Đã chi</p>
         </div>
       </section>
