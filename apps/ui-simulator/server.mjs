@@ -88,6 +88,14 @@ function resolvePath(urlPath) {
     return path.join(repoRoot, "apps/staff-scanner/dist", urlPath.replace("/staff/", ""));
   }
 
+  if (urlPath.startsWith("/assets/")) {
+    return path.join(repoRoot, "apps/organizer-portal/dist", urlPath.slice(1));
+  }
+
+  if (urlPath === "/organizer/" || urlPath === "/organizer/index.html") {
+    return path.join(repoRoot, "apps/organizer-portal/dist/index.html");
+  }
+
   if (urlPath.startsWith("/organizer/")) {
     return path.join(repoRoot, "apps/organizer-portal/dist", urlPath.replace("/organizer/", ""));
   }

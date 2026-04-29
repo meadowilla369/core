@@ -1,14 +1,11 @@
 import { MobileBuyerApp } from "/mobile/index.js";
 import { buildRotatingQr } from "/mobile/features/tickets.js";
 import { StaffScannerApp } from "/staff/index.js";
-import { OrganizerPortalApp } from "/organizer/index.js";
 
 const mobileApp = new MobileBuyerApp();
 const staffApp = new StaffScannerApp();
-const organizerApp = new OrganizerPortalApp();
 
 let latestOtp = null;
-let latestOrganizerEventId = null;
 
 function setOutput(id, value) {
   const node = document.getElementById(id);
@@ -105,65 +102,5 @@ document.getElementById("staff-refresh-metrics").addEventListener("click", () =>
   setOutput("staff-output", { metrics: staffApp.getGateMetrics(gateId) });
 });
 
-document.getElementById("org-create-event").addEventListener("click", () => {
-  try {
-    const title = document.getElementById("org-title").value.trim();
-    const city = document.getElementById("org-city").value.trim();
-    const venue = document.getElementById("org-venue").value.trim();
-
-    const created = organizerApp.createEvent({
-      title,
-      city,
-      venue,
-      startAt: new Date(Date.now() + 3600_000).toISOString(),
-      endAt: new Date(Date.now() + 10_800_000).toISOString()
-    });
-
-    latestOrganizerEventId = created.id;
-    setOutput("org-output", { created, latestOrganizerEventId });
-  } catch (error) {
-    setOutput("org-output", { error: String(error) });
-  }
-});
-
-document.getElementById("org-set-ticket-types").addEventListener("click", () => {
-  try {
-    if (!latestOrganizerEventId) {
-      throw new Error("Create event first");
-    }
-
-    const raw = document.getElementById("org-ticket-types").value.trim();
-    const ticketTypes = JSON.parse(raw);
-    const updated = organizerApp.updateTicketTypes(latestOrganizerEventId, ticketTypes);
-
-    setOutput("org-output", { updated, latestOrganizerEventId });
-  } catch (error) {
-    setOutput("org-output", { error: String(error) });
-  }
-});
-
-document.getElementById("org-cancel-event").addEventListener("click", () => {
-  try {
-    if (!latestOrganizerEventId) {
-      throw new Error("Create event first");
-    }
-
-    const cancelled = organizerApp.cancelEvent(latestOrganizerEventId);
-    setOutput("org-output", { cancelled });
-  } catch (error) {
-    setOutput("org-output", { error: String(error) });
-  }
-});
-
-document.getElementById("org-run-analytics").addEventListener("click", () => {
-  const analytics = organizerApp.analytics([
-    { eventId: "evt_1", soldCount: 500, grossRevenue: 350_000_000, checkinCount: 430 },
-    { eventId: "evt_2", soldCount: 200, grossRevenue: 180_000_000, checkinCount: 150 }
-  ]);
-
-  setOutput("org-output", { analytics });
-});
-
 setOutput("mobile-output", mobileState({ bootstrapped: true }));
 setOutput("staff-output", { bootstrapped: true });
-setOutput("org-output", { bootstrapped: true });

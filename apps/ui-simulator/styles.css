@@ -59,6 +59,28 @@ button:hover {
   filter: brightness(0.95);
 }
 
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 10px;
+  border: 1px solid #2f6fb4;
+  border-radius: 6px;
+  background: #2f6fb4;
+  color: #fff;
+  text-decoration: none;
+}
+
+.button-link:hover {
+  filter: brightness(0.95);
+}
+
+.app-frame {
+  width: 100%;
+  min-height: 720px;
+  border: 1px solid #d4dde6;
+  border-radius: 8px;
+}
+
 pre {
   background: #0f1720;
   color: #d7e4f2;
