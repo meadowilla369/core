@@ -1,8 +1,10 @@
 import { ChevronRight, LogOut, CreditCard, Bell, HelpCircle, Shield, Moon } from "lucide-react";
 import { Link } from "react-router-dom";
 import MobileLayout from "@/components/mobile/MobileLayout";
+import ProfileAvatar from "@/components/mobile/ProfileAvatar";
 import { profileFallback } from "@/lib/fallback-data";
-import { useProfileSummary } from "@/hooks/use-profile";
+import { getInitials } from "@/lib/format";
+import { useProfileCustomization, useProfileSummary } from "@/hooks/use-profile";
 
 const menuItems = [
   { icon: CreditCard, label: "Phương thức thanh toán", path: "/profile/payments" },
@@ -13,7 +15,12 @@ const menuItems = [
 
 const ProfilePage = () => {
   const { data, isError } = useProfileSummary();
+  const { customization } = useProfileCustomization();
   const profile = data ?? profileFallback;
+  const displayName = customization.displayName ?? profile.displayName;
+  const avatarInitials = customization.displayName
+    ? getInitials(customization.displayName)
+    : profile.avatarInitials;
 
   return (
     <MobileLayout>
@@ -33,11 +40,9 @@ const ProfilePage = () => {
       {/* User Info */}
       <section className="p-4 border-b border-foreground/10">
         <div className="flex items-center gap-4">
-          <div className="w-16 h-16 bg-muted border border-foreground/20 flex items-center justify-center">
-            <span className="text-xl font-medium">{profile.avatarInitials}</span>
-          </div>
+          <ProfileAvatar avatar={customization.avatar} initials={avatarInitials} />
           <div className="flex-1">
-            <h2 className="text-lg font-medium">{profile.displayName}</h2>
+            <h2 className="text-lg font-medium">{displayName}</h2>
             <p className="font-mono text-xs text-foreground/50">{profile.email}</p>
           </div>
           <Link

@@ -5,6 +5,7 @@ import DiscoverPage from "./pages/DiscoverPage";
 import TicketsPage from "./pages/TicketsPage";
 import TicketDetailPage from "./pages/TicketDetailPage";
 import ProfilePage from "./pages/ProfilePage";
+import ProfileEditPage from "./pages/ProfileEditPage";
 import EventDetailPage from "./pages/EventDetailPage";
 import OnboardingPage from "./pages/OnboardingPage";
 import PrimaryPurchasePage from "./pages/PrimaryPurchasePage";
@@ -29,6 +30,7 @@ const App = () => (
         <Route path="/tickets" element={<TicketsPage />} />
         <Route path="/ticket/:id" element={<TicketDetailPage />} />
         <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/profile/edit" element={<ProfileEditPage />} />
         <Route path="/event/:id" element={<EventDetailPage />} />
         <Route path="/event/:id/purchase" element={<PrimaryPurchasePage />} />
         <Route path="/marketplace" element={<MarketplacePage />} />
