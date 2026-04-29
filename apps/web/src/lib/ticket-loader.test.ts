@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { loadMyTicketCards } from "./ticket-loader.ts";
+import { findTicketByTokenId, loadMyTicketCards } from "./ticket-loader.ts";
 
 test("loadMyTicketCards returns synced tickets when ticketing DB and event lookup are unavailable", async () => {
   const result = await loadMyTicketCards({
@@ -78,4 +78,6 @@ test("loadMyTicketCards returns synced tickets when ticketing DB and event looku
   ]);
   assert.deepEqual(result.past, []);
   assert.deepEqual(result.tickets, result.upcoming);
+  assert.equal(findTicketByTokenId(result.tickets, "42")?.eventId, "evt_rockfest_2026");
+  assert.equal(findTicketByTokenId(result.tickets, "missing"), null);
 });

@@ -51,6 +51,13 @@ export interface TicketOwnershipView {
   transactionHash?: string;
 }
 
+export function findTicketByTokenId(
+  tickets: TicketOwnershipView[],
+  tokenId: string
+): TicketOwnershipView | null {
+  return tickets.find((ticket) => ticket.tokenId === tokenId || ticket.id === tokenId) ?? null;
+}
+
 function toTicketOwnershipView(
   ticket: MergedTicketRecord,
   event: EventDetail | undefined,
