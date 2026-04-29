@@ -3,6 +3,7 @@ import { AppProviders } from "./providers/AppProviders";
 import HomePage from "./pages/HomePage";
 import DiscoverPage from "./pages/DiscoverPage";
 import TicketsPage from "./pages/TicketsPage";
+import TicketDetailPage from "./pages/TicketDetailPage";
 import ProfilePage from "./pages/ProfilePage";
 import EventDetailPage from "./pages/EventDetailPage";
 import OnboardingPage from "./pages/OnboardingPage";
@@ -26,6 +27,7 @@ const App = () => (
         <Route path="/onboarding" element={<OnboardingPage />} />
         <Route path="/discover" element={<DiscoverPage />} />
         <Route path="/tickets" element={<TicketsPage />} />
+        <Route path="/ticket/:id" element={<TicketDetailPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/event/:id" element={<EventDetailPage />} />
         <Route path="/event/:id/purchase" element={<PrimaryPurchasePage />} />
