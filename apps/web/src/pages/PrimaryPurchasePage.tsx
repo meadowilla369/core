@@ -25,11 +25,11 @@ import { eventDetailFallback } from "@/lib/fallback-data";
 import { formatMediumEventDate, formatTime, formatVnd } from "@/lib/format";
 import { webAppConfig } from "@/lib/config";
 import {
-  extractPurchasedTokenId,
+  extractPurchasedTokenIds,
   getOnchainTicketOwner,
   listOnchainOwnerTicketIds,
-  selectNewTokenId,
-  selectNewlySyncedToken,
+  selectNewTokenIds,
+  selectNewlySyncedTokens,
   sendLocalchainTransaction,
   waitForTransactionReceipt
 } from "@/lib/localchain";
@@ -57,9 +57,9 @@ interface SignedPrimaryState {
 
 interface BroadcastedPrimaryState {
   transactionHash: `0x${string}`;
-  tokenId: string;
+  tokenIds: string[];
   syncStatus: "confirmed" | "degraded";
-  syncedToken: ContractSyncedTokenData | null;
+  syncedTokens: ContractSyncedTokenData[];
 }
 
 async function createDemoWebhookSignature(input: {
@@ -358,6 +358,7 @@ const PrimaryPurchasePage = () => {
       const ownerWalletAddress = getSessionWalletAddress();
       const ticketLedgerAddress =
         prepared.paymentHash.domain?.verifyingContract ?? signed.txDraft.calls[0].target;
+      const expectedQuantity = Math.max(1, prepared.paymentHash.quantity ?? quantityValue);
       const ownedTokensBefore = await client.listSyncedTokens({ ownerWalletAddress });
       const previousTokenIds = new Set(ownedTokensBefore.data.map((token) => token.tokenId));
       const ownedOnchainBefore = await listOnchainOwnerTicketIds({
@@ -377,30 +378,53 @@ const PrimaryPurchasePage = () => {
         rpcUrl: webAppConfig.rpcUrl,
         transactionHash
       });
-      const tokenId = extractPurchasedTokenId(receipt, ticketLedgerAddress);
+      const receiptTokenIds = extractPurchasedTokenIds(receipt, ticketLedgerAddress);
 
       for (let attempt = 0; attempt < 30; attempt += 1) {
         try {
-          if (tokenId) {
-            const token = await client.getSyncedToken(tokenId);
-            if (token.data.ownerWalletAddress?.toLowerCase() === ownerWalletAddress.toLowerCase()) {
+          if (receiptTokenIds.length > 0) {
+            const syncedTokenResults = await Promise.allSettled(
+              receiptTokenIds.map((tokenId) => client.getSyncedToken(tokenId))
+            );
+            const syncedTokens = syncedTokenResults.flatMap((item) =>
+              item.status === "fulfilled" &&
+              item.value.data.ownerWalletAddress?.toLowerCase() === ownerWalletAddress.toLowerCase()
+                ? [item.value.data]
+                : []
+            );
+
+            if (syncedTokens.length === receiptTokenIds.length) {
               return {
                 transactionHash,
-                tokenId,
+                tokenIds: receiptTokenIds,
                 syncStatus: "confirmed",
-                syncedToken: token.data
+                syncedTokens
               };
             }
           }
 
           const syncedTokens = await client.listSyncedTokens({ ownerWalletAddress });
-          const newToken = selectNewlySyncedToken(previousTokenIds, syncedTokens.data);
-          if (newToken) {
+          const receiptSyncedTokens =
+            receiptTokenIds.length === 0
+              ? []
+              : syncedTokens.data.filter((token) => receiptTokenIds.includes(token.tokenId));
+          if (receiptTokenIds.length > 0 && receiptSyncedTokens.length === receiptTokenIds.length) {
             return {
               transactionHash,
-              tokenId: newToken.tokenId,
+              tokenIds: receiptTokenIds,
               syncStatus: "confirmed",
-              syncedToken: newToken
+              syncedTokens: receiptSyncedTokens
+            };
+          }
+
+          const newTokens = selectNewlySyncedTokens(previousTokenIds, syncedTokens.data);
+          if (receiptTokenIds.length === 0 && newTokens.length >= expectedQuantity) {
+            const batchTokens = newTokens.slice(0, expectedQuantity);
+            return {
+              transactionHash,
+              tokenIds: batchTokens.map((token) => token.tokenId),
+              syncStatus: "confirmed",
+              syncedTokens: batchTokens
             };
           }
         } catch {
@@ -416,53 +440,60 @@ const PrimaryPurchasePage = () => {
         ledgerAddress: ticketLedgerAddress,
         ownerWalletAddress: ownerWalletAddress as `0x${string}`
       });
-      const onchainTokenId = selectNewTokenId(previousOnchainTokenIds, ownedOnchainAfter);
-      if (onchainTokenId) {
+      const onchainTokenIds = selectNewTokenIds(previousOnchainTokenIds, ownedOnchainAfter);
+      const degradedTokenIds =
+        receiptTokenIds.length >= expectedQuantity ? receiptTokenIds : onchainTokenIds;
+      if (degradedTokenIds.length >= expectedQuantity) {
         return {
           transactionHash,
-          tokenId: onchainTokenId,
+          tokenIds: degradedTokenIds,
           syncStatus: "degraded",
-          syncedToken: null
+          syncedTokens: []
         };
       }
 
-      const receiptTokenOwner =
-        tokenId === null
-          ? null
-          : await getOnchainTicketOwner({
-              rpcUrl: webAppConfig.rpcUrl,
-              chainId: signed.tx.chainId,
-              ledgerAddress: ticketLedgerAddress,
-              tokenId
-            }).catch(() => null);
+      const receiptTokenOwners = await Promise.all(
+        receiptTokenIds.map((tokenId) =>
+          getOnchainTicketOwner({
+            rpcUrl: webAppConfig.rpcUrl,
+            chainId: signed.tx.chainId,
+            ledgerAddress: ticketLedgerAddress,
+            tokenId
+          }).catch(() => null)
+        )
+      );
 
       const diagnostic = {
         txHash: transactionHash,
         walletAddress: ownerWalletAddress,
         ticketLedgerAddress,
-        receiptTokenId: tokenId,
-        receiptTokenOwner,
+        expectedQuantity,
+        receiptTokenIds,
+        receiptTokenOwners,
         onchainBefore: ownedOnchainBefore,
         onchainAfter: ownedOnchainAfter
       };
       console.error("primary-purchase-sync-miss", diagnostic);
 
       throw new Error(
-        `Đã broadcast nhưng cả contract-sync và on-chain owner snapshot đều chưa phản ánh token mới. wallet=${ownerWalletAddress} ledger=${ticketLedgerAddress} tx=${transactionHash} receiptTokenId=${tokenId ?? "none"} receiptTokenOwner=${receiptTokenOwner ?? "unknown"}`
+        `Đã broadcast nhưng contract-sync/on-chain owner snapshot chưa phản ánh đủ batch vé mới. wallet=${ownerWalletAddress} ledger=${ticketLedgerAddress} tx=${transactionHash} expected=${expectedQuantity} receiptTokenIds=${receiptTokenIds.join(",") || "none"}`
       );
     },
     onSuccess: (result) => {
       if (id) {
         const now = new Date().toISOString();
-        savePurchasedTicketMetadata({
-          tokenId: result.tokenId,
-          eventId: id,
-          ticketTypeId: selectedTier.id,
-          ownerUserId: getSessionUserId(),
-          ownerWalletAddress: getSessionWalletAddress(),
-          transactionHash: result.transactionHash,
-          source: "primary-purchase",
-          createdAt: result.syncedToken?.updatedAt ?? now
+        result.tokenIds.forEach((tokenId) => {
+          const syncedToken = result.syncedTokens.find((token) => token.tokenId === tokenId);
+          savePurchasedTicketMetadata({
+            tokenId,
+            eventId: id,
+            ticketTypeId: selectedTier.id,
+            ownerUserId: getSessionUserId(),
+            ownerWalletAddress: getSessionWalletAddress(),
+            transactionHash: result.transactionHash,
+            source: "primary-purchase",
+            createdAt: syncedToken?.updatedAt ?? now
+          });
         });
         queryClient.invalidateQueries({ queryKey: ["tickets", "me"] });
         queryClient.invalidateQueries({ queryKey: ["profile", "summary"] });
@@ -475,8 +506,8 @@ const PrimaryPurchasePage = () => {
             : "Primary purchase đã lên chain",
         description:
           result.syncStatus === "confirmed"
-            ? `Tx ${result.transactionHash.slice(0, 10)}... đã được broadcast và sync token #${result.tokenId}.`
-            : `Tx ${result.transactionHash.slice(0, 10)}... đã mint token #${result.tokenId} on-chain, nhưng contract-sync chưa catch up.`
+            ? `Tx ${result.transactionHash.slice(0, 10)}... đã được broadcast và sync ${result.tokenIds.length} vé.`
+            : `Tx ${result.transactionHash.slice(0, 10)}... đã issue ${result.tokenIds.length} vé on-chain, nhưng contract-sync chưa catch up.`
       });
     },
     onError: (error) => {

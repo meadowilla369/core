@@ -115,12 +115,19 @@ export async function sendLocalchainTransaction(input: {
     transport: http(input.rpcUrl)
   });
 
+  const estimatedGas =
+    input.tx.gas === undefined
+      ? await estimateLocalchainTransactionGas({ rpcUrl: input.rpcUrl, tx: input.tx, account }).catch(
+          () => undefined
+        )
+      : undefined;
+
   return client.sendTransaction({
     account,
     authorizationList: input.tx.authorizationList,
     chain,
     data: input.tx.data,
-    gas: getLocalchainGasLimit(input.tx),
+    gas: getLocalchainGasLimit(input.tx, estimatedGas),
     nonce: input.tx.nonce,
     to: input.tx.to,
     type: "eip7702",
@@ -128,8 +135,50 @@ export async function sendLocalchainTransaction(input: {
   } as never);
 }
 
-export function getLocalchainGasLimit(tx: Tx4Request): bigint {
-  return tx.gas ?? DEFAULT_LOCALCHAIN_GAS_LIMIT;
+async function estimateLocalchainTransactionGas(input: {
+  rpcUrl: string;
+  tx: Tx4Request;
+  account: ReturnType<typeof privateKeyToAccount>;
+}): Promise<bigint> {
+  const chain = defineChain({
+    id: input.tx.chainId,
+    name: `localchain-${input.tx.chainId}`,
+    nativeCurrency: {
+      name: "Ether",
+      symbol: "ETH",
+      decimals: 18
+    },
+    rpcUrls: {
+      default: {
+        http: [input.rpcUrl]
+      }
+    }
+  });
+  const client = createPublicClient({
+    chain,
+    transport: http(input.rpcUrl)
+  });
+
+  return client.estimateGas({
+    account: input.account,
+    authorizationList: input.tx.authorizationList,
+    data: input.tx.data,
+    nonce: input.tx.nonce,
+    to: input.tx.to,
+    type: "eip7702",
+    value: input.tx.value
+  } as never);
+}
+
+export function getBufferedGasLimit(estimatedGas: bigint): bigint {
+  return (estimatedGas * 120n + 99n) / 100n;
+}
+
+export function getLocalchainGasLimit(tx: Tx4Request, estimatedGas?: bigint): bigint {
+  return (
+    tx.gas ??
+    (estimatedGas === undefined ? DEFAULT_LOCALCHAIN_GAS_LIMIT : getBufferedGasLimit(estimatedGas))
+  );
 }
 
 export async function getLocalchainTransactionCount(input: {
@@ -171,29 +220,43 @@ export async function waitForTransactionReceipt(input: {
   throw new Error(`Timed out waiting for receipt ${input.transactionHash}`);
 }
 
+export function extractPurchasedTokenIds(
+  receipt: RpcReceipt,
+  ledgerAddress: `0x${string}`
+): string[] {
+  const normalizedLedger = ledgerAddress.toLowerCase();
+  return receipt.logs.flatMap((log) => {
+    const isTicketPurchased =
+      log.address.toLowerCase() === normalizedLedger &&
+      log.topics[0]?.toLowerCase() === TICKET_PURCHASED_TOPIC;
+
+    if (!isTicketPurchased || !log.topics[1]) {
+      return [];
+    }
+
+    return [BigInt(log.topics[1]).toString()];
+  });
+}
+
 export function extractPurchasedTokenId(
   receipt: RpcReceipt,
   ledgerAddress: `0x${string}`
 ): string | null {
-  const normalizedLedger = ledgerAddress.toLowerCase();
-  const ticketLog = receipt.logs.find(
-    (log) =>
-      log.address.toLowerCase() === normalizedLedger &&
-      log.topics[0]?.toLowerCase() === TICKET_PURCHASED_TOPIC
-  );
+  return extractPurchasedTokenIds(receipt, ledgerAddress)[0] ?? null;
+}
 
-  if (!ticketLog?.topics[1]) {
-    return null;
-  }
-
-  return BigInt(ticketLog.topics[1]).toString();
+export function selectNewlySyncedTokens<T extends SyncedTokenLike>(
+  previousTokenIds: Set<string>,
+  tokens: T[]
+): T[] {
+  return tokens.filter((token) => !previousTokenIds.has(token.tokenId));
 }
 
 export function selectNewlySyncedToken<T extends SyncedTokenLike>(
   previousTokenIds: Set<string>,
   tokens: T[]
 ): T | null {
-  return tokens.find((token) => !previousTokenIds.has(token.tokenId)) ?? null;
+  return selectNewlySyncedTokens(previousTokenIds, tokens)[0] ?? null;
 }
 
 export async function listOnchainOwnerTicketIds(input: {
@@ -231,8 +294,12 @@ export async function listOnchainOwnerTicketIds(input: {
   return tokenIds.map((tokenId) => tokenId.toString());
 }
 
+export function selectNewTokenIds(previousTokenIds: Set<string>, tokenIds: string[]): string[] {
+  return tokenIds.filter((tokenId) => !previousTokenIds.has(tokenId));
+}
+
 export function selectNewTokenId(previousTokenIds: Set<string>, tokenIds: string[]): string | null {
-  return tokenIds.find((tokenId) => !previousTokenIds.has(tokenId)) ?? null;
+  return selectNewTokenIds(previousTokenIds, tokenIds)[0] ?? null;
 }
 
 export async function getOnchainTicketOwner(input: {
