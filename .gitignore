@@ -36,3 +36,4 @@ pnpm-debug.log*
 # Local generated design exports
 apps/figma-ui/
 .superpowers/
+.worktrees/
