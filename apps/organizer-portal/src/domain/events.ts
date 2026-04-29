@@ -27,7 +27,10 @@ export function createOrganizerEvent(input: OrganizerEventInput): OrganizerEvent
   };
 }
 
-export function setTicketTypes(event: OrganizerEvent, ticketTypes: OrganizerTicketTypeInput[]): OrganizerEvent {
+export function setTicketTypes(
+  event: OrganizerEvent,
+  ticketTypes: OrganizerTicketTypeInput[]
+): OrganizerEvent {
   return {
     ...event,
     ticketTypes
