@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Entr</string>
+    <string name="title_activity_main">Entr</string>
+    <string name="package_name">com.entr.ticketplatform</string>
+    <string name="custom_url_scheme">com.entr.ticketplatform</string>
+</resources>

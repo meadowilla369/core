@@ -11,8 +11,8 @@ const navItems = [
 
 const BottomNav = () => {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-t border-foreground/20 safe-area-bottom">
-      <div className="flex items-center justify-around h-16">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-t border-foreground/20 safe-area-x safe-area-bottom">
+      <div className="flex h-[var(--mobile-bottom-nav-height)] items-center justify-around">
         {navItems.map((item) => (
           <NavLink
             key={item.path}

@@ -37,7 +37,7 @@ const MarketplacePage = () => {
   return (
     <MobileLayout>
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm">
+      <header className="sticky safe-area-sticky-top z-40 bg-background/95 backdrop-blur-sm">
         <div className="p-4 border-b border-foreground/10">
           <h1 className="text-2xl font-medium tracking-tight">Trao Đổi Vé</h1>
           <p className="font-mono text-[10px] text-foreground/50 mt-1 tracking-wider">

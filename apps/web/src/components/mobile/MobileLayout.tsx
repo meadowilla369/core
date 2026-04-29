@@ -7,8 +7,10 @@ interface MobileLayoutProps {
 
 const MobileLayout = ({ children }: MobileLayoutProps) => {
   return (
-    <div className="min-h-screen bg-background text-foreground pb-20">
-      <main className="relative">{children}</main>
+    <div className="min-h-dvh bg-background text-foreground safe-area-x">
+      <main className="relative min-h-dvh safe-area-top pb-[calc(var(--mobile-bottom-nav-height)+var(--safe-area-bottom-padding))]">
+        {children}
+      </main>
       <BottomNav />
     </div>
   );

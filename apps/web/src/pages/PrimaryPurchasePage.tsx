@@ -483,7 +483,7 @@ const PrimaryPurchasePage = () => {
 
   return (
     <MobileLayout>
-      <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-foreground/10">
+      <header className="sticky safe-area-sticky-top z-40 bg-background/95 backdrop-blur-sm border-b border-foreground/10">
         <div className="flex items-center gap-3 p-4">
           <Link
             to={`/event/${id ?? ""}`}

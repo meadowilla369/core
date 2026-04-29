@@ -51,7 +51,7 @@ const DiscoverPage = () => {
 
   return (
     <MobileLayout>
-      <header className="sticky top-0 z-40 border-b border-white/10 bg-background/92 backdrop-blur-md">
+      <header className="sticky safe-area-sticky-top z-40 border-b border-white/10 bg-background/92 backdrop-blur-md">
         <div className="border-b border-white/10 px-4 py-4">
           <div className="flex items-center gap-3">
             <div className="relative flex-1">

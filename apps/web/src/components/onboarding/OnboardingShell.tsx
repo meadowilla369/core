@@ -48,8 +48,8 @@ const OnboardingShell = ({
   footer
 }: OnboardingShellProps) => {
   return (
-    <div className="min-h-screen bg-[#061019] text-white">
-      <div className="mx-auto flex min-h-screen w-full max-w-md flex-col px-4 py-6">
+    <div className="min-h-dvh bg-[#061019] text-white safe-area-y safe-area-x">
+      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-4 py-6">
         <div className="overflow-hidden border border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(34,197,94,0.14),_transparent_34%),radial-gradient(circle_at_top_right,_rgba(245,158,11,0.18),_transparent_30%),linear-gradient(180deg,_rgba(8,15,23,0.98),_rgba(6,16,25,0.98))] shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
           <div className="space-y-6 px-5 py-6">
             <div className="flex items-start justify-between gap-3">

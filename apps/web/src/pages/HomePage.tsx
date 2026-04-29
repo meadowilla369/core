@@ -36,7 +36,7 @@ const HomePage = () => {
 
   return (
     <MobileLayout>
-      <header className="sticky top-0 z-40 border-b border-white/10 bg-background/92 backdrop-blur-md">
+      <header className="sticky safe-area-sticky-top z-40 border-b border-white/10 bg-background/92 backdrop-blur-md">
         <div className="flex items-center justify-between px-4 py-4">
           <div>
             <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-foreground/40">
