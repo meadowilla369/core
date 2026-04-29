@@ -60,14 +60,24 @@ configure_device_env() {
   local public_host
   public_host="$(detect_public_host)"
   local vite_port="${VITE_PORT:-$DEFAULT_VITE_PORT}"
+  local web_scheme="http"
+  if [[ "${LOCALCHAIN_WEB_HTTPS:-}" == "true" || "${VITE_DEV_HTTPS:-}" == "true" ]]; then
+    web_scheme="https"
+    export VITE_DEV_HTTPS="${VITE_DEV_HTTPS:-true}"
+  fi
 
   export HOST="${HOST:-0.0.0.0}"
   export ANVIL_HOST="${ANVIL_HOST:-0.0.0.0}"
   export LOCALCHAIN_PUBLIC_HOST="$public_host"
   export RPC_URL="${RPC_URL:-http://127.0.0.1:${ANVIL_PORT:-8545}}"
-  export VITE_API_BASE_URL="${VITE_API_BASE_URL:-http://$public_host:3000}"
-  export VITE_RPC_URL="${VITE_RPC_URL:-http://$public_host:${ANVIL_PORT:-8545}}"
-  export CAPACITOR_SERVER_URL="${CAPACITOR_SERVER_URL:-http://$public_host:$vite_port}"
+  if [[ "$web_scheme" == "https" ]]; then
+    export VITE_API_BASE_URL="https://$public_host:$vite_port"
+    export VITE_RPC_URL="https://$public_host:$vite_port/rpc"
+  else
+    export VITE_API_BASE_URL="${VITE_API_BASE_URL:-http://$public_host:3000}"
+    export VITE_RPC_URL="${VITE_RPC_URL:-http://$public_host:${ANVIL_PORT:-8545}}"
+  fi
+  export CAPACITOR_SERVER_URL="${CAPACITOR_SERVER_URL:-$web_scheme://$public_host:$vite_port}"
 }
 
 stop_existing_stack() {
@@ -103,6 +113,7 @@ print_env() {
   printf 'VITE_API_BASE_URL=%s\n' "$VITE_API_BASE_URL"
   printf 'VITE_RPC_URL=%s\n' "$VITE_RPC_URL"
   printf 'CAPACITOR_SERVER_URL=%s\n' "$CAPACITOR_SERVER_URL"
+  printf 'VITE_DEV_HTTPS=%s\n' "${VITE_DEV_HTTPS:-false}"
 }
 
 build_ios() {
@@ -135,7 +146,7 @@ run_web() {
 
   (
     cd "$ROOT_DIR"
-    pnpm --filter @ticket-platform/app-web dev -- --host 0.0.0.0 --port "${VITE_PORT:-$DEFAULT_VITE_PORT}"
+    pnpm --filter @ticket-platform/app-web dev -- --host 0.0.0.0 --port "${VITE_PORT:-$DEFAULT_VITE_PORT}" --strictPort
   )
 }
 
@@ -149,13 +160,18 @@ run_live_ios() {
   source "$ENV_FILE"
   set +a
   configure_device_env
+  local https_args=()
+  if [[ "${VITE_DEV_HTTPS:-}" == "true" ]]; then
+    https_args+=(--https)
+  fi
 
   (
     cd "$ROOT_DIR"
     pnpm --filter @ticket-platform/app-web exec cap run ios \
       --live-reload \
       --host "$LOCALCHAIN_PUBLIC_HOST" \
-      --port "${VITE_PORT:-$DEFAULT_VITE_PORT}"
+      --port "${VITE_PORT:-$DEFAULT_VITE_PORT}" \
+      "${https_args[@]}"
   )
 }
 

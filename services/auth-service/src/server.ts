@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 
 import {
@@ -46,6 +46,15 @@ interface RateRow {
   attempted_at: string | Date;
 }
 
+interface HandoffRow {
+  token_hash: string;
+  user_id: string;
+  phone: string;
+  source_session_id: string;
+  expires_at: string | Date;
+  consumed_at: string | Date | null;
+}
+
 interface RequestOtpBody {
   phone?: string;
 }
@@ -61,6 +70,17 @@ interface VerifyOtpBody {
 
 interface RefreshBody {
   refreshToken?: string;
+}
+
+interface CreateHandoffBody {
+  refreshToken?: string;
+}
+
+interface ExchangeHandoffBody {
+  handoffToken?: string;
+  deviceId?: string;
+  deviceName?: string;
+  platform?: string;
 }
 
 const PHONE_REGEX = /^\+?[1-9]\d{7,14}$/;
@@ -94,6 +114,10 @@ function generateOtpCode(length: number): string {
 
 function generateToken(prefix: string): string {
   return `${prefix}_${randomUUID().replace(/-/g, "")}${randomBytes(8).toString("hex")}`;
+}
+
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
 }
 
 function deriveUserId(phone: string): string {
@@ -169,6 +193,18 @@ async function ensureSchema(pool: Pool): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS auth_handoff_tokens (
+      token_hash TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      source_session_id TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      consumed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
 }
 
 export async function createAuthServer(config: AuthConfig) {
@@ -200,6 +236,10 @@ export async function createAuthServer(config: AuthConfig) {
       await pool.query(`DELETE FROM auth_refresh_tokens WHERE expires_at <= $1::timestamptz`, [
         now
       ]);
+      await pool.query(
+        `DELETE FROM auth_handoff_tokens WHERE expires_at <= $1::timestamptz OR consumed_at IS NOT NULL`,
+        [now]
+      );
     } catch (error) {
       log(config.serviceName, "error", "Cleanup failed", {
         error: error instanceof Error ? error.message : String(error)
@@ -495,6 +535,150 @@ export async function createAuthServer(config: AuthConfig) {
             accessToken: nextAccessToken,
             accessTokenExpiresAt: new Date(accessTokenExpiresAtMs).toISOString(),
             refreshToken: nextRefreshToken,
+            refreshTokenExpiresAt: new Date(refreshTokenExpiresAtMs).toISOString()
+          }
+        });
+      }
+
+      if (method === "POST" && url.pathname === "/auth/handoff/create") {
+        const body = await readJson<CreateHandoffBody>(req);
+        const refreshToken = body.refreshToken?.trim() ?? "";
+
+        if (!refreshToken) {
+          return sendJson(res, 400, {
+            success: false,
+            error: {
+              code: "INVALID_HANDOFF_CREATE_PAYLOAD",
+              message: "refreshToken is required"
+            }
+          });
+        }
+
+        const refreshRecord = await queryOne<RefreshRow>(
+          pool,
+          `SELECT token, user_id, phone, session_id, expires_at FROM auth_refresh_tokens WHERE token = $1`,
+          [refreshToken]
+        );
+
+        if (!refreshRecord || new Date().getTime() > new Date(refreshRecord.expires_at).getTime()) {
+          return sendJson(res, 401, {
+            success: false,
+            error: {
+              code: "REFRESH_INVALID",
+              message: "Refresh token is invalid or expired"
+            }
+          });
+        }
+
+        const handoffToken = generateToken("hnd");
+        const expiresAt = new Date(Date.now() + 180_000).toISOString();
+
+        await pool.query(
+          `INSERT INTO auth_handoff_tokens (token_hash, user_id, phone, source_session_id, expires_at)
+           VALUES ($1, $2, $3, $4, $5::timestamptz)`,
+          [
+            hashToken(handoffToken),
+            refreshRecord.user_id,
+            refreshRecord.phone,
+            refreshRecord.session_id,
+            expiresAt
+          ]
+        );
+
+        return sendJson(res, 200, {
+          success: true,
+          data: {
+            handoffToken,
+            expiresAt
+          }
+        });
+      }
+
+      if (method === "POST" && url.pathname === "/auth/handoff/exchange") {
+        const body = await readJson<ExchangeHandoffBody>(req);
+        const handoffToken = body.handoffToken?.trim() ?? "";
+
+        if (!handoffToken) {
+          return sendJson(res, 400, {
+            success: false,
+            error: {
+              code: "INVALID_HANDOFF_EXCHANGE_PAYLOAD",
+              message: "handoffToken is required"
+            }
+          });
+        }
+
+        const tokenHash = hashToken(handoffToken);
+        const handoff = await queryOne<HandoffRow>(
+          pool,
+          `SELECT token_hash, user_id, phone, source_session_id, expires_at, consumed_at
+           FROM auth_handoff_tokens WHERE token_hash = $1`,
+          [tokenHash]
+        );
+
+        if (
+          !handoff ||
+          handoff.consumed_at ||
+          new Date().getTime() > new Date(handoff.expires_at).getTime()
+        ) {
+          return sendJson(res, 401, {
+            success: false,
+            error: {
+              code: "HANDOFF_INVALID",
+              message: "Handoff token is invalid, expired or already consumed"
+            }
+          });
+        }
+
+        const sessionId = `ses_${randomUUID().replace(/-/g, "")}`;
+        const accessToken = generateToken("atk");
+        const refreshToken = generateToken("rtk");
+        const nowMs = Date.now();
+        const accessTokenExpiresAtMs = nowMs + config.accessTokenTtlSec * 1000;
+        const refreshTokenExpiresAtMs = nowMs + config.refreshTokenTtlSec * 1000;
+        const nowIso = new Date(nowMs).toISOString();
+
+        await withPostgresTransaction(pool, async (client) => {
+          await client.query(
+            `UPDATE auth_handoff_tokens SET consumed_at = $2::timestamptz WHERE token_hash = $1 AND consumed_at IS NULL`,
+            [tokenHash, nowIso]
+          );
+          await client.query(
+            `INSERT INTO auth_sessions (id, user_id, phone, device_id, device_name, platform, created_at, last_active_at, current_refresh_token)
+             VALUES ($1, $2, $3, $4, $5, $6, $7::timestamptz, $7::timestamptz, $8)`,
+            [
+              sessionId,
+              handoff.user_id,
+              handoff.phone,
+              body.deviceId?.trim() || `dev_${randomUUID().replace(/-/g, "").slice(0, 12)}`,
+              body.deviceName?.trim() || "Entr native app",
+              body.platform?.trim() || "native",
+              nowIso,
+              refreshToken
+            ]
+          );
+          await client.query(
+            `INSERT INTO auth_refresh_tokens (token, user_id, phone, session_id, expires_at)
+             VALUES ($1, $2, $3, $4, $5::timestamptz)`,
+            [
+              refreshToken,
+              handoff.user_id,
+              handoff.phone,
+              sessionId,
+              new Date(refreshTokenExpiresAtMs).toISOString()
+            ]
+          );
+        });
+
+        return sendJson(res, 200, {
+          success: true,
+          data: {
+            userId: handoff.user_id,
+            phone: handoff.phone,
+            sessionId,
+            accessToken,
+            accessTokenExpiresAt: new Date(accessTokenExpiresAtMs).toISOString(),
+            refreshToken,
             refreshTokenExpiresAt: new Date(refreshTokenExpiresAtMs).toISOString()
           }
         });

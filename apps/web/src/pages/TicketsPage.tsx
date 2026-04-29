@@ -11,6 +11,7 @@ const TicketsPage = () => {
   const { data, isError } = useMyTickets();
   const upcomingTickets = data?.upcoming ?? upcomingTicketsFallback;
   const pastTickets = data?.past ?? pastTicketsFallback;
+  const isPartial = data?.status === "partial";
 
   const tickets = activeTab === "Sắp tới" ? upcomingTickets : pastTickets;
 
@@ -43,10 +44,12 @@ const TicketsPage = () => {
         </div>
       </header>
 
-      {isError && (
+      {(isError || isPartial) && (
         <div className="px-4 py-3 border-b border-yellow-500/30 bg-yellow-500/10">
           <p className="font-mono text-[10px] text-yellow-200">
-            Ticketing chưa sẵn sàng. Đang dùng vé fallback cho demo.
+            {isError
+              ? "Ticketing chưa sẵn sàng. Đang dùng vé fallback cho demo."
+              : "Một phần ticketing chưa sẵn sàng. Đang hiển thị vé đã sync/local trước."}
           </p>
         </div>
       )}

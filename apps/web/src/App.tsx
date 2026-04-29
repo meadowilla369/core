@@ -15,10 +15,12 @@ import SellerTransactionPage from "./pages/SellerTransactionPage";
 import BuyerTransactionPage from "./pages/BuyerTransactionPage";
 import TradeTransactionPage from "./pages/TradeTransactionPage";
 import NotFound from "./pages/NotFound";
+import NativeDeepLinkListener from "./components/NativeDeepLinkListener";
 
 const App = () => (
   <AppProviders>
     <BrowserRouter>
+      <NativeDeepLinkListener />
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/onboarding" element={<OnboardingPage />} />

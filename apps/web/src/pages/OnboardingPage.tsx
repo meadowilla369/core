@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Capacitor } from "@capacitor/core";
 import { useNavigate } from "react-router-dom";
 
 import BootstrapFailedModal from "@/components/onboarding/BootstrapFailedModal";
@@ -16,10 +17,13 @@ import WhatIsThisWalletModal from "@/components/onboarding/WhatIsThisWalletModal
 import WhyInitialGasModal from "@/components/onboarding/WhyInitialGasModal";
 import WhyPhoneModal from "@/components/onboarding/WhyPhoneModal";
 import { useOnboardingController } from "@/features/onboarding/useOnboardingController";
+import { openEntrDiscoverApp } from "@/lib/appLinks";
+import { useApiClient } from "@/providers/AppProviders";
 import type { OnboardingHelpSurface } from "@/features/onboarding/view-model";
 
 const OnboardingPage = () => {
   const navigate = useNavigate();
+  const client = useApiClient();
   const controller = useOnboardingController();
   const [activeHelp, setActiveHelp] = useState<OnboardingHelpSurface | null>(null);
   const [prefundRetryOpen, setPrefundRetryOpen] = useState(false);
@@ -33,6 +37,21 @@ const OnboardingPage = () => {
 
   const errorCode = controller.state.error?.code;
   const prefundError = errorCode === "PREFUND_DELAYED" || errorCode === "PREFUND_RPC_UNAVAILABLE";
+  const continueToApp = async () => {
+    if (Capacitor.isNativePlatform()) {
+      navigate("/discover");
+      return;
+    }
+
+    if (!controller.state.auth) {
+      return;
+    }
+
+    const handoff = await client.createOnboardingHandoffToken({
+      refreshToken: controller.state.auth.refreshToken
+    });
+    openEntrDiscoverApp({ handoffToken: handoff.data.handoffToken });
+  };
 
   return (
     <>
@@ -72,6 +91,7 @@ const OnboardingPage = () => {
           walletAddress={controller.state.wallet?.walletAddress ?? null}
           isWorking={controller.isVerifyingOtp || controller.isRetrying}
           onExplainWallet={() => setActiveHelp("what-is-wallet")}
+          onContinue={controller.state.stage === "otp_verified" ? continueToApp : undefined}
         />
       )}
 
@@ -91,7 +111,7 @@ const OnboardingPage = () => {
           view={controller.view}
           userId={controller.state.auth.userId}
           walletAddress={controller.state.wallet.walletAddress}
-          onContinue={() => navigate("/discover")}
+          onContinue={continueToApp}
         />
       )}
 
@@ -164,7 +184,7 @@ const OnboardingPage = () => {
         open={walletReadyOpen}
         onOpenChange={setWalletReadyOpen}
         walletAddress={controller.state.wallet?.walletAddress}
-        onContinue={() => navigate("/discover")}
+        onContinue={continueToApp}
       />
     </>
   );

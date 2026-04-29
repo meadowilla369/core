@@ -9,13 +9,15 @@ interface WalletBootstrapScreenProps {
   walletAddress?: string | null;
   isWorking?: boolean;
   onExplainWallet?: () => void;
+  onContinue?: () => void;
 }
 
 const WalletBootstrapScreen = ({
   view,
   walletAddress,
   isWorking = false,
-  onExplainWallet
+  onExplainWallet,
+  onContinue
 }: WalletBootstrapScreenProps) => {
   return (
     <OnboardingShell
@@ -50,7 +52,7 @@ const WalletBootstrapScreen = ({
             Wallet draft
           </p>
           <p className="mt-2 break-all text-sm text-white">
-            {walletAddress ?? "Dang tao private key va wallet address..."}
+            {walletAddress ?? "Private key se duoc tao ben trong app Entr sau handoff."}
           </p>
         </div>
 
@@ -61,7 +63,8 @@ const WalletBootstrapScreen = ({
 
         <Button
           type="button"
-          disabled
+          disabled={!onContinue || isWorking}
+          onClick={onContinue}
           className="h-11 w-full rounded-full bg-white text-black hover:bg-white/85"
         >
           {isWorking ? "Dang bootstrap wallet..." : view.primaryActionLabel}

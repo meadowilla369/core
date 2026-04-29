@@ -10,7 +10,7 @@ import {
   Ticket
 } from "lucide-react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   assembleTx4,
   buildPurchaseTx,
@@ -39,6 +39,7 @@ import {
   getSignedSessionTransactionInput,
   signSessionAuthorization
 } from "@/lib/session";
+import { savePurchasedTicketMetadata } from "@/lib/synced-tickets";
 import { useApiClient } from "@/providers/AppProviders";
 import { toast } from "@ticket-platform/shared-ui";
 
@@ -94,6 +95,7 @@ const PrimaryPurchasePage = () => {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const client = useApiClient();
+  const queryClient = useQueryClient();
   const initialTierIndex = Math.max(0, Number(searchParams.get("tier") ?? "0") || 0);
   const [quantity, setQuantity] = useState("1");
   const [onChainEventId, setOnChainEventId] = useState("1");
@@ -450,6 +452,19 @@ const PrimaryPurchasePage = () => {
       );
     },
     onSuccess: (result) => {
+      if (id) {
+        const now = new Date().toISOString();
+        savePurchasedTicketMetadata({
+          tokenId: result.tokenId,
+          eventId: id,
+          ticketTypeId: selectedTier.id,
+          ownerUserId: getSessionUserId(),
+          ownerWalletAddress: getSessionWalletAddress(),
+          transactionHash: result.transactionHash,
+          createdAt: result.syncedToken?.updatedAt ?? now
+        });
+        queryClient.invalidateQueries({ queryKey: ["tickets", "me"] });
+      }
       setBroadcasted(result);
       toast({
         title:

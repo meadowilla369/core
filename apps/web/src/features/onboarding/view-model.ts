@@ -84,6 +84,24 @@ export function buildOnboardingViewModel(state: OnboardingState): OnboardingView
         secondaryActionLabel: "Gui lai ma"
       };
     case "otp_verified":
+      return {
+        screen: "wallet_bootstrap",
+        eyebrow: "Secure Handoff",
+        title: "Mo app Entr de tao vi an toan",
+        description:
+          "So dien thoai da xac minh. App se nhan handoff token dung mot lan, tu tao vi local va dang ky prefund ma khong dua private key qua Safari.",
+        stageLabel: "Buoc 3/5",
+        progressValue: 62,
+        trustBadges: ["One-time token", "No private key in URL"],
+        timeline: [
+          { label: "Phone verified", status: "done" },
+          { label: "Open Entr app", status: "current" },
+          { label: "Generate wallet inside app", status: "upcoming" }
+        ],
+        availableHelp: ["what-is-wallet"],
+        availableErrors: state.error ? ["bootstrap-failed"] : [],
+        primaryActionLabel: "Vao app"
+      };
     case "wallet_generating":
     case "wallet_registering":
       return {

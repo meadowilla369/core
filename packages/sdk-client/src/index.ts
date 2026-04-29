@@ -52,6 +52,17 @@ export interface RefreshInput {
   refreshToken: string;
 }
 
+export interface CreateOnboardingHandoffInput {
+  refreshToken: string;
+}
+
+export interface ExchangeOnboardingHandoffInput {
+  handoffToken: string;
+  deviceId?: string;
+  deviceName?: string;
+  platform?: string;
+}
+
 export interface AuthTokenData {
   accessToken: string;
   refreshToken: string;
@@ -59,6 +70,15 @@ export interface AuthTokenData {
   sessionId: string;
   accessTokenExpiresAt: string;
   refreshTokenExpiresAt: string;
+}
+
+export interface OnboardingHandoffTokenData {
+  handoffToken: string;
+  expiresAt: string;
+}
+
+export interface OnboardingHandoffExchangeData extends AuthTokenData {
+  phone: string;
 }
 
 export interface WalletPrefundStatusData {
@@ -335,6 +355,18 @@ export class ApiClient {
 
   async refreshToken(input: RefreshInput): Promise<ApiSuccessResponse<AuthTokenData>> {
     return this.request("/v1/auth/refresh", { method: "POST", body: input });
+  }
+
+  async createOnboardingHandoffToken(
+    input: CreateOnboardingHandoffInput
+  ): Promise<ApiSuccessResponse<OnboardingHandoffTokenData>> {
+    return this.request("/v1/auth/handoff/create", { method: "POST", body: input });
+  }
+
+  async exchangeOnboardingHandoffToken(
+    input: ExchangeOnboardingHandoffInput
+  ): Promise<ApiSuccessResponse<OnboardingHandoffExchangeData>> {
+    return this.request("/v1/auth/handoff/exchange", { method: "POST", body: input });
   }
 
   async getMyProfile(userId: string): Promise<ApiSuccessResponse<UserProfileData>> {

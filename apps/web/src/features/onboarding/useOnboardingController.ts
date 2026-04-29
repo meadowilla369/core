@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { Capacitor } from "@capacitor/core";
 import { useMutation } from "@tanstack/react-query";
-import { ApiClientError } from "@ticket-platform/sdk-client";
 import { toast } from "@ticket-platform/shared-ui";
 
 import {
@@ -16,10 +16,10 @@ import {
   toPersistedSessionSnapshot
 } from "./machine";
 import { createLocalWallet } from "./wallet";
+import { normalizeOnboardingError } from "./errors";
 import { buildOnboardingViewModel } from "./view-model";
 import type {
   OnboardingAuthSession,
-  OnboardingErrorState,
   OnboardingPrefundState,
   OnboardingState,
   OnboardingWalletDraft
@@ -33,34 +33,6 @@ function sleep(ms: number) {
 
 function getInitialState() {
   return shouldResumeFromStorage(loadOnboardingDraft()) ?? createInitialOnboardingState();
-}
-
-function normalizeError(
-  error: unknown,
-  fallbackCode: string,
-  fallbackMessage: string
-): OnboardingErrorState {
-  if (error instanceof ApiClientError && error.payload && typeof error.payload === "object") {
-    const payload = error.payload as { error?: { code?: string; message?: string } };
-    if (payload.error?.code || payload.error?.message) {
-      return {
-        code: payload.error?.code ?? fallbackCode,
-        message: payload.error?.message ?? fallbackMessage
-      };
-    }
-  }
-
-  if (error instanceof Error) {
-    return {
-      code: fallbackCode,
-      message: error.message || fallbackMessage
-    };
-  }
-
-  return {
-    code: fallbackCode,
-    message: fallbackMessage
-  };
 }
 
 export function useOnboardingController() {
@@ -197,7 +169,11 @@ export function useOnboardingController() {
       setState((current) =>
         reduceOnboardingState(current, {
           type: "FAILED",
-          payload: normalizeError(error, "OTP_RATE_LIMITED", "Khong the yeu cau OTP luc nay")
+          payload: normalizeOnboardingError(
+            error,
+            "OTP_REQUEST_FAILED",
+            "Khong the ket noi backend OTP"
+          )
         })
       );
     }
@@ -251,6 +227,13 @@ export function useOnboardingController() {
         })
       );
 
+      if (!Capacitor.isNativePlatform()) {
+        return {
+          auth,
+          wallet: null
+        };
+      }
+
       setState((current) => reduceOnboardingState(current, { type: "WALLET_GENERATING" }));
       const wallet = createLocalWallet();
 
@@ -280,7 +263,7 @@ export function useOnboardingController() {
       setState((current) =>
         reduceOnboardingState(current, {
           type: "FAILED",
-          payload: normalizeError(error, fallbackCode, fallbackMessage)
+          payload: normalizeOnboardingError(error, fallbackCode, fallbackMessage)
         })
       );
     }
@@ -298,7 +281,11 @@ export function useOnboardingController() {
       setState((current) =>
         reduceOnboardingState(current, {
           type: "FAILED",
-          payload: normalizeError(error, "PREFUND_DELAYED", "Waiting for localchain confirmation")
+          payload: normalizeOnboardingError(
+            error,
+            "PREFUND_DELAYED",
+            "Waiting for localchain confirmation"
+          )
         })
       );
     }

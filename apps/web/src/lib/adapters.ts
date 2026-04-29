@@ -22,7 +22,7 @@ import {
   formatVnd,
   getInitials,
   isFutureIso
-} from "./format";
+} from "./format.ts";
 
 const CATEGORY_OVERRIDES: Record<string, string> = {
   evt_rockfest_2026: "Hòa nhạc",
@@ -122,7 +122,7 @@ export function splitTicketsByEventTime(
     (acc, ticket, index) => {
       const raw = rawTickets[index];
       const event = raw ? eventMap.get(raw.eventId) : undefined;
-      if (event && isFutureIso(event.startAt)) {
+      if (!event || isFutureIso(event.startAt)) {
         acc.upcoming.push(ticket);
       } else {
         acc.past.push(ticket);
