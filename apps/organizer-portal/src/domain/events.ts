@@ -1,3 +1,5 @@
+import type { EventLifecycleStatus } from "./status";
+
 export interface OrganizerEventInput {
   title: string;
   city: string;
@@ -14,7 +16,7 @@ export interface OrganizerTicketTypeInput {
 
 export interface OrganizerEvent extends OrganizerEventInput {
   id: string;
-  status: "draft" | "published" | "cancelled";
+  status: EventLifecycleStatus;
   ticketTypes: OrganizerTicketTypeInput[];
 }
 

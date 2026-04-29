@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { createOrganizerEvent } from "./events.ts";
 import {
   getEventStatusTone,
   getStatusTone,
@@ -18,6 +19,21 @@ test("draft, scheduled, and upcoming event statuses use the info tone", () => {
     assert.equal(tone.name, "info");
     assert.equal(tone.accent, "#2563EB");
   }
+});
+
+test("created organizer events can resolve lifecycle status tones", () => {
+  const event = createOrganizerEvent({
+    title: "Launch Night",
+    city: "Ho Chi Minh City",
+    venue: "District Hall",
+    startAt: "2026-05-01T18:00:00.000Z",
+    endAt: "2026-05-01T21:00:00.000Z"
+  });
+
+  const tone = getEventStatusTone(event.status);
+
+  assert.equal(tone.name, "info");
+  assert.equal(tone.accent, "#2563EB");
 });
 
 test("active and live event statuses plus valid and resolved use success tone", () => {
