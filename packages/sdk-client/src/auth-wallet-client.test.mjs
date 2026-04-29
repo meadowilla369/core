@@ -145,6 +145,39 @@ test("exchangeOnboardingHandoffToken creates a native auth session", async () =>
   assert.equal(result.data.phone, "+84901234567");
 });
 
+test("createTicketQr requests the backend ticket QR endpoint with user context", async () => {
+  const calls = [];
+  globalThis.fetch = async (input, init) => {
+    calls.push({ input: String(input), init });
+    return new Response(
+      JSON.stringify({
+        success: true,
+        data: {
+          tokenId: "42",
+          eventId: "evt_rockfest_2026",
+          timestamp: 1777449600000,
+          nonce: "nonce_001",
+          walletAddress: "0xBuyer",
+          signature: "sig_001"
+        }
+      }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  };
+
+  const client = new ApiClient({ baseUrl: "http://localhost:3000" });
+  const result = await client.createTicketQr("42", {
+    userId: "buyer_1",
+    idempotencyKey: "qr_001"
+  });
+
+  assert.equal(calls[0].input, "http://localhost:3000/v1/tickets/42/qr");
+  assert.equal(calls[0].init.method, "POST");
+  assert.equal(calls[0].init.headers["x-user-id"], "buyer_1");
+  assert.equal(calls[0].init.headers["idempotency-key"], "qr_001");
+  assert.equal(result.data.signature, "sig_001");
+});
+
 test("getWalletPrefundStatus reads the prefund polling payload", async () => {
   const calls = [];
   globalThis.fetch = async (input, init) => {

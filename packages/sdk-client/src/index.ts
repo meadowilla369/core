@@ -208,6 +208,15 @@ export interface TicketRecord {
   createdAt: string;
 }
 
+export interface TicketQrData {
+  tokenId: string;
+  eventId: string;
+  timestamp: number;
+  nonce: string;
+  walletAddress: string;
+  signature: string;
+}
+
 export interface MarketplaceListing {
   id: string;
   tokenId: string;
@@ -510,6 +519,19 @@ export class ApiClient {
       method: "GET",
       headers: {
         "x-user-id": userId
+      }
+    });
+  }
+
+  async createTicketQr(
+    tokenId: string,
+    ctx: { userId: string; idempotencyKey?: string }
+  ): Promise<ApiSuccessResponse<TicketQrData>> {
+    return this.request(`/v1/tickets/${encodeURIComponent(tokenId)}/qr`, {
+      method: "POST",
+      headers: {
+        "x-user-id": ctx.userId,
+        ...(ctx.idempotencyKey ? { "idempotency-key": ctx.idempotencyKey } : {})
       }
     });
   }
