@@ -15,7 +15,14 @@ export interface PurchasedTicketMetadata {
   ownerUserId: string;
   ownerWalletAddress: string;
   transactionHash?: string;
+  source?: "primary-purchase" | "resale-purchase";
   createdAt: string;
+}
+
+export interface MergedTicketRecord extends TicketRecord {
+  ownerWalletAddress: string | null;
+  source: "ticketing" | "contract-sync" | "local-cache";
+  transactionHash?: string;
 }
 
 function getBrowserStorage(): StorageLike | null {
@@ -92,7 +99,7 @@ export function toSyncedTicketRecord(
   token: ContractSyncedTokenData,
   fallbackUserId: string,
   metadata?: PurchasedTicketMetadata
-): TicketRecord | null {
+): MergedTicketRecord | null {
   const eventId = metadata?.eventId ?? token.eventId;
   if (!eventId) {
     return null;
@@ -108,19 +115,37 @@ export function toSyncedTicketRecord(
         ? `Marketplace resale · ${token.sourceListingId}`
         : "Primary purchase",
     reservationId: token.sourceListingId ?? `sync_${token.tokenId}`,
+    ownerWalletAddress: normalizeWalletAddress(
+      metadata?.ownerWalletAddress ?? token.ownerWalletAddress ?? ""
+    ) || null,
+    source: "contract-sync",
+    transactionHash: metadata?.transactionHash ?? token.lastTransactionHash ?? undefined,
     createdAt: metadata?.createdAt ?? token.updatedAt
   };
 }
 
-function toCachedTicketRecord(ticket: PurchasedTicketMetadata): TicketRecord {
+function toCachedTicketRecord(ticket: PurchasedTicketMetadata): MergedTicketRecord {
   return {
     tokenId: ticket.tokenId,
     eventId: ticket.eventId,
     ticketTypeId: ticket.ticketTypeId,
     ownerUserId: ticket.ownerUserId,
+    ownerWalletAddress: normalizeWalletAddress(ticket.ownerWalletAddress),
     seatInfo: "Primary purchase",
     reservationId: `sync_${ticket.tokenId}`,
+    source: "local-cache",
+    transactionHash: ticket.transactionHash,
     createdAt: ticket.createdAt
+  };
+}
+
+function toTicketingRecord(ticket: TicketRecord): MergedTicketRecord {
+  const candidate = ticket as Partial<MergedTicketRecord>;
+  return {
+    ...ticket,
+    ownerWalletAddress: candidate.ownerWalletAddress ?? null,
+    source: candidate.source ?? "ticketing",
+    transactionHash: candidate.transactionHash
   };
 }
 
@@ -130,11 +155,11 @@ export function mergeTicketRecords(input: {
   cachedTickets: PurchasedTicketMetadata[];
   userId: string;
   walletAddress: string;
-}): TicketRecord[] {
+}): MergedTicketRecord[] {
   const metadataByTokenId = new Map(input.cachedTickets.map((ticket) => [ticket.tokenId, ticket]));
   const knownTokenIds = new Set(input.ticketingTickets.map((ticket) => ticket.tokenId));
   const normalizedWallet = normalizeWalletAddress(input.walletAddress);
-  const merged = [...input.ticketingTickets];
+  const merged = input.ticketingTickets.map(toTicketingRecord);
 
   for (const token of input.syncedTokens) {
     if (token.isRefunded || knownTokenIds.has(token.tokenId)) {

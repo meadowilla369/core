@@ -31,6 +31,7 @@ test("savePurchasedTicketMetadata stores the app event and tier for a purchased 
       ownerUserId: "buyer_1",
       ownerWalletAddress: "0xBuyer",
       transactionHash: "0xabc",
+      source: "primary-purchase",
       createdAt: "2026-04-29T00:00:00.000Z"
     },
     localStorage
@@ -44,6 +45,7 @@ test("savePurchasedTicketMetadata stores the app event and tier for a purchased 
       ownerUserId: "buyer_1",
       ownerWalletAddress: "0xbuyer",
       transactionHash: "0xabc",
+      source: "primary-purchase",
       createdAt: "2026-04-29T00:00:00.000Z"
     }
   ]);
@@ -79,6 +81,7 @@ test("mergeTicketRecords uses local purchase metadata to map synced on-chain tok
         ownerUserId: "buyer_1",
         ownerWalletAddress: "0xbuyer",
         transactionHash: "0xabc",
+        source: "primary-purchase",
         createdAt: "2026-04-29T00:00:00.000Z"
       }
     ],
@@ -92,8 +95,11 @@ test("mergeTicketRecords uses local purchase metadata to map synced on-chain tok
       eventId: "evt_rockfest_2026",
       ticketTypeId: "tt_vip",
       ownerUserId: "buyer_1",
+      ownerWalletAddress: "0xbuyer",
       seatInfo: "Primary purchase",
       reservationId: "sync_42",
+      source: "contract-sync",
+      transactionHash: "0xabc",
       createdAt: "2026-04-29T00:00:00.000Z"
     }
   ]);

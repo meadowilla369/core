@@ -50,16 +50,32 @@ test("loadMyTicketCards returns synced tickets when ticketing DB and event looku
   });
 
   assert.equal(result.status, "partial");
+  assert.equal(result.tickets[0].source, "contract-sync");
+  assert.equal(result.tickets[0].tokenId, "42");
+  assert.equal(result.tickets[0].ownerWalletAddress, "0xbuyer");
+  assert.equal(result.tickets[0].syncStatus, "partial");
+  assert.equal(result.tickets[0].transactionHash, "0xabc");
   assert.deepEqual(result.upcoming, [
     {
       id: "42",
+      tokenId: "42",
+      eventId: "evt_rockfest_2026",
       eventName: "evt_rockfest_2026",
-      date: "Đang cập nhật",
+      date: "Dang cap nhat",
       time: "--:--",
       location: "Primary purchase",
       ticketType: "tt_vip",
-      qrCode: "42"
+      qrCode: "42",
+      ownerUserId: "buyer_1",
+      ownerWalletAddress: "0xbuyer",
+      seatInfo: "Primary purchase",
+      reservationId: "sync_42",
+      createdAt: "2026-04-29T00:00:00.000Z",
+      source: "contract-sync",
+      syncStatus: "partial",
+      transactionHash: "0xabc"
     }
   ]);
   assert.deepEqual(result.past, []);
+  assert.deepEqual(result.tickets, result.upcoming);
 });

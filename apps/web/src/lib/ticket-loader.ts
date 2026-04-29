@@ -4,11 +4,12 @@ import type {
   EventDetail,
   TicketRecord
 } from "@ticket-platform/sdk-client";
-import type { TicketCardView } from "@ticket-platform/shared-types";
-import { splitTicketsByEventTime, toTicketCardView } from "./adapters.ts";
+import { toTicketCardView } from "./adapters.ts";
+import { isFutureIso } from "./format.ts";
 import {
   loadPurchasedTicketMetadata,
   mergeTicketRecords,
+  type MergedTicketRecord,
   type PurchasedTicketMetadata
 } from "./synced-tickets.ts";
 
@@ -21,9 +22,74 @@ interface TicketClient {
 }
 
 export interface LoadedTicketCards {
-  upcoming: TicketCardView[];
-  past: TicketCardView[];
+  upcoming: TicketOwnershipView[];
+  past: TicketOwnershipView[];
+  tickets: TicketOwnershipView[];
   status: "ready" | "partial";
+}
+
+export type TicketDataSource = "ticketing" | "contract-sync" | "local-cache";
+export type TicketSyncStatus = "ready" | "syncing" | "partial";
+
+export interface TicketOwnershipView {
+  id: string;
+  tokenId: string;
+  eventId: string;
+  eventName: string;
+  date: string;
+  time: string;
+  location: string;
+  ticketType: string;
+  qrCode?: string;
+  ownerUserId: string;
+  ownerWalletAddress: string | null;
+  seatInfo: string;
+  reservationId: string;
+  createdAt: string;
+  source: TicketDataSource;
+  syncStatus: TicketSyncStatus;
+  transactionHash?: string;
+}
+
+function toTicketOwnershipView(
+  ticket: MergedTicketRecord,
+  event: EventDetail | undefined,
+  syncStatus: TicketSyncStatus
+): TicketOwnershipView {
+  const card = toTicketCardView(ticket, event);
+  return {
+    ...card,
+    date: event ? card.date : "Dang cap nhat",
+    id: ticket.tokenId,
+    tokenId: ticket.tokenId,
+    eventId: ticket.eventId,
+    ownerUserId: ticket.ownerUserId,
+    ownerWalletAddress: ticket.ownerWalletAddress,
+    seatInfo: ticket.seatInfo,
+    reservationId: ticket.reservationId,
+    createdAt: ticket.createdAt,
+    source: ticket.source,
+    syncStatus,
+    transactionHash: ticket.transactionHash
+  };
+}
+
+function splitOwnershipTicketsByEventTime(
+  tickets: TicketOwnershipView[],
+  eventMap: Map<string, EventDetail>
+): { upcoming: TicketOwnershipView[]; past: TicketOwnershipView[] } {
+  return tickets.reduce(
+    (acc, ticket) => {
+      const event = eventMap.get(ticket.eventId);
+      if (!event || isFutureIso(event.startAt)) {
+        acc.upcoming.push(ticket);
+      } else {
+        acc.past.push(ticket);
+      }
+      return acc;
+    },
+    { upcoming: [] as TicketOwnershipView[], past: [] as TicketOwnershipView[] }
+  );
 }
 
 export async function loadMyTicketCards(input: {
@@ -65,17 +131,19 @@ export async function loadMyTicketCards(input: {
       item.status === "fulfilled" ? [[item.value.data.id, item.value.data]] : []
     )
   );
-  const cards = mergedTickets.map((ticket) =>
-    toTicketCardView(ticket, eventMap.get(ticket.eventId))
-  );
-  const split = splitTicketsByEventTime(cards, eventMap, mergedTickets);
   const hasPartialSource =
     ticketsResponse.status === "rejected" ||
     syncedTokensResponse.status === "rejected" ||
     eventDetails.some((item) => item.status === "rejected");
+  const syncStatus = hasPartialSource ? "partial" : "ready";
+  const tickets = mergedTickets.map((ticket) =>
+    toTicketOwnershipView(ticket, eventMap.get(ticket.eventId), syncStatus)
+  );
+  const split = splitOwnershipTicketsByEventTime(tickets, eventMap);
 
   return {
     ...split,
+    tickets,
     status: hasPartialSource ? "partial" : "ready"
   };
 }
