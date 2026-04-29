@@ -168,12 +168,14 @@ test("createTicketQr requests the backend ticket QR endpoint with user context",
   const client = new ApiClient({ baseUrl: "http://localhost:3000" });
   const result = await client.createTicketQr("42", {
     userId: "buyer_1",
+    ownerWalletAddress: "0xBuyer",
     idempotencyKey: "qr_001"
   });
 
   assert.equal(calls[0].input, "http://localhost:3000/v1/tickets/42/qr");
   assert.equal(calls[0].init.method, "POST");
   assert.equal(calls[0].init.headers["x-user-id"], "buyer_1");
+  assert.equal(calls[0].init.headers["x-owner-wallet-address"], "0xBuyer");
   assert.equal(calls[0].init.headers["idempotency-key"], "qr_001");
   assert.equal(result.data.signature, "sig_001");
 });

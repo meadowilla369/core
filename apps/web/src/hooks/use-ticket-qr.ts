@@ -28,7 +28,10 @@ export function useTicketQr(ticket: TicketOwnershipView | null) {
         throw new Error("Ticket is required");
       }
 
-      const response = await client.createTicketQr(ticket.tokenId, { userId });
+      const response = await client.createTicketQr(ticket.tokenId, {
+        userId,
+        ownerWalletAddress: ticket.ownerWalletAddress
+      });
       return { ...response.data, source: "backend" };
     }
   });

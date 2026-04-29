@@ -99,6 +99,19 @@ interface TicketRecord {
   createdAt: string;
 }
 
+interface SyncedTokenRecord {
+  tokenId: string;
+  eventId?: string | null;
+  ownerWalletAddress: string | null;
+  ownerUserId: string | null;
+  isRefunded: boolean;
+}
+
+interface ApiSuccessResponse<T> {
+  success: true;
+  data: T;
+}
+
 interface EventServiceTicketType {
   id: string;
   name: string;
@@ -141,6 +154,10 @@ function extractSingleHeader(req: IncomingMessage, headerName: string): string |
 
 function extractUserId(req: IncomingMessage): string | null {
   return extractSingleHeader(req, "x-user-id");
+}
+
+function extractOwnerWalletAddress(req: IncomingMessage): string | null {
+  return extractSingleHeader(req, "x-owner-wallet-address");
 }
 
 function extractIdempotencyKey(req: IncomingMessage): string | null {
@@ -234,6 +251,27 @@ function mapTicket(row: TicketRow): TicketRecord {
     reservationId: row.reservation_id,
     createdAt: toIso(row.created_at)
   };
+}
+
+function normalizeWalletAddress(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+async function getSyncedToken(
+  config: TicketingConfig,
+  tokenId: string
+): Promise<SyncedTokenRecord | null> {
+  const response = await fetch(
+    `${config.contractSyncServiceBaseUrl}/internal/contracts/tokens/${encodeURIComponent(tokenId)}`,
+    { method: "GET" }
+  );
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload = (await response.json()) as ApiSuccessResponse<SyncedTokenRecord>;
+  return payload.success ? payload.data : null;
 }
 
 function reservationResponse(reservation: ReservationRecord): Record<string, unknown> {
@@ -1110,24 +1148,55 @@ export async function createTicketingServer(config: TicketingConfig) {
           [qrMatch[1], userId]
         );
 
-        if (!ticket) {
-          return sendJson(res, 404, {
-            success: false,
-            error: {
-              code: "TICKET_NOT_FOUND",
-              message: "Ticket not found"
-            }
-          });
+        let qrTicket: {
+          tokenId: string;
+          eventId: string;
+          walletAddress: string;
+        } | null = null;
+
+        if (ticket) {
+          qrTicket = {
+            tokenId: ticket.token_id,
+            eventId: ticket.event_id,
+            walletAddress: `mock-wallet-${userId}`
+          };
+        } else {
+          const ownerWalletAddress = extractOwnerWalletAddress(req);
+          const syncedToken = await getSyncedToken(config, qrMatch[1]);
+          const syncedOwnerWallet = syncedToken?.ownerWalletAddress;
+
+          if (
+            !ownerWalletAddress ||
+            !syncedToken ||
+            syncedToken.isRefunded ||
+            !syncedToken.eventId ||
+            !syncedOwnerWallet ||
+            normalizeWalletAddress(syncedOwnerWallet) !== normalizeWalletAddress(ownerWalletAddress)
+          ) {
+            return sendJson(res, 404, {
+              success: false,
+              error: {
+                code: "TICKET_NOT_FOUND",
+                message: "Ticket not found"
+              }
+            });
+          }
+
+          qrTicket = {
+            tokenId: syncedToken.tokenId,
+            eventId: syncedToken.eventId,
+            walletAddress: syncedOwnerWallet
+          };
         }
 
         const response = {
           success: true,
           data: {
-            tokenId: ticket.token_id,
-            eventId: ticket.event_id,
+            tokenId: qrTicket.tokenId,
+            eventId: qrTicket.eventId,
             timestamp: Date.now(),
             nonce: randomUUID(),
-            walletAddress: `mock-wallet-${userId}`,
+            walletAddress: qrTicket.walletAddress,
             signature: `0x${randomUUID().replace(/-/g, "")}${randomUUID().replace(/-/g, "")}`
           }
         };

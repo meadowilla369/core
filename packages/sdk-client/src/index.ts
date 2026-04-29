@@ -525,12 +525,13 @@ export class ApiClient {
 
   async createTicketQr(
     tokenId: string,
-    ctx: { userId: string; idempotencyKey?: string }
+    ctx: { userId: string; ownerWalletAddress?: string | null; idempotencyKey?: string }
   ): Promise<ApiSuccessResponse<TicketQrData>> {
     return this.request(`/v1/tickets/${encodeURIComponent(tokenId)}/qr`, {
       method: "POST",
       headers: {
         "x-user-id": ctx.userId,
+        ...(ctx.ownerWalletAddress ? { "x-owner-wallet-address": ctx.ownerWalletAddress } : {}),
         ...(ctx.idempotencyKey ? { "idempotency-key": ctx.idempotencyKey } : {})
       }
     });
