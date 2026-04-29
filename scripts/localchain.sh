@@ -11,6 +11,7 @@ ENV_FILE="$ROOT_DIR/.env.localchain"
 DEFAULT_ANVIL_HOST="127.0.0.1"
 DEFAULT_ANVIL_PORT="8545"
 DEFAULT_CHAIN_ID="31337"
+DEFAULT_PUBLIC_HOST="127.0.0.1"
 DEFAULT_PRIVATE_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 DEFAULT_MNEMONIC="test test test test test test test test test test test junk"
 DEFAULT_DEMO_USER_ID="buyer_demo_web_3"
@@ -38,11 +39,31 @@ ensure_tools() {
 }
 
 read_env_file() {
+  local override_host_is_set="${HOST+x}"
+  local override_host="${HOST:-}"
+  local override_anvil_host_is_set="${ANVIL_HOST+x}"
+  local override_anvil_host="${ANVIL_HOST:-}"
+  local override_rpc_url_is_set="${RPC_URL+x}"
+  local override_rpc_url="${RPC_URL:-}"
+  local override_public_host_is_set="${LOCALCHAIN_PUBLIC_HOST+x}"
+  local override_public_host="${LOCALCHAIN_PUBLIC_HOST:-}"
+  local override_vite_api_base_url_is_set="${VITE_API_BASE_URL+x}"
+  local override_vite_api_base_url="${VITE_API_BASE_URL:-}"
+  local override_vite_rpc_url_is_set="${VITE_RPC_URL+x}"
+  local override_vite_rpc_url="${VITE_RPC_URL:-}"
+
   if [[ -f "$ENV_FILE" ]]; then
     set -a
     source "$ENV_FILE"
     set +a
   fi
+
+  [[ -n "$override_host_is_set" ]] && HOST="$override_host"
+  [[ -n "$override_anvil_host_is_set" ]] && ANVIL_HOST="$override_anvil_host"
+  [[ -n "$override_rpc_url_is_set" ]] && RPC_URL="$override_rpc_url"
+  [[ -n "$override_public_host_is_set" ]] && LOCALCHAIN_PUBLIC_HOST="$override_public_host"
+  [[ -n "$override_vite_api_base_url_is_set" ]] && VITE_API_BASE_URL="$override_vite_api_base_url"
+  [[ -n "$override_vite_rpc_url_is_set" ]] && VITE_RPC_URL="$override_vite_rpc_url"
 }
 
 anvil_host() {
@@ -57,12 +78,34 @@ chain_id() {
   printf '%s' "${CHAIN_ID:-$DEFAULT_CHAIN_ID}"
 }
 
+rpc_connect_host() {
+  local host
+  host="$(anvil_host)"
+  if [[ "$host" == "0.0.0.0" || "$host" == "::" ]]; then
+    printf '%s' "$DEFAULT_ANVIL_HOST"
+  else
+    printf '%s' "$host"
+  fi
+}
+
 rpc_url() {
-  printf '%s' "${RPC_URL:-http://$(anvil_host):$(anvil_port)}"
+  printf '%s' "${RPC_URL:-http://$(rpc_connect_host):$(anvil_port)}"
 }
 
 private_key() {
   printf '%s' "${PRIVATE_KEY:-$DEFAULT_PRIVATE_KEY}"
+}
+
+public_host() {
+  printf '%s' "${LOCALCHAIN_PUBLIC_HOST:-$DEFAULT_PUBLIC_HOST}"
+}
+
+frontend_api_base_url() {
+  printf '%s' "${VITE_API_BASE_URL:-http://$(public_host):3000}"
+}
+
+frontend_rpc_url() {
+  printf '%s' "${VITE_RPC_URL:-http://$(public_host):$(anvil_port)}"
 }
 
 is_running() {
@@ -99,7 +142,7 @@ write_env_file() {
 # \`npm run chain:deploy\` after resetting Anvil.
 
 # Shared host binding
-HOST=127.0.0.1
+HOST=${HOST:-127.0.0.1}
 
 # UI simulator
 UI_HOST=127.0.0.1
@@ -212,8 +255,8 @@ HANDLER_ADDRESS=$handler_address
 TICKET_NFT_ADDRESS=$ticket_ledger_address
 
 # Frontend
-VITE_API_BASE_URL=http://127.0.0.1:3000
-VITE_RPC_URL=$(rpc_url)
+VITE_API_BASE_URL=$(frontend_api_base_url)
+VITE_RPC_URL=$(frontend_rpc_url)
 VITE_DEMO_USER_ID=$DEFAULT_DEMO_USER_ID
 VITE_DEMO_WALLET_ADDRESS=$DEFAULT_DEMO_WALLET_ADDRESS
 VITE_HANDLER_ADDRESS=$handler_address
