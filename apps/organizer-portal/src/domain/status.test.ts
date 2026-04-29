@@ -6,7 +6,7 @@ import {
   getStatusTone,
   statusTones,
   type EventLifecycleStatus,
-  type OrganizerStatus
+  type OperationalStatus
 } from "./status.ts";
 
 test("draft, scheduled, and upcoming event statuses use the info tone", () => {
@@ -15,7 +15,7 @@ test("draft, scheduled, and upcoming event statuses use the info tone", () => {
   for (const status of statuses) {
     const tone = getEventStatusTone(status);
 
-    assert.equal(tone.intent, "info");
+    assert.equal(tone.name, "info");
     assert.equal(tone.accent, "#2563EB");
   }
 });
@@ -24,19 +24,19 @@ test("active and live event statuses plus valid and resolved use success tone", 
   for (const status of ["active", "live"] satisfies EventLifecycleStatus[]) {
     const tone = getEventStatusTone(status);
 
-    assert.equal(tone.intent, "success");
+    assert.equal(tone.name, "success");
     assert.equal(tone.accent, "#16A34A");
   }
 
-  assert.equal(getStatusTone("valid").intent, "success");
+  assert.equal(getStatusTone("valid").name, "success");
   assert.equal(getStatusTone("resolved").accent, "#16A34A");
 });
 
 test("cancelled, invalid, and failed statuses use critical tone", () => {
-  for (const status of ["cancelled", "invalid", "failed"] satisfies OrganizerStatus[]) {
+  for (const status of ["cancelled", "invalid", "failed"] satisfies OperationalStatus[]) {
     const tone = getStatusTone(status);
 
-    assert.equal(tone.intent, "critical");
+    assert.equal(tone.name, "critical");
     assert.equal(tone.accent, "#DC2626");
   }
 });
