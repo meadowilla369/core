@@ -21,7 +21,7 @@ export interface PurchasedTicketMetadata {
 
 export interface MergedTicketRecord extends TicketRecord {
   ownerWalletAddress: string | null;
-  source: "ticketing" | "contract-sync" | "local-cache";
+  source: "contract-sync";
   transactionHash?: string;
 }
 
@@ -98,9 +98,10 @@ export function savePurchasedTicketMetadata(
 export function toSyncedTicketRecord(
   token: ContractSyncedTokenData,
   fallbackUserId: string,
-  metadata?: PurchasedTicketMetadata
+  metadata?: PurchasedTicketMetadata,
+  ticketingTicket?: TicketRecord
 ): MergedTicketRecord | null {
-  const eventId = metadata?.eventId ?? token.eventId;
+  const eventId = metadata?.eventId ?? ticketingTicket?.eventId ?? token.eventId;
   if (!eventId) {
     return null;
   }
@@ -108,44 +109,21 @@ export function toSyncedTicketRecord(
   return {
     tokenId: token.tokenId,
     eventId,
-    ticketTypeId: metadata?.ticketTypeId ?? token.tokenId,
-    ownerUserId: metadata?.ownerUserId ?? token.ownerUserId ?? fallbackUserId,
+    ticketTypeId: metadata?.ticketTypeId ?? ticketingTicket?.ticketTypeId ?? token.tokenId,
+    ownerUserId:
+      metadata?.ownerUserId ?? ticketingTicket?.ownerUserId ?? token.ownerUserId ?? fallbackUserId,
     seatInfo:
-      token.sourceListingId != null
+      ticketingTicket?.seatInfo ??
+      (token.sourceListingId != null
         ? `Marketplace resale · ${token.sourceListingId}`
-        : "Primary purchase",
-    reservationId: token.sourceListingId ?? `sync_${token.tokenId}`,
+        : "Primary purchase"),
+    reservationId: ticketingTicket?.reservationId ?? token.sourceListingId ?? `sync_${token.tokenId}`,
     ownerWalletAddress: normalizeWalletAddress(
       metadata?.ownerWalletAddress ?? token.ownerWalletAddress ?? ""
     ) || null,
     source: "contract-sync",
     transactionHash: metadata?.transactionHash ?? token.lastTransactionHash ?? undefined,
-    createdAt: metadata?.createdAt ?? token.updatedAt
-  };
-}
-
-function toCachedTicketRecord(ticket: PurchasedTicketMetadata): MergedTicketRecord {
-  return {
-    tokenId: ticket.tokenId,
-    eventId: ticket.eventId,
-    ticketTypeId: ticket.ticketTypeId,
-    ownerUserId: ticket.ownerUserId,
-    ownerWalletAddress: normalizeWalletAddress(ticket.ownerWalletAddress),
-    seatInfo: "Primary purchase",
-    reservationId: `sync_${ticket.tokenId}`,
-    source: "local-cache",
-    transactionHash: ticket.transactionHash,
-    createdAt: ticket.createdAt
-  };
-}
-
-function toTicketingRecord(ticket: TicketRecord): MergedTicketRecord {
-  const candidate = ticket as Partial<MergedTicketRecord>;
-  return {
-    ...ticket,
-    ownerWalletAddress: candidate.ownerWalletAddress ?? null,
-    source: candidate.source ?? "ticketing",
-    transactionHash: candidate.transactionHash
+    createdAt: metadata?.createdAt ?? ticketingTicket?.createdAt ?? token.updatedAt
   };
 }
 
@@ -157,34 +135,27 @@ export function mergeTicketRecords(input: {
   walletAddress: string;
 }): MergedTicketRecord[] {
   const metadataByTokenId = new Map(input.cachedTickets.map((ticket) => [ticket.tokenId, ticket]));
-  const knownTokenIds = new Set(input.ticketingTickets.map((ticket) => ticket.tokenId));
+  const ticketingByTokenId = new Map(input.ticketingTickets.map((ticket) => [ticket.tokenId, ticket]));
+  const knownTokenIds = new Set<string>();
   const normalizedWallet = normalizeWalletAddress(input.walletAddress);
-  const merged = input.ticketingTickets.map(toTicketingRecord);
+  const merged: MergedTicketRecord[] = [];
 
   for (const token of input.syncedTokens) {
-    if (token.isRefunded || knownTokenIds.has(token.tokenId)) {
-      continue;
-    }
-
-    const metadata = metadataByTokenId.get(token.tokenId);
-    const record = toSyncedTicketRecord(token, input.userId, metadata);
-    if (record) {
-      merged.push(record);
-      knownTokenIds.add(record.tokenId);
-    }
-  }
-
-  for (const ticket of input.cachedTickets) {
     if (
-      knownTokenIds.has(ticket.tokenId) ||
-      ticket.ownerUserId !== input.userId ||
-      normalizeWalletAddress(ticket.ownerWalletAddress) !== normalizedWallet
+      token.isRefunded ||
+      knownTokenIds.has(token.tokenId) ||
+      normalizeWalletAddress(token.ownerWalletAddress ?? "") !== normalizedWallet
     ) {
       continue;
     }
 
-    merged.push(toCachedTicketRecord(ticket));
-    knownTokenIds.add(ticket.tokenId);
+    const metadata = metadataByTokenId.get(token.tokenId);
+    const ticketingTicket = ticketingByTokenId.get(token.tokenId);
+    const record = toSyncedTicketRecord(token, input.userId, metadata, ticketingTicket);
+    if (record) {
+      merged.push(record);
+      knownTokenIds.add(record.tokenId);
+    }
   }
 
   return merged;

@@ -104,3 +104,48 @@ test("mergeTicketRecords uses local purchase metadata to map synced on-chain tok
     }
   ]);
 });
+
+test("mergeTicketRecords does not treat local cache as ticket ownership", () => {
+  const tickets = mergeTicketRecords({
+    ticketingTickets: [],
+    syncedTokens: [],
+    cachedTickets: [
+      {
+        tokenId: "stale",
+        eventId: "evt_rockfest_2026",
+        ticketTypeId: "tt_vip",
+        ownerUserId: "buyer_1",
+        ownerWalletAddress: "0xbuyer",
+        transactionHash: "0xabc",
+        source: "primary-purchase",
+        createdAt: "2026-04-29T00:00:00.000Z"
+      }
+    ],
+    userId: "buyer_1",
+    walletAddress: "0xBuyer"
+  });
+
+  assert.deepEqual(tickets, []);
+});
+
+test("mergeTicketRecords treats ticketing rows as metadata, not ownership", () => {
+  const tickets = mergeTicketRecords({
+    ticketingTickets: [
+      {
+        tokenId: "db_only",
+        eventId: "evt_rockfest_2026",
+        ticketTypeId: "tt_vip",
+        ownerUserId: "buyer_1",
+        seatInfo: "GA",
+        reservationId: "res_1",
+        createdAt: "2026-04-29T00:00:00.000Z"
+      }
+    ],
+    syncedTokens: [],
+    cachedTickets: [],
+    userId: "buyer_1",
+    walletAddress: "0xBuyer"
+  });
+
+  assert.deepEqual(tickets, []);
+});

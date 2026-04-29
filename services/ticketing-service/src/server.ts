@@ -13,6 +13,7 @@ import type { RedisClientType } from "redis";
 
 import type { TicketingConfig } from "./config.js";
 import { log } from "./logger.js";
+import { resolveQrTicket } from "./qr-ownership.js";
 
 interface ReserveBody {
   eventId?: string;
@@ -251,10 +252,6 @@ function mapTicket(row: TicketRow): TicketRecord {
     reservationId: row.reservation_id,
     createdAt: toIso(row.created_at)
   };
-}
-
-function normalizeWalletAddress(value: string): string {
-  return value.trim().toLowerCase();
 }
 
 async function getSyncedToken(
@@ -1148,45 +1145,29 @@ export async function createTicketingServer(config: TicketingConfig) {
           [qrMatch[1], userId]
         );
 
-        let qrTicket: {
-          tokenId: string;
-          eventId: string;
-          walletAddress: string;
-        } | null = null;
-
-        if (ticket) {
-          qrTicket = {
-            tokenId: ticket.token_id,
-            eventId: ticket.event_id,
-            walletAddress: `mock-wallet-${userId}`
-          };
-        } else {
-          const ownerWalletAddress = extractOwnerWalletAddress(req);
-          const syncedToken = await getSyncedToken(config, qrMatch[1]);
-          const syncedOwnerWallet = syncedToken?.ownerWalletAddress;
-
-          if (
-            !ownerWalletAddress ||
-            !syncedToken ||
-            syncedToken.isRefunded ||
-            !syncedToken.eventId ||
-            !syncedOwnerWallet ||
-            normalizeWalletAddress(syncedOwnerWallet) !== normalizeWalletAddress(ownerWalletAddress)
-          ) {
-            return sendJson(res, 404, {
-              success: false,
-              error: {
-                code: "TICKET_NOT_FOUND",
-                message: "Ticket not found"
+        const ownerWalletAddress = extractOwnerWalletAddress(req);
+        const syncedToken = await getSyncedToken(config, qrMatch[1]);
+        const qrTicket = resolveQrTicket({
+          tokenId: qrMatch[1],
+          ownerWalletAddress,
+          syncedToken,
+          ticketingTicket: ticket
+            ? {
+                tokenId: ticket.token_id,
+                eventId: ticket.event_id,
+                ownerUserId: ticket.owner_user_id
               }
-            });
-          }
+            : null
+        });
 
-          qrTicket = {
-            tokenId: syncedToken.tokenId,
-            eventId: syncedToken.eventId,
-            walletAddress: syncedOwnerWallet
-          };
+        if (!qrTicket) {
+          return sendJson(res, 404, {
+            success: false,
+            error: {
+              code: "TICKET_NOT_FOUND",
+              message: "Ticket not found"
+            }
+          });
         }
 
         const response = {
