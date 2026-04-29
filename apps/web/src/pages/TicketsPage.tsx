@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { RefreshCw } from "lucide-react";
 import MobileLayout from "@/components/mobile/MobileLayout";
 import TicketCard from "@/components/mobile/TicketCard";
 import { pastTicketsFallback, upcomingTicketsFallback } from "@/lib/fallback-data";
@@ -8,9 +9,9 @@ const tabs = ["Sắp tới", "Đã qua"];
 
 const TicketsPage = () => {
   const [activeTab, setActiveTab] = useState("Sắp tới");
-  const { data, isError } = useMyTickets();
-  const upcomingTickets = data?.upcoming ?? upcomingTicketsFallback;
-  const pastTickets = data?.past ?? pastTicketsFallback;
+  const { data, isError, isLoading, isFetching, refetch } = useMyTickets();
+  const upcomingTickets = data?.upcoming ?? (isError ? upcomingTicketsFallback : []);
+  const pastTickets = data?.past ?? (isError ? pastTicketsFallback : []);
   const isPartial = data?.status === "partial";
 
   const tickets = activeTab === "Sắp tới" ? upcomingTickets : pastTickets;
@@ -19,8 +20,17 @@ const TicketsPage = () => {
     <MobileLayout>
       {/* Header */}
       <header className="sticky safe-area-sticky-top z-40 bg-background/95 backdrop-blur-sm">
-        <div className="p-4 border-b border-foreground/10">
+        <div className="flex items-center justify-between gap-3 border-b border-foreground/10 p-4">
           <h1 className="text-2xl font-medium tracking-tight">Vé Của Tôi</h1>
+          <button
+            type="button"
+            onClick={() => void refetch()}
+            disabled={isFetching}
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center border border-foreground/20 transition-colors hover:bg-foreground/10 disabled:opacity-50"
+            aria-label="Lam moi danh sach ve"
+          >
+            <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
+          </button>
         </div>
 
         {/* Tabs */}
@@ -56,7 +66,14 @@ const TicketsPage = () => {
 
       {/* Tickets List */}
       <section className="p-4 space-y-4">
-        {tickets.length > 0 ? (
+        {isLoading ? (
+          Array.from({ length: 3 }).map((_, index) => (
+            <div
+              key={index}
+              className="h-36 animate-pulse border border-foreground/10 bg-foreground/5"
+            />
+          ))
+        ) : tickets.length > 0 ? (
           tickets.map((ticket) => <TicketCard key={ticket.id} {...ticket} />)
         ) : (
           <div className="py-16 text-center">
@@ -72,7 +89,7 @@ const TicketsPage = () => {
       </section>
 
       {/* Ticket Count */}
-      {tickets.length > 0 && (
+      {!isLoading && tickets.length > 0 && (
         <div className="p-4 border-t border-foreground/10">
           <span className="font-mono text-xs text-foreground/40">
             {tickets.length} VÉ {activeTab.toUpperCase()}
