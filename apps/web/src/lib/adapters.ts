@@ -186,10 +186,12 @@ export function toProfileSummaryView(
   tickets: TicketRecord[],
   events: EventDetail[]
 ): ProfileSummaryView {
-  const futureCount = tickets.filter((ticket) => {
-    const event = events.find((item) => item.id === ticket.eventId);
-    return event ? isFutureIso(event.startAt) : false;
-  }).length;
+  const eventIds = new Set(tickets.map((ticket) => ticket.eventId));
+  const futureEventIds = new Set(
+    events
+      .filter((event) => eventIds.has(event.id) && isFutureIso(event.startAt))
+      .map((event) => event.id)
+  );
 
   const spend = tickets.reduce((total, ticket) => {
     const event = events.find((item) => item.id === ticket.eventId);
@@ -201,8 +203,8 @@ export function toProfileSummaryView(
     displayName: profile.fullName || "Entr User",
     email: profile.email ?? profile.phoneNumber,
     avatarInitials: getInitials(profile.fullName || profile.phoneNumber),
-    attendedEvents: tickets.length,
-    upcomingEvents: futureCount,
+    attendedEvents: eventIds.size,
+    upcomingEvents: futureEventIds.size,
     spendSummary: spend > 0 ? formatVnd(spend) : "0₫"
   };
 }
