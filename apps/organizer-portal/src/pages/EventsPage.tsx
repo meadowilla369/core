@@ -1,4 +1,5 @@
 import { CalendarPlus } from "lucide-react";
+import { Link } from "react-router-dom";
 import { DataPanel } from "@/components/DataPanel";
 import { StatusBadge } from "@/components/StatusBadge";
 import { buildOverviewModel } from "@/domain/overview";
@@ -14,13 +15,13 @@ export function EventsPage() {
       title="Events"
       description="Create, edit, cancel, and monitor organizer-owned events."
       action={
-        <button
-          type="button"
+        <Link
+          to="/events/new"
           className="inline-flex min-h-10 items-center gap-2 rounded-md bg-blue-600 px-3 text-sm font-semibold text-white hover:bg-blue-700"
         >
           <CalendarPlus className="h-4 w-4" />
           Create event
-        </button>
+        </Link>
       }
     >
       <div className="overflow-x-auto">

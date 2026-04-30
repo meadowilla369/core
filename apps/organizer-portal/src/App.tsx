@@ -2,6 +2,8 @@ import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
 import { AppShell } from "@/components/AppShell";
 import { CheckinPage } from "@/pages/CheckinPage";
 import { DisputesPage } from "@/pages/DisputesPage";
+import { EventCreatePage } from "@/pages/EventCreatePage";
+import { EventReviewPage } from "@/pages/EventReviewPage";
 import { EventsPage } from "@/pages/EventsPage";
 import { InventoryPage } from "@/pages/InventoryPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
@@ -18,6 +20,10 @@ const pageMeta: Record<string, { title: string; description: string }> = {
   "/events": {
     title: "Events",
     description: "Create, edit, cancel, and monitor organizer-owned events."
+  },
+  "/events/new": {
+    title: "Create Event",
+    description: "Build a draft event with attendee-facing details and ticket tiers."
   },
   "/inventory": {
     title: "Ticket Inventory",
@@ -47,16 +53,23 @@ const pageMeta: Record<string, { title: string; description: string }> = {
 
 function RoutedApp() {
   const location = useLocation();
-  const meta = pageMeta[location.pathname] ?? {
-    title: "Organizer Portal",
-    description: "Manage event operations for your organizer account."
-  };
+  const meta = location.pathname.match(/^\/events\/[^/]+\/review$/)
+    ? {
+        title: "Review Event",
+        description: "Validate attendee-facing details before submitting or publishing."
+      }
+    : (pageMeta[location.pathname] ?? {
+        title: "Organizer Portal",
+        description: "Manage event operations for your organizer account."
+      });
 
   return (
     <AppShell title={meta.title} description={meta.description}>
       <Routes>
         <Route path="/" element={<OverviewPage />} />
         <Route path="/events" element={<EventsPage />} />
+        <Route path="/events/new" element={<EventCreatePage />} />
+        <Route path="/events/:eventId/review" element={<EventReviewPage />} />
         <Route path="/inventory" element={<InventoryPage />} />
         <Route path="/check-in" element={<CheckinPage />} />
         <Route path="/refunds" element={<RefundsPage />} />
