@@ -25,6 +25,10 @@ const pageMeta: Record<string, { title: string; description: string }> = {
     title: "Create Event",
     description: "Build a draft event with attendee-facing details and ticket tiers."
   },
+  "/events/edit": {
+    title: "Edit Event",
+    description: "Update a draft event before review."
+  },
   "/inventory": {
     title: "Ticket Inventory",
     description: "Track sold, locked, and available inventory by event."
@@ -58,10 +62,15 @@ function RoutedApp() {
         title: "Review Event",
         description: "Validate attendee-facing details before submitting or publishing."
       }
-    : (pageMeta[location.pathname] ?? {
-        title: "Organizer Portal",
-        description: "Manage event operations for your organizer account."
-      });
+    : location.pathname.match(/^\/events\/[^/]+\/edit$/)
+      ? {
+          title: "Edit Event",
+          description: "Update a draft event before review."
+        }
+      : (pageMeta[location.pathname] ?? {
+          title: "Organizer Portal",
+          description: "Manage event operations for your organizer account."
+        });
 
   return (
     <AppShell title={meta.title} description={meta.description}>
@@ -69,6 +78,7 @@ function RoutedApp() {
         <Route path="/" element={<OverviewPage />} />
         <Route path="/events" element={<EventsPage />} />
         <Route path="/events/new" element={<EventCreatePage />} />
+        <Route path="/events/:eventId/edit" element={<EventCreatePage />} />
         <Route path="/events/:eventId/review" element={<EventReviewPage />} />
         <Route path="/inventory" element={<InventoryPage />} />
         <Route path="/check-in" element={<CheckinPage />} />

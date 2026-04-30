@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { ArrowRight, ImagePlus, Plus, Save, Trash2 } from "lucide-react";
 import { EventDetailPreview } from "@/components/EventDetailPreview";
 import {
@@ -10,7 +10,7 @@ import {
   type EventCreateDraft
 } from "@/domain/event-create";
 import { fileToDataUrl } from "@/lib/media";
-import { defaultOrganizerApi } from "@/lib/organizer-api";
+import { defaultOrganizerApi, type OrganizerEventDetail } from "@/lib/organizer-api";
 
 const api = defaultOrganizerApi;
 const steps = ["Basic info", "Story & media", "Tickets", "Review gates"];
@@ -24,8 +24,33 @@ function toLocalDateTimeValue(value: string) {
   return value ? value.slice(0, 16) : "";
 }
 
+function eventToDraft(event: OrganizerEventDetail): EventCreateDraft {
+  return {
+    ...createEmptyEventDraft(),
+    title: event.title,
+    category: event.metadata?.category ?? "",
+    city: event.city,
+    venue: event.venue,
+    address: event.metadata?.address ?? "",
+    startAt: event.startAt,
+    endAt: event.endAt,
+    description: event.metadata?.description ?? "",
+    lineup: event.metadata?.lineup ?? [],
+    heroImageDataUrl: event.metadata?.heroImageDataUrl ?? "",
+    posterImageDataUrl: event.metadata?.posterImageDataUrl ?? "",
+    ticketTypes: event.ticketTypes.map((tier) => ({
+      id: tier.id,
+      name: tier.name,
+      price: tier.price,
+      quantity: tier.quantity,
+      perks: tier.perks
+    }))
+  };
+}
+
 export function EventCreatePage() {
   const navigate = useNavigate();
+  const { eventId } = useParams();
   const [stepIndex, setStepIndex] = useState(0);
   const [draft, setDraft] = useState<EventCreateDraft>(() => createEmptyEventDraft());
   const [isSaving, setIsSaving] = useState(false);
@@ -37,12 +62,37 @@ export function EventCreatePage() {
     setDraft((current) => ({ ...current, ...next }));
   }
 
+  useEffect(() => {
+    if (!eventId) return;
+    let isMounted = true;
+    setError(null);
+    void api
+      .getEvent(eventId)
+      .then((event) => {
+        if (isMounted) {
+          setDraft(eventToDraft(event));
+        }
+      })
+      .catch((nextError) => {
+        if (isMounted) {
+          setError(nextError instanceof Error ? nextError.message : "Unable to load draft event");
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [eventId]);
+
   async function saveDraft() {
     setIsSaving(true);
     setError(null);
     try {
-      const created = await api.createEvent(buildEventCreatePayload(draft));
-      navigate(`/events/${created.id}/review`);
+      const payload = buildEventCreatePayload(draft);
+      const saved = eventId
+        ? await api.updateEvent(eventId, payload)
+        : await api.createEvent(payload);
+      navigate(`/events/${saved.id}/review`);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to save draft event");
     } finally {
@@ -58,7 +108,9 @@ export function EventCreatePage() {
   return (
     <div className="grid gap-5 xl:grid-cols-[220px_1fr_360px]">
       <aside className="rounded-lg border border-[--op-border] bg-white p-4 shadow-sm">
-        <p className="text-xs font-semibold uppercase text-[--op-muted]">Create event</p>
+        <p className="text-xs font-semibold uppercase text-[--op-muted]">
+          {eventId ? "Edit event" : "Create event"}
+        </p>
         <nav className="mt-4 space-y-2">
           {steps.map((step, index) => (
             <button
