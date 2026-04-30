@@ -4,6 +4,7 @@ export interface ApiClientConfig {
   baseUrl: string;
   accessToken?: string;
   defaultHeaders?: Record<string, string>;
+  fetchImpl?: typeof fetch;
 }
 
 export interface ApiErrorPayload {
@@ -100,6 +101,17 @@ export interface UserProfileData {
   updatedAt: string;
 }
 
+export type EventStatus = "draft" | "in_review" | "active" | "cancelled";
+
+export interface EventMetadata {
+  category: string;
+  address: string;
+  description: string;
+  lineup: string[];
+  heroImageDataUrl: string;
+  posterImageDataUrl: string;
+}
+
 export interface EventSummary {
   id: string;
   organizerId?: string;
@@ -108,7 +120,8 @@ export interface EventSummary {
   venue: string;
   startAt: string;
   endAt: string;
-  status: "active" | "cancelled";
+  status: EventStatus;
+  metadata?: EventMetadata | null;
 }
 
 export interface TicketType {
@@ -117,10 +130,31 @@ export interface TicketType {
   price: number;
   quantity: number;
   soldCount: number;
+  perks?: string[];
 }
 
 export interface EventDetail extends EventSummary {
+  metadata?: EventMetadata | null;
   ticketTypes: TicketType[];
+}
+
+export interface EventWriteTicketType {
+  id?: string;
+  name: string;
+  price: number;
+  quantity: number;
+  perks: string[];
+}
+
+export interface EventWriteInput {
+  title: string;
+  city: string;
+  venue: string;
+  startAt: string;
+  endAt: string;
+  status?: EventStatus;
+  metadata: EventMetadata;
+  ticketTypes: EventWriteTicketType[];
 }
 
 export interface TicketReservationData {
@@ -407,6 +441,57 @@ export class ApiClient {
 
   async getEvent(eventId: string): Promise<ApiSuccessResponse<EventDetail>> {
     return this.request(`/v1/events/${eventId}`, { method: "GET" });
+  }
+
+  async createEvent(
+    input: EventWriteInput,
+    ctx: { organizerId: string }
+  ): Promise<ApiSuccessResponse<EventDetail>> {
+    return this.request("/v1/events", {
+      method: "POST",
+      body: input,
+      headers: {
+        "x-organizer-id": ctx.organizerId
+      }
+    });
+  }
+
+  async updateEvent(
+    eventId: string,
+    input: Partial<EventWriteInput>,
+    ctx: { organizerId: string }
+  ): Promise<ApiSuccessResponse<EventDetail>> {
+    return this.request(`/v1/events/${eventId}`, {
+      method: "PUT",
+      body: input,
+      headers: {
+        "x-organizer-id": ctx.organizerId
+      }
+    });
+  }
+
+  async submitEventForReview(
+    eventId: string,
+    ctx: { organizerId: string }
+  ): Promise<ApiSuccessResponse<EventDetail>> {
+    return this.request(`/v1/events/${eventId}/submit-review`, {
+      method: "POST",
+      headers: {
+        "x-organizer-id": ctx.organizerId
+      }
+    });
+  }
+
+  async devPublishEvent(
+    eventId: string,
+    ctx: { organizerId: string }
+  ): Promise<ApiSuccessResponse<EventDetail>> {
+    return this.request(`/v1/events/${eventId}/dev-publish`, {
+      method: "POST",
+      headers: {
+        "x-organizer-id": ctx.organizerId
+      }
+    });
   }
 
   async registerPaymentWallet(
@@ -697,7 +782,8 @@ export class ApiClient {
       headers["content-type"] = "application/json";
     }
 
-    const response = await fetch(target, {
+    const fetchImpl = this.config.fetchImpl ?? fetch;
+    const response = await fetchImpl(target, {
       method: options.method ?? "GET",
       headers,
       body: hasBody ? JSON.stringify(options.body) : undefined
@@ -717,3 +803,5 @@ export class ApiClient {
     return payload;
   }
 }
+
+export class TicketPlatformClient extends ApiClient {}
