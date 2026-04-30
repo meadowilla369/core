@@ -20,6 +20,7 @@
     "mobile:build": "vite build && cap sync",
     "preview": "vite preview",
     "test:onboarding": "node --test --experimental-strip-types src/features/onboarding/onboarding-machine.test.ts",
+    "test:event-adapters": "node --test --experimental-strip-types src/lib/event-adapters.test.ts",
     "test:ui-home-discover": "node --test --experimental-strip-types src/features/discover/event-posters.test.ts",
     "test:safe-area": "node --test src/components/mobile/mobile-safe-area.test.mjs",
     "typecheck": "tsc -p tsconfig.app.json --noEmit"
