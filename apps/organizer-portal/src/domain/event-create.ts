@@ -82,6 +82,15 @@ export function createEmptyEventDraft(): EventCreateDraft {
   };
 }
 
+function normalizePerks(perks: unknown): string[] {
+  return Array.isArray(perks)
+    ? perks
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : [];
+}
+
 export function validateEventDraft(draft: EventCreateDraft): EventCreateValidation {
   const missingFields: string[] = [];
   const warnings: string[] = [];
@@ -102,10 +111,11 @@ export function validateEventDraft(draft: EventCreateDraft): EventCreateValidati
   if (draft.ticketTypes.length === 0) missingFields.push("ticketTypes");
 
   draft.ticketTypes.forEach((tier, index) => {
+    const perks = normalizePerks(tier.perks);
     if (!tier.name.trim()) missingFields.push(`ticketTypes.${index}.name`);
     if (tier.price < 0) missingFields.push(`ticketTypes.${index}.price`);
     if (tier.quantity <= 0) missingFields.push(`ticketTypes.${index}.quantity`);
-    if (tier.perks.length === 0) warnings.push(`ticketTypes.${index}.perks`);
+    if (perks.length === 0) warnings.push(`ticketTypes.${index}.perks`);
   });
 
   return {
@@ -136,7 +146,7 @@ export function buildEventCreatePayload(draft: EventCreateDraft): EventCreatePay
       name: tier.name.trim(),
       price: tier.price,
       quantity: tier.quantity,
-      perks: tier.perks.map((item) => item.trim()).filter(Boolean)
+      perks: normalizePerks(tier.perks)
     }))
   };
 }
@@ -167,7 +177,7 @@ export function buildEventPreview(draft: EventCreateDraft): EventPreviewModel {
     tiers: draft.ticketTypes.map((tier) => ({
       name: tier.name || "Unnamed tier",
       price: formatVnd(tier.price),
-      perks: tier.perks
+      perks: normalizePerks(tier.perks)
     }))
   };
 }

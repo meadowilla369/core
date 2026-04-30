@@ -43,7 +43,7 @@ function eventToDraft(event: OrganizerEventDetail): EventCreateDraft {
       name: tier.name,
       price: tier.price,
       quantity: tier.quantity,
-      perks: tier.perks
+      perks: Array.isArray(tier.perks) ? tier.perks : []
     }))
   };
 }
