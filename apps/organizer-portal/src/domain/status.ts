@@ -16,7 +16,6 @@ export type EventLifecycleStatus =
   | "upcoming"
   | "active"
   | "live"
-  | "completed"
   | "cancelled"
   | "postponed"
   | "ended"
@@ -25,6 +24,7 @@ export type EventLifecycleStatus =
 export type OperationalStatus =
   | EventLifecycleStatus
   | "valid"
+  | "completed"
   | "resolved"
   | "paid"
   | "duplicate"
@@ -53,54 +53,54 @@ export const statusTones = {
     name: "info",
     label: "Info",
     accent: "#2563EB",
-    soft: "bg-blue-100",
-    border: "border border-blue-200",
-    text: "text-blue-700",
+    soft: "#DBEAFE",
+    border: "#BFDBFE",
+    text: "#1D4ED8",
     badgeClass: "border border-blue-200 bg-blue-100 text-blue-700"
   },
   success: {
     name: "success",
     label: "Success",
     accent: "#16A34A",
-    soft: "bg-green-100",
-    border: "border border-green-200",
-    text: "text-green-700",
+    soft: "#DCFCE7",
+    border: "#BBF7D0",
+    text: "#166534",
     badgeClass: "border border-green-200 bg-green-100 text-green-700"
   },
   attention: {
     name: "attention",
     label: "Attention",
     accent: "#D97706",
-    soft: "bg-amber-100",
-    border: "border border-amber-200",
-    text: "text-amber-800",
+    soft: "#FEF3C7",
+    border: "#FDE68A",
+    text: "#92400E",
     badgeClass: "border border-amber-200 bg-amber-100 text-amber-800"
   },
   critical: {
     name: "critical",
     label: "Critical",
     accent: "#DC2626",
-    soft: "bg-red-100",
-    border: "border border-red-200",
-    text: "text-red-700",
+    soft: "#FEE2E2",
+    border: "#FECACA",
+    text: "#B91C1C",
     badgeClass: "border border-red-200 bg-red-100 text-red-700"
   },
   neutral: {
     name: "neutral",
     label: "Neutral",
     accent: "#64748B",
-    soft: "bg-slate-100",
-    border: "border border-slate-300",
-    text: "text-slate-600",
+    soft: "#F1F5F9",
+    border: "#CBD5E1",
+    text: "#475569",
     badgeClass: "border border-slate-300 bg-slate-100 text-slate-600"
   },
   review: {
     name: "review",
     label: "Review",
     accent: "#9333EA",
-    soft: "bg-purple-100",
-    border: "border border-purple-200",
-    text: "text-purple-700",
+    soft: "#F3E8FF",
+    border: "#E9D5FF",
+    text: "#7E22CE",
     badgeClass: "border border-purple-200 bg-purple-100 text-purple-700"
   }
 } satisfies Record<StatusToneName, StatusTone>;
