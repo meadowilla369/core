@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { CheckCircle2, Rocket, Send } from "lucide-react";
+import { CheckCircle2, Pencil, Rocket, Send } from "lucide-react";
 import { DataPanel } from "@/components/DataPanel";
 import { EventDetailPreview } from "@/components/EventDetailPreview";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -111,6 +111,15 @@ export function EventReviewPage() {
                   {field} is required before review.
                 </div>
               ))}
+              {validation.missingFields.length > 0 && event.status === "draft" ? (
+                <Link
+                  to={`/events/${event.id}/edit`}
+                  className="inline-flex min-h-10 w-fit items-center gap-2 rounded-md bg-amber-600 px-3 text-sm font-semibold text-white hover:bg-amber-700"
+                >
+                  <Pencil className="h-4 w-4" />
+                  Edit missing details
+                </Link>
+              ) : null}
             </div>
             <div className="mt-5 flex flex-wrap gap-3">
               <button
@@ -134,9 +143,10 @@ export function EventReviewPage() {
               {event.status === "draft" ? (
                 <Link
                   to={`/events/${event.id}/edit`}
-                  className="inline-flex min-h-10 items-center rounded-md border border-[--op-border] px-3 text-sm font-semibold"
+                  className="inline-flex min-h-10 items-center gap-2 rounded-md border border-[--op-border] px-3 text-sm font-semibold"
                 >
-                  Back to edit
+                  <Pencil className="h-4 w-4" />
+                  Edit details
                 </Link>
               ) : null}
               <button
