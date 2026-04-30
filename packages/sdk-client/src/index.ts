@@ -130,11 +130,11 @@ export interface TicketType {
   price: number;
   quantity: number;
   soldCount: number;
-  perks?: string[];
+  perks: string[];
 }
 
 export interface EventDetail extends EventSummary {
-  metadata?: EventMetadata | null;
+  metadata: EventMetadata | null;
   ticketTypes: TicketType[];
 }
 
@@ -152,7 +152,6 @@ export interface EventWriteInput {
   venue: string;
   startAt: string;
   endAt: string;
-  status?: EventStatus;
   metadata: EventMetadata;
   ticketTypes: EventWriteTicketType[];
 }
