@@ -29,6 +29,13 @@ const EventDetailPage = () => {
 
       {/* Hero */}
       <div className="relative aspect-[4/3] bg-muted border-b border-foreground/20">
+        {eventData.heroImageDataUrl ? (
+          <img
+            src={eventData.heroImageDataUrl}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        ) : null}
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent" />
 
         {/* Top Nav */}
