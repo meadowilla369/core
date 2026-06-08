@@ -64,6 +64,7 @@ read_env_file() {
   [[ -n "$override_public_host_is_set" ]] && LOCALCHAIN_PUBLIC_HOST="$override_public_host"
   [[ -n "$override_vite_api_base_url_is_set" ]] && VITE_API_BASE_URL="$override_vite_api_base_url"
   [[ -n "$override_vite_rpc_url_is_set" ]] && VITE_RPC_URL="$override_vite_rpc_url"
+  return 0
 }
 
 anvil_host() {
@@ -101,11 +102,11 @@ public_host() {
 }
 
 frontend_api_base_url() {
-  printf '%s' "${VITE_API_BASE_URL:-http://$(public_host):3000}"
+  printf 'http://%s:3000' "$(public_host)"
 }
 
 frontend_rpc_url() {
-  printf '%s' "${VITE_RPC_URL:-http://$(public_host):$(anvil_port)}"
+  printf 'http://%s:%s' "$(public_host)" "$(anvil_port)"
 }
 
 is_running() {

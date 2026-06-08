@@ -59,6 +59,7 @@ export function toEventCardView(
   return {
     id: event.id,
     name: event.title,
+    image: detail?.heroImageUrl ?? detail?.metadata?.heroImageDataUrl ?? event.heroImageUrl,
     date: formatShortEventDate(event.startAt),
     location: event.city,
     category: categoryForEvent(event.id, event.title),
@@ -82,9 +83,12 @@ export function toEventDetailView(event: EventDetail): EventDetailView {
     address: `${event.venue}, ${event.city}`,
     price: { min, max },
     description:
-      `${event.title} là sự kiện đang mở bán trên core. Thông tin mô tả chi tiết chưa được event-service cung cấp nên giao diện đang hiển thị bản tóm tắt từ dữ liệu runtime.`,
-    lineup: [],
-    attendees: sold
+      event.metadata?.description?.trim()
+      || `${event.title} là sự kiện đang mở bán trên core. Thông tin mô tả chi tiết chưa được event-service cung cấp nên giao diện đang hiển thị bản tóm tắt từ dữ liệu runtime.`,
+    lineup: event.metadata?.lineup ?? [],
+    attendees: sold,
+    image: event.metadata?.heroImageDataUrl,
+    posterImage: event.metadata?.posterImageDataUrl
   };
 }
 

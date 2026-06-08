@@ -109,6 +109,7 @@ export interface EventSummary {
   startAt: string;
   endAt: string;
   status: "active" | "cancelled";
+  heroImageUrl?: string;
 }
 
 export interface TicketType {
@@ -119,8 +120,18 @@ export interface TicketType {
   soldCount: number;
 }
 
+export interface EventMetadata {
+  category?: string;
+  address?: string;
+  description?: string;
+  lineup?: string[];
+  heroImageDataUrl?: string;
+  posterImageDataUrl?: string;
+}
+
 export interface EventDetail extends EventSummary {
   ticketTypes: TicketType[];
+  metadata?: EventMetadata;
 }
 
 export interface TicketReservationData {

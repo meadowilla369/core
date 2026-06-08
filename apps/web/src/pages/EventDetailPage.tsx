@@ -28,8 +28,13 @@ const EventDetailPage = () => {
       )}
 
       {/* Hero */}
-      <div className="relative aspect-[4/3] bg-muted border-b border-foreground/20">
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent" />
+      <div
+        className={`relative bg-muted border-b border-foreground/20 ${!eventData.image ? "min-h-[50vw]" : ""}`}
+      >
+        {eventData.image ? <img src={eventData.image} alt="" className="w-full block" /> : null}
+        <div
+          className={`absolute inset-0 ${eventData.image ? "bg-gradient-to-t from-background via-background/20 to-transparent" : "bg-gradient-to-t from-background via-background/40 to-transparent"}`}
+        />
 
         {/* Top Nav */}
         <div className="absolute top-0 left-0 right-0 p-4 flex items-center justify-between z-10">

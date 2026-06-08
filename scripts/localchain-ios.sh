@@ -74,8 +74,8 @@ configure_device_env() {
     export VITE_API_BASE_URL="https://$public_host:$vite_port"
     export VITE_RPC_URL="https://$public_host:$vite_port/rpc"
   else
-    export VITE_API_BASE_URL="${VITE_API_BASE_URL:-http://$public_host:3000}"
-    export VITE_RPC_URL="${VITE_RPC_URL:-http://$public_host:${ANVIL_PORT:-8545}}"
+    export VITE_API_BASE_URL="http://$public_host:3000"
+    export VITE_RPC_URL="http://$public_host:${ANVIL_PORT:-8545}"
   fi
   export CAPACITOR_SERVER_URL="${CAPACITOR_SERVER_URL:-$web_scheme://$public_host:$vite_port}"
 }

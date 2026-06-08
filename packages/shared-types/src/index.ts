@@ -143,6 +143,8 @@ export interface EventDetailView {
   description: string;
   lineup: string[];
   attendees: number;
+  image?: string;
+  posterImage?: string;
 }
 
 export interface TicketTierView {

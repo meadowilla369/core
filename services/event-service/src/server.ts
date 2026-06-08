@@ -18,6 +18,18 @@ interface TicketType {
   price: number;
   quantity: number;
   soldCount: number;
+  perks: string[];
+}
+
+type EventStatus = "draft" | "in_review" | "active" | "cancelled";
+
+interface EventMetadata {
+  category: string;
+  address: string;
+  description: string;
+  lineup: string[];
+  heroImageDataUrl: string;
+  posterImageDataUrl: string;
 }
 
 interface EventRecord {
@@ -28,7 +40,8 @@ interface EventRecord {
   venue: string;
   startAt: string;
   endAt: string;
-  status: "active" | "cancelled";
+  status: EventStatus;
+  metadata: EventMetadata | null;
   ticketTypes: TicketType[];
 }
 
@@ -37,6 +50,16 @@ interface EventWriteTicketType {
   name?: string;
   price?: number;
   quantity?: number;
+  perks?: string[];
+}
+
+interface EventWriteMetadata {
+  category?: string;
+  address?: string;
+  description?: string;
+  lineup?: string[];
+  heroImageDataUrl?: string;
+  posterImageDataUrl?: string;
 }
 
 interface CreateEventBody {
@@ -45,6 +68,8 @@ interface CreateEventBody {
   venue?: string;
   startAt?: string;
   endAt?: string;
+  status?: EventStatus;
+  metadata?: EventWriteMetadata;
   ticketTypes?: EventWriteTicketType[];
 }
 
@@ -54,7 +79,9 @@ interface UpdateEventBody {
   venue?: string;
   startAt?: string;
   endAt?: string;
-  status?: "active" | "cancelled";
+  status?: EventStatus;
+  metadata?: EventWriteMetadata;
+  ticketTypes?: EventWriteTicketType[];
 }
 
 interface EventRow {
@@ -65,7 +92,8 @@ interface EventRow {
   venue: string;
   start_at: string | Date;
   end_at: string | Date;
-  status: "active" | "cancelled";
+  status: EventStatus;
+  metadata: Record<string, unknown> | null;
 }
 
 interface TicketTypeRow {
@@ -75,6 +103,7 @@ interface TicketTypeRow {
   price: number | string;
   quantity: number | string;
   sold_count: number | string;
+  perks: string[] | string | null;
 }
 
 class InvalidJsonError extends Error {
@@ -94,15 +123,31 @@ const seedEvents: EventRecord[] = [
     startAt: "2026-05-10T19:00:00.000Z",
     endAt: "2026-05-10T23:00:00.000Z",
     status: "active",
+    metadata: {
+      category: "Hoa nhac",
+      address: "Riverside Arena, Ho Chi Minh",
+      description: "Rock Fest 2026 brings high-energy live music to Riverside Arena.",
+      lineup: ["Neural Beats", "Quantum Strings"],
+      heroImageDataUrl: "",
+      posterImageDataUrl: ""
+    },
     ticketTypes: [
       {
         id: "tt_rockfest_ga",
         name: "General Admission",
         price: 900000,
         quantity: 5000,
-        soldCount: 1250
+        soldCount: 1250,
+        perks: ["Vao cong", "Khu vuc dung"]
       },
-      { id: "tt_rockfest_vip", name: "VIP", price: 2200000, quantity: 300, soldCount: 120 }
+      {
+        id: "tt_rockfest_vip",
+        name: "VIP",
+        price: 2200000,
+        quantity: 300,
+        soldCount: 120,
+        perks: ["Loi vao rieng", "Khu vuc VIP"]
+      }
     ]
   },
   {
@@ -114,9 +159,31 @@ const seedEvents: EventRecord[] = [
     startAt: "2026-06-01T12:30:00.000Z",
     endAt: "2026-06-01T16:00:00.000Z",
     status: "active",
+    metadata: {
+      category: "Hoa nhac",
+      address: "Opera Hall, Ha Noi",
+      description: "Jazz Night 2026 pairs intimate performances with premium seating.",
+      lineup: ["Blue Note Collective", "Midnight Trio"],
+      heroImageDataUrl: "",
+      posterImageDataUrl: ""
+    },
     ticketTypes: [
-      { id: "tt_jazz_std", name: "Standard", price: 650000, quantity: 800, soldCount: 180 },
-      { id: "tt_jazz_vvip", name: "VVIP", price: 1800000, quantity: 100, soldCount: 40 }
+      {
+        id: "tt_jazz_std",
+        name: "Standard",
+        price: 650000,
+        quantity: 800,
+        soldCount: 180,
+        perks: ["Ghe tieu chuan", "Vao cong"]
+      },
+      {
+        id: "tt_jazz_vvip",
+        name: "VVIP",
+        price: 1800000,
+        quantity: 100,
+        soldCount: 40,
+        perks: ["Ghe gan san khau", "Nuoc uong chao mung"]
+      }
     ]
   }
 ];
@@ -160,7 +227,43 @@ function toIso(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
+function toStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return toStringArray(parsed);
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function normalizeMetadata(input?: EventWriteMetadata): EventMetadata | null {
+  if (!input) {
+    return null;
+  }
+
+  return {
+    category: input.category?.trim() ?? "",
+    address: input.address?.trim() ?? "",
+    description: input.description?.trim() ?? "",
+    lineup: toStringArray(input.lineup),
+    heroImageDataUrl: input.heroImageDataUrl?.trim() ?? "",
+    posterImageDataUrl: input.posterImageDataUrl?.trim() ?? ""
+  };
+}
+
 function mapEventRow(row: EventRow, ticketTypes: TicketTypeRow[]): EventRecord {
+  const metadata = row.metadata as EventMetadata | null;
   return {
     id: row.id,
     organizerId: row.organizer_id,
@@ -170,6 +273,7 @@ function mapEventRow(row: EventRow, ticketTypes: TicketTypeRow[]): EventRecord {
     startAt: toIso(row.start_at),
     endAt: toIso(row.end_at),
     status: row.status,
+    metadata,
     ticketTypes: ticketTypes
       .filter((item) => item.event_id === row.id)
       .map((item) => ({
@@ -177,7 +281,8 @@ function mapEventRow(row: EventRow, ticketTypes: TicketTypeRow[]): EventRecord {
         name: item.name,
         price: Number(item.price),
         quantity: Number(item.quantity),
-        soldCount: Number(item.sold_count)
+        soldCount: Number(item.sold_count),
+        perks: toStringArray(item.perks)
       }))
   };
 }
@@ -191,6 +296,104 @@ function computeAvailability(event: EventRecord) {
   }));
 }
 
+function validatePublishReady(event: EventRecord): string[] {
+  const missing: string[] = [];
+  const metadata = event.metadata;
+
+  if (!event.title.trim()) missing.push("title");
+  if (!event.city.trim()) missing.push("city");
+  if (!event.venue.trim()) missing.push("venue");
+  if (!event.startAt.trim()) missing.push("startAt");
+  if (!event.endAt.trim()) missing.push("endAt");
+  if (!metadata?.category.trim()) missing.push("metadata.category");
+  if (!metadata?.address.trim()) missing.push("metadata.address");
+  if (!metadata?.description.trim()) missing.push("metadata.description");
+  if (!metadata?.heroImageDataUrl.trim()) missing.push("metadata.heroImageDataUrl");
+  if (!metadata?.posterImageDataUrl.trim()) missing.push("metadata.posterImageDataUrl");
+  if (event.ticketTypes.length === 0) missing.push("ticketTypes");
+
+  for (const [index, ticketType] of event.ticketTypes.entries()) {
+    if (!ticketType.name.trim()) missing.push(`ticketTypes.${index}.name`);
+    if (ticketType.price < 0) missing.push(`ticketTypes.${index}.price`);
+    if (ticketType.quantity <= 0) missing.push(`ticketTypes.${index}.quantity`);
+  }
+
+  return missing;
+}
+
+async function transitionOrganizerEvent(
+  pool: Pool,
+  req: IncomingMessage,
+  res: ServerResponse,
+  eventId: string,
+  nextStatus: "in_review" | "active"
+) {
+  const organizerId = extractOrganizerId(req);
+  if (!organizerId) {
+    return sendJson(res, 401, {
+      success: false,
+      error: { code: "UNAUTHORIZED_ORGANIZER", message: "Missing x-organizer-id header" }
+    });
+  }
+
+  const event = await loadEvent(pool, eventId);
+  if (!event) {
+    return sendJson(res, 404, {
+      success: false,
+      error: { code: "EVENT_NOT_FOUND", message: "Event not found" }
+    });
+  }
+
+  if (event.organizerId !== organizerId) {
+    return sendJson(res, 403, {
+      success: false,
+      error: { code: "FORBIDDEN", message: "Only organizer can update event" }
+    });
+  }
+
+  if (nextStatus === "in_review" && event.status !== "draft") {
+    return sendJson(res, 409, {
+      success: false,
+      error: {
+        code: "INVALID_STATUS_TRANSITION",
+        message: "Only draft events can be submitted for review"
+      }
+    });
+  }
+
+  if (nextStatus === "active" && event.status !== "draft" && event.status !== "in_review") {
+    return sendJson(res, 409, {
+      success: false,
+      error: {
+        code: "INVALID_STATUS_TRANSITION",
+        message: "Only draft or in-review events can be dev published"
+      }
+    });
+  }
+
+  const missing = validatePublishReady(event);
+  if (missing.length > 0) {
+    return sendJson(res, 400, {
+      success: false,
+      error: {
+        code: "EVENT_NOT_READY",
+        message: "Event is missing publish-readiness fields",
+        fields: missing
+      }
+    });
+  }
+
+  await pool.query(`UPDATE events SET status = $2, updated_at = NOW() WHERE id = $1`, [
+    eventId,
+    nextStatus
+  ]);
+
+  return sendJson(res, 200, {
+    success: true,
+    data: await loadEvent(pool, eventId)
+  });
+}
+
 function sanitizeSummary(event: EventRecord) {
   return {
     id: event.id,
@@ -200,7 +403,9 @@ function sanitizeSummary(event: EventRecord) {
     venue: event.venue,
     startAt: event.startAt,
     endAt: event.endAt,
-    status: event.status
+    status: event.status,
+    metadata: event.metadata,
+    heroImageUrl: event.metadata?.heroImageDataUrl
   };
 }
 
@@ -214,10 +419,27 @@ async function ensureSchema(pool: Pool): Promise<void> {
       venue TEXT NOT NULL,
       start_at TIMESTAMPTZ NOT NULL,
       end_at TIMESTAMPTZ NOT NULL,
-      status TEXT NOT NULL CHECK (status IN ('active', 'cancelled')),
+      status TEXT NOT NULL CHECK (status IN ('draft', 'in_review', 'active', 'cancelled')),
+      metadata JSONB,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `);
+
+  await pool.query(`
+    ALTER TABLE events DROP CONSTRAINT IF EXISTS events_status_check
+  `);
+
+  await pool.query(`
+    ALTER TABLE events ADD CONSTRAINT events_status_check CHECK (status IN ('draft', 'in_review', 'active', 'cancelled'))
+  `);
+
+  await pool.query(`
+    ALTER TABLE events ADD COLUMN IF NOT EXISTS metadata JSONB
+  `);
+
+  await pool.query(`
+    ALTER TABLE event_ticket_types ADD COLUMN IF NOT EXISTS perks JSONB NOT NULL DEFAULT '[]'::jsonb
   `);
 
   await pool.query(`
@@ -245,8 +467,8 @@ async function ensureSchema(pool: Pool): Promise<void> {
     await withPostgresTransaction(pool, async (client) => {
       await client.query(
         `
-          INSERT INTO events (id, organizer_id, title, city, venue, start_at, end_at, status)
-          VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7::timestamptz, $8)
+          INSERT INTO events (id, organizer_id, title, city, venue, start_at, end_at, status, metadata)
+          VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7::timestamptz, $8, $9::jsonb)
         `,
         [
           event.id,
@@ -256,15 +478,16 @@ async function ensureSchema(pool: Pool): Promise<void> {
           event.venue,
           event.startAt,
           event.endAt,
-          event.status
+          event.status,
+          event.metadata ? JSON.stringify(event.metadata) : null
         ]
       );
 
       for (const ticketType of event.ticketTypes) {
         await client.query(
           `
-            INSERT INTO event_ticket_types (id, event_id, name, price, quantity, sold_count)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO event_ticket_types (id, event_id, name, price, quantity, sold_count, perks)
+            VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
           `,
           [
             ticketType.id,
@@ -272,7 +495,8 @@ async function ensureSchema(pool: Pool): Promise<void> {
             ticketType.name,
             ticketType.price,
             ticketType.quantity,
-            ticketType.soldCount
+            ticketType.soldCount,
+            JSON.stringify(ticketType.perks)
           ]
         );
       }
@@ -305,13 +529,13 @@ async function listEvents(
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
   const eventRows = await queryMany<EventRow>(
     pool,
-    `SELECT id, organizer_id, title, city, venue, start_at, end_at, status FROM events ${whereClause} ORDER BY start_at ASC`,
+    `SELECT id, organizer_id, title, city, venue, start_at, end_at, status, metadata FROM events ${whereClause} ORDER BY start_at ASC`,
     values
   );
 
   const ticketTypeRows = await queryMany<TicketTypeRow>(
     pool,
-    `SELECT id, event_id, name, price, quantity, sold_count FROM event_ticket_types WHERE event_id = ANY($1::text[]) ORDER BY id ASC`,
+    `SELECT id, event_id, name, price, quantity, sold_count, perks FROM event_ticket_types WHERE event_id = ANY($1::text[]) ORDER BY id ASC`,
     [eventRows.map((item) => item.id)]
   );
 
@@ -321,7 +545,7 @@ async function listEvents(
 async function loadEvent(pool: Pool, eventId: string): Promise<EventRecord | null> {
   const eventRow = await queryOne<EventRow>(
     pool,
-    `SELECT id, organizer_id, title, city, venue, start_at, end_at, status FROM events WHERE id = $1`,
+    `SELECT id, organizer_id, title, city, venue, start_at, end_at, status, metadata FROM events WHERE id = $1`,
     [eventId]
   );
 
@@ -331,7 +555,7 @@ async function loadEvent(pool: Pool, eventId: string): Promise<EventRecord | nul
 
   const ticketTypeRows = await queryMany<TicketTypeRow>(
     pool,
-    `SELECT id, event_id, name, price, quantity, sold_count FROM event_ticket_types WHERE event_id = $1 ORDER BY id ASC`,
+    `SELECT id, event_id, name, price, quantity, sold_count, perks FROM event_ticket_types WHERE event_id = $1 ORDER BY id ASC`,
     [eventId]
   );
 
@@ -401,13 +625,21 @@ export async function createEventServer(config: EventServiceConfig) {
           });
         }
 
+        const status: EventStatus =
+          body.status === "active" || body.status === "in_review" || body.status === "cancelled"
+            ? body.status
+            : "draft";
+
+        const metadata = normalizeMetadata(body.metadata);
+
         const ticketTypes =
           body.ticketTypes?.map((item, index) => ({
             id: item.id?.trim() || `tt_${randomUUID().replace(/-/g, "").slice(0, 10)}`,
             name: item.name?.trim() || `Ticket ${index + 1}`,
             price: typeof item.price === "number" ? item.price : 0,
             quantity: typeof item.quantity === "number" ? item.quantity : 0,
-            soldCount: 0
+            soldCount: 0,
+            perks: toStringArray(item.perks)
           })) ?? [];
 
         const eventId = `evt_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
@@ -415,19 +647,37 @@ export async function createEventServer(config: EventServiceConfig) {
         await withPostgresTransaction(pool, async (client) => {
           await client.query(
             `
-              INSERT INTO events (id, organizer_id, title, city, venue, start_at, end_at, status)
-              VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7::timestamptz, $8)
+              INSERT INTO events (id, organizer_id, title, city, venue, start_at, end_at, status, metadata)
+              VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7::timestamptz, $8, $9::jsonb)
             `,
-            [eventId, organizerId, title, city, venue, startAt, endAt, "active"]
+            [
+              eventId,
+              organizerId,
+              title,
+              city,
+              venue,
+              startAt,
+              endAt,
+              status,
+              metadata ? JSON.stringify(metadata) : null
+            ]
           );
 
           for (const ticketType of ticketTypes) {
             await client.query(
               `
-                INSERT INTO event_ticket_types (id, event_id, name, price, quantity, sold_count)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                INSERT INTO event_ticket_types (id, event_id, name, price, quantity, sold_count, perks)
+                VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
               `,
-              [ticketType.id, eventId, ticketType.name, ticketType.price, ticketType.quantity, 0]
+              [
+                ticketType.id,
+                eventId,
+                ticketType.name,
+                ticketType.price,
+                ticketType.quantity,
+                0,
+                JSON.stringify(ticketType.perks)
+              ]
             );
           }
         });
@@ -436,6 +686,57 @@ export async function createEventServer(config: EventServiceConfig) {
         return sendJson(res, 200, {
           success: true,
           data: next
+        });
+      }
+
+      if (method === "GET" && url.pathname === "/events/snapshot") {
+        const organizerId = extractOrganizerId(req);
+        if (!organizerId) {
+          return sendJson(res, 401, {
+            success: false,
+            error: {
+              code: "UNAUTHORIZED_ORGANIZER",
+              message: "Missing x-organizer-id header"
+            }
+          });
+        }
+
+        const events = await listEvents(pool, { organizerId });
+        const snapshot = {
+          organizerId,
+          generatedAt: new Date().toISOString(),
+          events: events.map((event) => ({
+            id: event.id,
+            title: event.title,
+            city: event.city,
+            venue: event.venue,
+            startAt: event.startAt,
+            endAt: event.endAt,
+            status: event.status,
+            grossSalesVnd: event.ticketTypes.reduce((sum, t) => sum + t.price * t.soldCount, 0),
+            ticketsSold: event.ticketTypes.reduce((sum, t) => sum + t.soldCount, 0),
+            ticketsLocked: 0,
+            ticketCapacity: event.ticketTypes.reduce((sum, t) => sum + t.quantity, 0),
+            checkinRate: 0
+          })),
+          gates: [] as {
+            gateId: string;
+            checkedInCount: number;
+            duplicateCount: number;
+            invalidCount: number;
+          }[],
+          queues: [] as {
+            id: string;
+            label: string;
+            count: number;
+            description: string;
+            status: string;
+          }[]
+        };
+
+        return sendJson(res, 200, {
+          success: true,
+          data: snapshot
         });
       }
 
@@ -474,30 +775,65 @@ export async function createEventServer(config: EventServiceConfig) {
           });
         }
 
-        const body = await readJson<UpdateEventBody>(req);
+        if (existing.status !== "draft" && existing.status !== "in_review") {
+          return sendJson(res, 409, {
+            success: false,
+            error: {
+              code: "EVENT_NOT_EDITABLE",
+              message: "Only draft or in-review events can be edited"
+            }
+          });
+        }
 
-        await pool.query(
-          `
-            UPDATE events
-            SET title = COALESCE($2, title),
-                city = COALESCE($3, city),
-                venue = COALESCE($4, venue),
-                start_at = COALESCE($5::timestamptz, start_at),
-                end_at = COALESCE($6::timestamptz, end_at),
-                status = COALESCE($7, status),
-                updated_at = NOW()
-            WHERE id = $1
-          `,
-          [
-            eventId,
-            typeof body.title === "string" ? body.title.trim() : null,
-            typeof body.city === "string" ? body.city.trim() : null,
-            typeof body.venue === "string" ? body.venue.trim() : null,
-            typeof body.startAt === "string" ? body.startAt.trim() : null,
-            typeof body.endAt === "string" ? body.endAt.trim() : null,
-            body.status === "active" || body.status === "cancelled" ? body.status : null
-          ]
-        );
+        const body = await readJson<UpdateEventBody>(req);
+        const metadata = normalizeMetadata(body.metadata);
+
+        await withPostgresTransaction(pool, async (client) => {
+          await client.query(
+            `
+              UPDATE events
+              SET title = COALESCE($2, title),
+                  city = COALESCE($3, city),
+                  venue = COALESCE($4, venue),
+                  start_at = COALESCE($5::timestamptz, start_at),
+                  end_at = COALESCE($6::timestamptz, end_at),
+                  metadata = COALESCE($7::jsonb, metadata),
+                  updated_at = NOW()
+              WHERE id = $1
+            `,
+            [
+              eventId,
+              typeof body.title === "string" ? body.title.trim() : null,
+              typeof body.city === "string" ? body.city.trim() : null,
+              typeof body.venue === "string" ? body.venue.trim() : null,
+              typeof body.startAt === "string" ? body.startAt.trim() : null,
+              typeof body.endAt === "string" ? body.endAt.trim() : null,
+              metadata ? JSON.stringify(metadata) : null
+            ]
+          );
+
+          if (body.ticketTypes) {
+            await client.query(`DELETE FROM event_ticket_types WHERE event_id = $1`, [eventId]);
+
+            for (const [index, ticketType] of body.ticketTypes.entries()) {
+              await client.query(
+                `
+                  INSERT INTO event_ticket_types (id, event_id, name, price, quantity, sold_count, perks)
+                  VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+                `,
+                [
+                  ticketType.id?.trim() || `tt_${randomUUID().replace(/-/g, "").slice(0, 10)}`,
+                  eventId,
+                  ticketType.name?.trim() || `Ticket ${index + 1}`,
+                  typeof ticketType.price === "number" ? ticketType.price : 0,
+                  typeof ticketType.quantity === "number" ? ticketType.quantity : 0,
+                  0,
+                  JSON.stringify(toStringArray(ticketType.perks))
+                ]
+              );
+            }
+          }
+        });
 
         return sendJson(res, 200, {
           success: true,
@@ -520,8 +856,21 @@ export async function createEventServer(config: EventServiceConfig) {
 
         return sendJson(res, 200, {
           success: true,
-          data: event
+          data: {
+            ...event,
+            heroImageUrl: event.metadata?.heroImageDataUrl
+          }
         });
+      }
+
+      const submitReviewMatch = url.pathname.match(/^\/events\/([^/]+)\/submit-review$/);
+      if (method === "POST" && submitReviewMatch) {
+        return transitionOrganizerEvent(pool, req, res, submitReviewMatch[1], "in_review");
+      }
+
+      const devPublishMatch = url.pathname.match(/^\/events\/([^/]+)\/dev-publish$/);
+      if (method === "POST" && devPublishMatch) {
+        return transitionOrganizerEvent(pool, req, res, devPublishMatch[1], "active");
       }
 
       const cancelMatch = url.pathname.match(/^\/events\/([^/]+)\/cancel$/);
@@ -568,7 +917,7 @@ export async function createEventServer(config: EventServiceConfig) {
 
         return sendJson(res, 200, {
           success: true,
-          data: updated ? sanitizeSummary(updated) : null
+          data: updated
         });
       }
 
@@ -609,6 +958,50 @@ export async function createEventServer(config: EventServiceConfig) {
         return sendJson(res, 200, {
           success: true,
           data: computeAvailability(event)
+        });
+      }
+
+      if (method === "DELETE" && detailMatch) {
+        const organizerId = extractOrganizerId(req);
+        if (!organizerId) {
+          return sendJson(res, 401, {
+            success: false,
+            error: {
+              code: "UNAUTHORIZED_ORGANIZER",
+              message: "Missing x-organizer-id header"
+            }
+          });
+        }
+
+        const eventId = detailMatch[1];
+        const event = await loadEvent(pool, eventId);
+
+        if (!event) {
+          return sendJson(res, 404, {
+            success: false,
+            error: {
+              code: "EVENT_NOT_FOUND",
+              message: "Event not found"
+            }
+          });
+        }
+
+        if (event.organizerId !== organizerId) {
+          return sendJson(res, 403, {
+            success: false,
+            error: {
+              code: "FORBIDDEN",
+              message: "Only organizer can delete event"
+            }
+          });
+        }
+
+        await pool.query("DELETE FROM event_ticket_types WHERE event_id = $1", [eventId]);
+        await pool.query("DELETE FROM events WHERE id = $1", [eventId]);
+
+        return sendJson(res, 200, {
+          success: true,
+          data: { id: eventId, deleted: true }
         });
       }
 
