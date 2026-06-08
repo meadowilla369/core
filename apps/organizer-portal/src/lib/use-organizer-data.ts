@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { DemoOrganizerApi, type OrganizerApi } from "./organizer-api";
+import { defaultOrganizerApi, type OrganizerApi } from "./organizer-api";
 import type { OrganizerSnapshot } from "./demo-data";
 
-const defaultApi = new DemoOrganizerApi();
+const defaultApi = defaultOrganizerApi;
 
 export interface OrganizerDataState {
   data: OrganizerSnapshot | null;

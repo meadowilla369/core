@@ -773,6 +773,57 @@ export async function createEventServer(config: EventServiceConfig) {
         });
       }
 
+      if (method === "GET" && url.pathname === "/events/snapshot") {
+        const organizerId = extractOrganizerId(req);
+        if (!organizerId) {
+          return sendJson(res, 401, {
+            success: false,
+            error: {
+              code: "UNAUTHORIZED_ORGANIZER",
+              message: "Missing x-organizer-id header"
+            }
+          });
+        }
+
+        const events = await listEvents(pool, { organizerId });
+        const snapshot = {
+          organizerId,
+          generatedAt: new Date().toISOString(),
+          events: events.map((event) => ({
+            id: event.id,
+            title: event.title,
+            city: event.city,
+            venue: event.venue,
+            startAt: event.startAt,
+            endAt: event.endAt,
+            status: event.status,
+            grossSalesVnd: event.ticketTypes.reduce((sum, t) => sum + t.price * t.soldCount, 0),
+            ticketsSold: event.ticketTypes.reduce((sum, t) => sum + t.soldCount, 0),
+            ticketsLocked: 0,
+            ticketCapacity: event.ticketTypes.reduce((sum, t) => sum + t.quantity, 0),
+            checkinRate: 0
+          })),
+          gates: [] as {
+            gateId: string;
+            checkedInCount: number;
+            duplicateCount: number;
+            invalidCount: number;
+          }[],
+          queues: [] as {
+            id: string;
+            label: string;
+            count: number;
+            description: string;
+            status: string;
+          }[]
+        };
+
+        return sendJson(res, 200, {
+          success: true,
+          data: snapshot
+        });
+      }
+
       const detailMatch = url.pathname.match(/^\/events\/([^/]+)$/);
       if (method === "PUT" && detailMatch) {
         const organizerId = extractOrganizerId(req);
@@ -808,12 +859,12 @@ export async function createEventServer(config: EventServiceConfig) {
           });
         }
 
-        if (existing.status !== "draft") {
+        if (existing.status !== "draft" && existing.status !== "in_review") {
           return sendJson(res, 409, {
             success: false,
             error: {
               code: "EVENT_NOT_EDITABLE",
-              message: "Only draft events can be edited"
+              message: "Only draft or in-review events can be edited"
             }
           });
         }
@@ -933,6 +984,51 @@ export async function createEventServer(config: EventServiceConfig) {
         return sendJson(res, 200, {
           success: true,
           data: event
+        });
+      }
+
+      if (method === "DELETE" && detailMatch) {
+        const organizerId = extractOrganizerId(req);
+        if (!organizerId) {
+          return sendJson(res, 401, {
+            success: false,
+            error: {
+              code: "UNAUTHORIZED_ORGANIZER",
+              message: "Missing x-organizer-id header"
+            }
+          });
+        }
+
+        const eventId = detailMatch[1];
+        const event = await loadEvent(pool, eventId);
+
+        if (!event) {
+          return sendJson(res, 404, {
+            success: false,
+            error: {
+              code: "EVENT_NOT_FOUND",
+              message: "Event not found"
+            }
+          });
+        }
+
+        if (event.organizerId !== organizerId) {
+          return sendJson(res, 403, {
+            success: false,
+            error: {
+              code: "FORBIDDEN",
+              message: "Only organizer can delete event"
+            }
+          });
+        }
+
+        await pool.query("DELETE FROM event_ticket_types WHERE event_id = $1", [eventId]);
+        await pool.query("DELETE FROM event_metadata WHERE event_id = $1", [eventId]);
+        await pool.query("DELETE FROM events WHERE id = $1", [eventId]);
+
+        return sendJson(res, 200, {
+          success: true,
+          data: { id: eventId, deleted: true }
         });
       }
 

@@ -6,6 +6,8 @@ export interface OrganizerApi {
   createEvent(input: EventCreatePayload): Promise<OrganizerEventDetail>;
   getEvent(eventId: string): Promise<OrganizerEventDetail>;
   updateEvent(eventId: string, input: Partial<EventCreatePayload>): Promise<OrganizerEventDetail>;
+  deleteEvent(eventId: string): Promise<void>;
+  cancelEvent(eventId: string): Promise<OrganizerEventDetail>;
   submitEventForReview(eventId: string): Promise<OrganizerEventDetail>;
   devPublishEvent(eventId: string): Promise<OrganizerEventDetail>;
 }
@@ -45,7 +47,43 @@ export class DemoOrganizerApi implements OrganizerApi {
   private readonly events = new Map<string, OrganizerEventDetail>();
 
   async getSnapshot(): Promise<OrganizerSnapshot> {
-    return demoOrganizerSnapshot;
+    const demoEvents: OrganizerSnapshot["events"] = demoOrganizerSnapshot.events.map((e) => ({
+      ...e,
+      grossSalesVnd: 0,
+      ticketsSold: 0,
+      ticketsLocked: 0,
+      ticketCapacity: 0,
+      checkinRate: 0
+    }));
+
+    for (const event of this.events.values()) {
+      const ticketCapacity = event.ticketTypes.reduce((sum, t) => sum + t.quantity, 0);
+      const ticketsSold = event.ticketTypes.reduce((sum, t) => sum + t.soldCount, 0);
+      const grossSalesVnd = event.ticketTypes.reduce((sum, t) => sum + t.price * t.soldCount, 0);
+
+      demoEvents.push({
+        id: event.id,
+        title: event.title,
+        city: event.city,
+        venue: event.venue,
+        startAt: event.startAt,
+        endAt: event.endAt,
+        status: event.status,
+        grossSalesVnd,
+        ticketsSold,
+        ticketsLocked: 0,
+        ticketCapacity,
+        checkinRate: 0
+      });
+    }
+
+    return {
+      organizerId: "org_rockfest",
+      generatedAt: new Date().toISOString(),
+      events: demoEvents,
+      gates: demoOrganizerSnapshot.gates,
+      queues: demoOrganizerSnapshot.queues
+    };
   }
 
   async createEvent(input: EventCreatePayload): Promise<OrganizerEventDetail> {
@@ -108,6 +146,17 @@ export class DemoOrganizerApi implements OrganizerApi {
     return updated;
   }
 
+  async deleteEvent(eventId: string): Promise<void> {
+    this.events.delete(eventId);
+  }
+
+  async cancelEvent(eventId: string): Promise<OrganizerEventDetail> {
+    const event = await this.getEvent(eventId);
+    const updated: OrganizerEventDetail = { ...event, status: "cancelled" };
+    this.events.set(eventId, updated);
+    return updated;
+  }
+
   async submitEventForReview(eventId: string): Promise<OrganizerEventDetail> {
     const event = await this.getEvent(eventId);
     const updated: OrganizerEventDetail = { ...event, status: "in_review" };
@@ -127,7 +176,10 @@ export class HttpOrganizerApi implements OrganizerApi {
   constructor(private readonly organizerId = "org_rockfest") {}
 
   async getSnapshot(): Promise<OrganizerSnapshot> {
-    return demoOrganizerSnapshot;
+    const body = await requestJson<{ success: true; data: OrganizerSnapshot }>("/v1/events/snapshot", {
+      organizerId: this.organizerId
+    });
+    return body.data;
   }
 
   async createEvent(input: EventCreatePayload): Promise<OrganizerEventDetail> {
@@ -156,6 +208,27 @@ export class HttpOrganizerApi implements OrganizerApi {
         method: "PUT",
         organizerId: this.organizerId,
         body: JSON.stringify(input)
+      }
+    );
+    return body.data;
+  }
+
+  async deleteEvent(eventId: string): Promise<void> {
+    await requestJson<{ success: true; data: { id: string; deleted: boolean } }>(
+      `/v1/events/${eventId}`,
+      {
+        method: "DELETE",
+        organizerId: this.organizerId
+      }
+    );
+  }
+
+  async cancelEvent(eventId: string): Promise<OrganizerEventDetail> {
+    const body = await requestJson<{ success: true; data: OrganizerEventDetail }>(
+      `/v1/events/${eventId}/cancel`,
+      {
+        method: "POST",
+        organizerId: this.organizerId
       }
     );
     return body.data;

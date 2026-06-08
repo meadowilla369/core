@@ -1,4 +1,5 @@
-import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
+import { CalendarPlus } from "lucide-react";
+import { Link, BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
 import { AppShell } from "@/components/AppShell";
 import { CheckinPage } from "@/pages/CheckinPage";
 import { DisputesPage } from "@/pages/DisputesPage";
@@ -72,8 +73,19 @@ function RoutedApp() {
           description: "Manage event operations for your organizer account."
         });
 
+  const headerAction =
+    location.pathname === "/events" ? (
+      <Link
+        to="/events/new"
+        className="inline-flex min-h-10 items-center gap-2 rounded-md bg-blue-600 px-3 text-sm font-semibold text-white hover:bg-blue-700"
+      >
+        <CalendarPlus className="h-4 w-4" />
+        Create event
+      </Link>
+    ) : null;
+
   return (
-    <AppShell title={meta.title} description={meta.description}>
+    <AppShell title={meta.title} description={meta.description} action={headerAction}>
       <Routes>
         <Route path="/" element={<OverviewPage />} />
         <Route path="/events" element={<EventsPage />} />
