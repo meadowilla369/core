@@ -56,23 +56,17 @@
 
       <section>
         <h2>Organizer Portal</h2>
-        <div class="row">
-          <label>Title</label>
-          <input id="org-title" value="Demo Music Night" />
-          <label>City</label>
-          <input id="org-city" value="Ho Chi Minh City" />
-          <label>Venue</label>
-          <input id="org-venue" value="SECC" />
-          <button id="org-create-event">Create Event</button>
-          <button id="org-cancel-event">Cancel Last Event</button>
-        </div>
-        <div class="row">
-          <label>Ticket Types (JSON)</label>
-          <input id="org-ticket-types" value='[{"name":"GA","price":900000,"quantity":2000}]' />
-          <button id="org-set-ticket-types">Set Ticket Types</button>
-        </div>
-        <button id="org-run-analytics">Run Analytics Demo</button>
-        <pre id="org-output"></pre>
+        <p>The organizer portal now runs as its own Vite React app.</p>
+        <p>
+          <a class="button-link" href="/organizer/index.html" target="_blank" rel="noreferrer">
+            Open Organizer Portal
+          </a>
+        </p>
+        <iframe
+          title="Organizer Portal"
+          src="/organizer/index.html"
+          class="app-frame"
+        ></iframe>
       </section>
     </main>
 

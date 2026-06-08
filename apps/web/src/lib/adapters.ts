@@ -55,6 +55,7 @@ export function toEventCardView(
 ): EventCardView {
   const ticketTypes = detail?.ticketTypes ?? ("ticketTypes" in event ? event.ticketTypes : []);
   const minPrice = ticketTypes.length > 0 ? minTicketPrice(ticketTypes) : 0;
+  const metadata = "metadata" in event ? event.metadata : detail?.metadata;
 
   return {
     id: event.id,
@@ -62,7 +63,8 @@ export function toEventCardView(
     image: detail?.heroImageUrl ?? detail?.metadata?.heroImageDataUrl ?? event.heroImageUrl,
     date: formatShortEventDate(event.startAt),
     location: event.city,
-    category: categoryForEvent(event.id, event.title),
+    category: metadata?.category || categoryForEvent(event.id, event.title),
+    posterImageDataUrl: metadata?.posterImageDataUrl || undefined,
     price: minPrice > 0 ? formatVnd(minPrice) : "Sắp mở bán"
   };
 }
@@ -72,23 +74,25 @@ export function toEventDetailView(event: EventDetail): EventDetailView {
   const min = prices.length > 0 ? Math.min(...prices) : 0;
   const max = prices.length > 0 ? Math.max(...prices) : 0;
   const sold = event.ticketTypes.reduce((total, item) => total + item.soldCount, 0);
+  const metadata = event.metadata;
 
   return {
     id: event.id,
     name: event.title,
-    category: categoryForEvent(event.id, event.title),
+    category: metadata?.category || categoryForEvent(event.id, event.title),
     date: formatMediumEventDate(event.startAt),
     time: formatTimeRange(event.startAt, event.endAt),
     location: event.venue,
-    address: `${event.venue}, ${event.city}`,
+    address: metadata?.address || `${event.venue}, ${event.city}`,
     price: { min, max },
     description:
-      event.metadata?.description?.trim()
+      metadata?.description?.trim()
       || `${event.title} là sự kiện đang mở bán trên core. Thông tin mô tả chi tiết chưa được event-service cung cấp nên giao diện đang hiển thị bản tóm tắt từ dữ liệu runtime.`,
-    lineup: event.metadata?.lineup ?? [],
+    lineup: metadata?.lineup ?? [],
     attendees: sold,
-    image: event.metadata?.heroImageDataUrl,
-    posterImage: event.metadata?.posterImageDataUrl
+    image: metadata?.heroImageDataUrl,
+    posterImage: metadata?.posterImageDataUrl,
+    heroImageDataUrl: metadata?.heroImageDataUrl || undefined
   };
 }
 
@@ -96,11 +100,14 @@ export function toTicketTierViews(event: EventDetail): TicketTierView[] {
   return event.ticketTypes.map((tier) => ({
     name: tier.name,
     price: formatVnd(tier.price),
-    perks: [
-      `${Math.max(tier.quantity - tier.soldCount, 0)} vé còn lại`,
-      `Đã bán ${tier.soldCount}`,
-      `Tổng số lượng ${tier.quantity}`
-    ]
+    perks:
+      tier.perks?.length > 0
+        ? tier.perks
+        : [
+            `${Math.max(tier.quantity - tier.soldCount, 0)} vé còn lại`,
+            `Đã bán ${tier.soldCount}`,
+            `Tổng số lượng ${tier.quantity}`
+          ]
   }));
 }
 

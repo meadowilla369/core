@@ -1,0 +1,66 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { createOrganizerEvent } from "./events.ts";
+import {
+  getEventStatusTone,
+  getStatusTone,
+  statusTones,
+  type EventLifecycleStatus,
+  type OperationalStatus
+} from "./status.ts";
+
+test("draft, scheduled, and upcoming event statuses use the info tone", () => {
+  const statuses: EventLifecycleStatus[] = ["draft", "scheduled", "upcoming"];
+
+  for (const status of statuses) {
+    const tone = getEventStatusTone(status);
+
+    assert.equal(tone.name, "info");
+    assert.equal(tone.accent, "#2563EB");
+  }
+});
+
+test("created organizer events can resolve lifecycle status tones", () => {
+  const event = createOrganizerEvent({
+    title: "Launch Night",
+    city: "Ho Chi Minh City",
+    venue: "District Hall",
+    startAt: "2026-05-01T18:00:00.000Z",
+    endAt: "2026-05-01T21:00:00.000Z"
+  });
+
+  const tone = getEventStatusTone(event.status);
+
+  assert.equal(tone.name, "info");
+  assert.equal(tone.accent, "#2563EB");
+});
+
+test("active and live event statuses plus valid and resolved use success tone", () => {
+  for (const status of ["active", "live"] satisfies EventLifecycleStatus[]) {
+    const tone = getEventStatusTone(status);
+
+    assert.equal(tone.name, "success");
+    assert.equal(tone.accent, "#16A34A");
+  }
+
+  assert.equal(getStatusTone("valid").name, "success");
+  assert.equal(getStatusTone("resolved").accent, "#16A34A");
+});
+
+test("cancelled, invalid, and failed statuses use critical tone", () => {
+  for (const status of ["cancelled", "invalid", "failed"] satisfies OperationalStatus[]) {
+    const tone = getStatusTone(status);
+
+    assert.equal(tone.name, "critical");
+    assert.equal(tone.accent, "#DC2626");
+  }
+});
+
+test("all status tones have nonempty labels and badge classes", () => {
+  for (const tone of Object.values(statusTones)) {
+    assert.notEqual(tone.label.trim(), "");
+    assert.match(tone.badgeClass, /\bborder\b/);
+    assert.match(tone.badgeClass, /\btext-/);
+  }
+});

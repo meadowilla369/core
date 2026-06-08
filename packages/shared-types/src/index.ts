@@ -98,6 +98,7 @@ export interface EventCardView {
   location: string;
   category: string;
   image?: string;
+  posterImageDataUrl?: string;
   price: string;
 }
 
@@ -145,6 +146,7 @@ export interface EventDetailView {
   attendees: number;
   image?: string;
   posterImage?: string;
+  heroImageDataUrl?: string;
 }
 
 export interface TicketTierView {

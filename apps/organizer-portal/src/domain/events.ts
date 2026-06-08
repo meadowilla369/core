@@ -1,3 +1,5 @@
+import type { EventLifecycleStatus } from "./status";
+
 export interface OrganizerEventInput {
   title: string;
   city: string;
@@ -14,7 +16,7 @@ export interface OrganizerTicketTypeInput {
 
 export interface OrganizerEvent extends OrganizerEventInput {
   id: string;
-  status: "draft" | "published" | "cancelled";
+  status: EventLifecycleStatus;
   ticketTypes: OrganizerTicketTypeInput[];
 }
 
@@ -27,7 +29,10 @@ export function createOrganizerEvent(input: OrganizerEventInput): OrganizerEvent
   };
 }
 
-export function setTicketTypes(event: OrganizerEvent, ticketTypes: OrganizerTicketTypeInput[]): OrganizerEvent {
+export function setTicketTypes(
+  event: OrganizerEvent,
+  ticketTypes: OrganizerTicketTypeInput[]
+): OrganizerEvent {
   return {
     ...event,
     ticketTypes

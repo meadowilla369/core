@@ -9,11 +9,7 @@ const repoRoot = path.resolve(__dirname, "../..");
 const port = Number(process.env.UI_PORT ?? "4310");
 const host = process.env.UI_HOST ?? "127.0.0.1";
 
-const projects = [
-  "apps/mobile/tsconfig.json",
-  "apps/staff-scanner/tsconfig.json",
-  "apps/organizer-portal/tsconfig.json"
-];
+const projects = ["apps/mobile/tsconfig.json", "apps/staff-scanner/tsconfig.json"];
 
 function buildApps() {
   if (process.env.UI_SKIP_BUILD === "1") {
@@ -30,6 +26,20 @@ function buildApps() {
     if (result.status !== 0) {
       process.exit(result.status ?? 1);
     }
+  }
+
+  const organizerResult = spawnSync(
+    "pnpm",
+    ["--filter", "@ticket-platform/app-organizer-portal", "build"],
+    {
+      cwd: repoRoot,
+      stdio: "inherit",
+      env: process.env
+    }
+  );
+
+  if (organizerResult.status !== 0) {
+    process.exit(organizerResult.status ?? 1);
   }
 }
 
@@ -76,6 +86,14 @@ function resolvePath(urlPath) {
 
   if (urlPath.startsWith("/staff/")) {
     return path.join(repoRoot, "apps/staff-scanner/dist", urlPath.replace("/staff/", ""));
+  }
+
+  if (urlPath.startsWith("/assets/")) {
+    return path.join(repoRoot, "apps/organizer-portal/dist", urlPath.slice(1));
+  }
+
+  if (urlPath === "/organizer/" || urlPath === "/organizer/index.html") {
+    return path.join(repoRoot, "apps/organizer-portal/dist/index.html");
   }
 
   if (urlPath.startsWith("/organizer/")) {

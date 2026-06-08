@@ -13,6 +13,7 @@
     "dev": "tsc -p tsconfig.json --watch",
     "test": "node --test src/tx-builder/__tests__/encoder.test.mjs",
     "test:auth-wallet": "pnpm run build && node --test src/auth-wallet-client.test.mjs",
+    "test:events": "pnpm run build && node --test src/event-client.test.mjs",
     "lint": "echo 'TODO: add lint for sdk-client'",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "format": "echo 'TODO: add formatter for sdk-client'"

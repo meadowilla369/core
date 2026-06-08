@@ -12,6 +12,8 @@ import type { Pool } from "pg";
 import type { EventServiceConfig } from "./config.js";
 import { log } from "./logger.js";
 
+type EventStatus = "draft" | "in_review" | "active" | "cancelled";
+
 interface TicketType {
   id: string;
   name: string;
@@ -20,8 +22,6 @@ interface TicketType {
   soldCount: number;
   perks: string[];
 }
-
-type EventStatus = "draft" | "in_review" | "active" | "cancelled";
 
 interface EventMetadata {
   category: string;
@@ -296,104 +296,6 @@ function computeAvailability(event: EventRecord) {
   }));
 }
 
-function validatePublishReady(event: EventRecord): string[] {
-  const missing: string[] = [];
-  const metadata = event.metadata;
-
-  if (!event.title.trim()) missing.push("title");
-  if (!event.city.trim()) missing.push("city");
-  if (!event.venue.trim()) missing.push("venue");
-  if (!event.startAt.trim()) missing.push("startAt");
-  if (!event.endAt.trim()) missing.push("endAt");
-  if (!metadata?.category.trim()) missing.push("metadata.category");
-  if (!metadata?.address.trim()) missing.push("metadata.address");
-  if (!metadata?.description.trim()) missing.push("metadata.description");
-  if (!metadata?.heroImageDataUrl.trim()) missing.push("metadata.heroImageDataUrl");
-  if (!metadata?.posterImageDataUrl.trim()) missing.push("metadata.posterImageDataUrl");
-  if (event.ticketTypes.length === 0) missing.push("ticketTypes");
-
-  for (const [index, ticketType] of event.ticketTypes.entries()) {
-    if (!ticketType.name.trim()) missing.push(`ticketTypes.${index}.name`);
-    if (ticketType.price < 0) missing.push(`ticketTypes.${index}.price`);
-    if (ticketType.quantity <= 0) missing.push(`ticketTypes.${index}.quantity`);
-  }
-
-  return missing;
-}
-
-async function transitionOrganizerEvent(
-  pool: Pool,
-  req: IncomingMessage,
-  res: ServerResponse,
-  eventId: string,
-  nextStatus: "in_review" | "active"
-) {
-  const organizerId = extractOrganizerId(req);
-  if (!organizerId) {
-    return sendJson(res, 401, {
-      success: false,
-      error: { code: "UNAUTHORIZED_ORGANIZER", message: "Missing x-organizer-id header" }
-    });
-  }
-
-  const event = await loadEvent(pool, eventId);
-  if (!event) {
-    return sendJson(res, 404, {
-      success: false,
-      error: { code: "EVENT_NOT_FOUND", message: "Event not found" }
-    });
-  }
-
-  if (event.organizerId !== organizerId) {
-    return sendJson(res, 403, {
-      success: false,
-      error: { code: "FORBIDDEN", message: "Only organizer can update event" }
-    });
-  }
-
-  if (nextStatus === "in_review" && event.status !== "draft") {
-    return sendJson(res, 409, {
-      success: false,
-      error: {
-        code: "INVALID_STATUS_TRANSITION",
-        message: "Only draft events can be submitted for review"
-      }
-    });
-  }
-
-  if (nextStatus === "active" && event.status !== "draft" && event.status !== "in_review") {
-    return sendJson(res, 409, {
-      success: false,
-      error: {
-        code: "INVALID_STATUS_TRANSITION",
-        message: "Only draft or in-review events can be dev published"
-      }
-    });
-  }
-
-  const missing = validatePublishReady(event);
-  if (missing.length > 0) {
-    return sendJson(res, 400, {
-      success: false,
-      error: {
-        code: "EVENT_NOT_READY",
-        message: "Event is missing publish-readiness fields",
-        fields: missing
-      }
-    });
-  }
-
-  await pool.query(`UPDATE events SET status = $2, updated_at = NOW() WHERE id = $1`, [
-    eventId,
-    nextStatus
-  ]);
-
-  return sendJson(res, 200, {
-    success: true,
-    data: await loadEvent(pool, eventId)
-  });
-}
-
 function sanitizeSummary(event: EventRecord) {
   return {
     id: event.id,
@@ -453,6 +355,10 @@ async function ensureSchema(pool: Pool): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `);
+
+  await pool.query(`
+    ALTER TABLE event_ticket_types ADD COLUMN IF NOT EXISTS perks JSONB NOT NULL DEFAULT '[]'::jsonb;
   `);
 
   const existing = await queryOne<{ count: string }>(
@@ -562,6 +468,79 @@ async function loadEvent(pool: Pool, eventId: string): Promise<EventRecord | nul
   return mapEventRow(eventRow, ticketTypeRows);
 }
 
+async function transitionOrganizerEvent(
+  pool: Pool,
+  req: IncomingMessage,
+  res: ServerResponse,
+  eventId: string,
+  nextStatus: "in_review" | "active"
+) {
+  const organizerId = extractOrganizerId(req);
+  if (!organizerId) {
+    return sendJson(res, 401, {
+      success: false,
+      error: { code: "UNAUTHORIZED_ORGANIZER", message: "Missing x-organizer-id header" }
+    });
+  }
+
+  const event = await loadEvent(pool, eventId);
+  if (!event) {
+    return sendJson(res, 404, {
+      success: false,
+      error: { code: "EVENT_NOT_FOUND", message: "Event not found" }
+    });
+  }
+
+  if (event.organizerId !== organizerId) {
+    return sendJson(res, 403, {
+      success: false,
+      error: { code: "FORBIDDEN", message: "Only organizer can update event" }
+    });
+  }
+
+  if (nextStatus === "in_review" && event.status !== "draft") {
+    return sendJson(res, 409, {
+      success: false,
+      error: {
+        code: "INVALID_STATUS_TRANSITION",
+        message: "Only draft events can be submitted for review"
+      }
+    });
+  }
+
+  if (nextStatus === "active" && event.status !== "draft" && event.status !== "in_review") {
+    return sendJson(res, 409, {
+      success: false,
+      error: {
+        code: "INVALID_STATUS_TRANSITION",
+        message: "Only draft or in-review events can be dev published"
+      }
+    });
+  }
+
+  const missing = validatePublishReady(event);
+  if (missing.length > 0) {
+    return sendJson(res, 400, {
+      success: false,
+      error: {
+        code: "EVENT_NOT_READY",
+        message: "Event is missing publish-readiness fields",
+        fields: missing
+      }
+    });
+  }
+
+  await pool.query(`UPDATE events SET status = $2, updated_at = NOW() WHERE id = $1`, [
+    eventId,
+    nextStatus
+  ]);
+
+  return sendJson(res, 200, {
+    success: true,
+    data: await loadEvent(pool, eventId)
+  });
+}
+
 export async function createEventServer(config: EventServiceConfig) {
   const pool = createPostgresPool(process.env);
   await ensureSchema(pool);
@@ -614,6 +593,11 @@ export async function createEventServer(config: EventServiceConfig) {
         const venue = body.venue?.trim() ?? "";
         const startAt = body.startAt?.trim() ?? "";
         const endAt = body.endAt?.trim() ?? "";
+        const status: EventStatus =
+          body.status === "active" || body.status === "in_review" || body.status === "cancelled"
+            ? body.status
+            : "draft";
+        const metadata = normalizeMetadata(body.metadata);
 
         if (!title || !city || !venue || !startAt || !endAt) {
           return sendJson(res, 400, {
@@ -841,6 +825,16 @@ export async function createEventServer(config: EventServiceConfig) {
         });
       }
 
+      const submitReviewMatch = url.pathname.match(/^\/events\/([^/]+)\/submit-review$/);
+      if (method === "POST" && submitReviewMatch) {
+        return transitionOrganizerEvent(pool, req, res, submitReviewMatch[1], "in_review");
+      }
+
+      const devPublishMatch = url.pathname.match(/^\/events\/([^/]+)\/dev-publish$/);
+      if (method === "POST" && devPublishMatch) {
+        return transitionOrganizerEvent(pool, req, res, devPublishMatch[1], "active");
+      }
+
       if (method === "GET" && detailMatch) {
         const event = await loadEvent(pool, detailMatch[1]);
 
@@ -871,6 +865,50 @@ export async function createEventServer(config: EventServiceConfig) {
       const devPublishMatch = url.pathname.match(/^\/events\/([^/]+)\/dev-publish$/);
       if (method === "POST" && devPublishMatch) {
         return transitionOrganizerEvent(pool, req, res, devPublishMatch[1], "active");
+      }
+
+      if (method === "DELETE" && detailMatch) {
+        const organizerId = extractOrganizerId(req);
+        if (!organizerId) {
+          return sendJson(res, 401, {
+            success: false,
+            error: {
+              code: "UNAUTHORIZED_ORGANIZER",
+              message: "Missing x-organizer-id header"
+            }
+          });
+        }
+
+        const eventId = detailMatch[1];
+        const event = await loadEvent(pool, eventId);
+
+        if (!event) {
+          return sendJson(res, 404, {
+            success: false,
+            error: {
+              code: "EVENT_NOT_FOUND",
+              message: "Event not found"
+            }
+          });
+        }
+
+        if (event.organizerId !== organizerId) {
+          return sendJson(res, 403, {
+            success: false,
+            error: {
+              code: "FORBIDDEN",
+              message: "Only organizer can delete event"
+            }
+          });
+        }
+
+        await pool.query("DELETE FROM event_ticket_types WHERE event_id = $1", [eventId]);
+        await pool.query("DELETE FROM events WHERE id = $1", [eventId]);
+
+        return sendJson(res, 200, {
+          success: true,
+          data: { id: eventId, deleted: true }
+        });
       }
 
       const cancelMatch = url.pathname.match(/^\/events\/([^/]+)\/cancel$/);
@@ -958,50 +996,6 @@ export async function createEventServer(config: EventServiceConfig) {
         return sendJson(res, 200, {
           success: true,
           data: computeAvailability(event)
-        });
-      }
-
-      if (method === "DELETE" && detailMatch) {
-        const organizerId = extractOrganizerId(req);
-        if (!organizerId) {
-          return sendJson(res, 401, {
-            success: false,
-            error: {
-              code: "UNAUTHORIZED_ORGANIZER",
-              message: "Missing x-organizer-id header"
-            }
-          });
-        }
-
-        const eventId = detailMatch[1];
-        const event = await loadEvent(pool, eventId);
-
-        if (!event) {
-          return sendJson(res, 404, {
-            success: false,
-            error: {
-              code: "EVENT_NOT_FOUND",
-              message: "Event not found"
-            }
-          });
-        }
-
-        if (event.organizerId !== organizerId) {
-          return sendJson(res, 403, {
-            success: false,
-            error: {
-              code: "FORBIDDEN",
-              message: "Only organizer can delete event"
-            }
-          });
-        }
-
-        await pool.query("DELETE FROM event_ticket_types WHERE event_id = $1", [eventId]);
-        await pool.query("DELETE FROM events WHERE id = $1", [eventId]);
-
-        return sendJson(res, 200, {
-          success: true,
-          data: { id: eventId, deleted: true }
         });
       }
 

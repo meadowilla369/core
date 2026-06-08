@@ -141,22 +141,25 @@ test("loadProfileSummary counts multiple tickets for the same upcoming event as 
           title: "Rock Fest 2026",
           city: "Ho Chi Minh City",
           venue: "Saigon Arena",
-          description: "Rock Fest",
-          venueName: "Saigon Arena",
-          address: "District 1",
           startAt: "2026-12-01T12:00:00.000Z",
           endAt: "2026-12-01T15:00:00.000Z",
           status: "active",
-          maxTickets: 100,
-          createdAt: "2026-04-29T00:00:00.000Z",
-          updatedAt: "2026-04-29T00:00:00.000Z",
+          metadata: {
+            category: "Hoa nhac",
+            address: "District 1",
+            description: "Rock Fest",
+            lineup: [],
+            heroImageDataUrl: "",
+            posterImageDataUrl: ""
+          },
           ticketTypes: [
             {
               id: "tt_vip",
               name: "VIP",
               price: 500000,
               quantity: 50,
-              soldCount: 2
+              soldCount: 2,
+              perks: []
             }
           ]
         }

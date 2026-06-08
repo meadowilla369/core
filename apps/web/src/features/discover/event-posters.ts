@@ -118,6 +118,7 @@ export function toPosterEventViews(events: EventCardView[]): PosterEventView[] {
     const mood = moodByCategory[event.category] ?? "Curated night";
     const palette = posterPalettes[index % posterPalettes.length];
     const trust = getTrustFlags(event, index);
+    const imageUrl = event.posterImageDataUrl ?? event.image;
     const trustBadges = [
       trust.verified ? "Verified" : "On-chain checked",
       trust.resaleSafe ? "Resale safe" : "Official flow",
@@ -126,8 +127,8 @@ export function toPosterEventViews(events: EventCardView[]): PosterEventView[] {
 
     return {
       ...event,
-      imageUrl: event.image,
-      heroImageUrl: event.image,
+      imageUrl,
+      heroImageUrl: imageUrl,
       mood,
       highlight: `${mood} · ${getLocationCluster(event.location)}`,
       trustBadges,
