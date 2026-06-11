@@ -5,14 +5,9 @@ import type { TicketDataSource, TicketSyncStatus } from "@/lib/ticket-loader";
 
 type TicketCardProps = TicketCardView & {
   tokenId?: string;
+  seatInfo?: string;
   source?: TicketDataSource;
   syncStatus?: TicketSyncStatus;
-};
-
-const sourceLabel = (source: TicketDataSource) => {
-  if (source === "local-cache") return "local";
-  if (source === "contract-sync") return "on-chain";
-  return "ticketing";
 };
 
 const TicketCard = ({
@@ -23,14 +18,14 @@ const TicketCard = ({
   location,
   ticketType,
   tokenId,
-  source,
+  seatInfo,
   syncStatus
 }: TicketCardProps) => {
-  const displayToken = tokenId ?? id;
+  const linkTarget = tokenId ?? id;
 
   return (
     <Link
-      to={`/ticket/${displayToken}`}
+      to={`/ticket/${linkTarget}`}
       className="group relative block overflow-hidden border border-foreground/20 bg-card transition-colors hover:border-foreground/40"
     >
       <div className="absolute left-0 top-0 h-full w-1 bg-foreground/70" />
@@ -40,18 +35,11 @@ const TicketCard = ({
           <span className="font-mono text-[10px] uppercase tracking-widest text-foreground/50">
             {ticketType}
           </span>
-          <div className="flex shrink-0 items-center gap-1">
-            {source && (
-              <span className="border border-foreground/15 px-2 py-1 font-mono text-[8px] uppercase tracking-wider text-foreground/45">
-                {sourceLabel(source)}
-              </span>
-            )}
-            {syncStatus === "partial" && (
-              <span className="border border-yellow-500/30 px-2 py-1 font-mono text-[8px] uppercase tracking-wider text-yellow-200">
-                partial
-              </span>
-            )}
-          </div>
+          {syncStatus === "partial" && (
+            <span className="border border-yellow-500/30 px-2 py-1 font-mono text-[8px] uppercase tracking-wider text-yellow-200">
+              partial
+            </span>
+          )}
         </div>
         <h3 className="mt-2 text-xl font-medium leading-tight tracking-tight">{eventName}</h3>
       </div>
@@ -70,9 +58,11 @@ const TicketCard = ({
               {location}
             </span>
           </div>
-          <span className="inline-flex max-w-full border border-foreground/10 bg-foreground/5 px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-foreground/40">
-            <span className="truncate">TOKEN {displayToken}</span>
-          </span>
+          {seatInfo && (
+            <span className="inline-flex max-w-full border border-foreground/10 bg-foreground/5 px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-foreground/40">
+              <span className="truncate">{seatInfo}</span>
+            </span>
+          )}
         </div>
 
         <div className="flex mx-[14px] my-[22px] flex-col items-center justify-center border border-foreground/20 bg-foreground/5 transition-colors group-hover:bg-foreground/10">

@@ -1,4 +1,5 @@
-import { ArrowLeft, Copy, ExternalLink } from "lucide-react";
+import { ArrowLeft, ChevronDown, Copy, ExternalLink } from "lucide-react";
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "@ticket-platform/shared-ui";
 
@@ -18,9 +19,11 @@ const TicketDetailPage = () => {
   const { ticket, isLoading, isError, data } = useTicketDetail(id);
   const qr = useTicketQr(ticket);
 
+  const [showTechDetails, setShowTechDetails] = useState(false);
+
   const copyText = async (value: string, label: string) => {
     await navigator.clipboard.writeText(value);
-    toast({ title: "Da copy", description: `${label} da duoc copy` });
+    toast({ title: "Đã copy", description: `${label} đã được copy` });
   };
 
   if (isLoading) {
@@ -62,17 +65,21 @@ const TicketDetailPage = () => {
     );
   }
 
-  const facts: Array<[string, string]> = [
-    ["Loai ve", ticket.ticketType],
-    ["Ngay gio", `${ticket.date} - ${ticket.time}`],
-    ["Dia diem", ticket.location],
-    ["Nguon du lieu", ticket.source],
-    ["Trang thai sync", ticket.syncStatus],
-    ["Event ID", ticket.eventId],
+  const userFacts: Array<[string, string]> = [
+    ["Loại vé", ticket.ticketType],
+    ["Ngày giờ", `${ticket.date} · ${ticket.time}`],
+    ["Địa điểm", ticket.location],
+    ["Chỗ ngồi", ticket.seatInfo]
+  ];
+
+  const techFacts: Array<[string, string]> = [
     ["Token ID", ticket.tokenId],
-    ["Owner wallet", ticket.ownerWalletAddress ?? "Dang cap nhat"],
+    ["Event ID", ticket.eventId],
+    ["Owner wallet", ticket.ownerWalletAddress ?? "Chưa có"],
     ["Reservation", ticket.reservationId],
-    ["Tx hash", ticket.transactionHash ?? "Chua co"]
+    ["Tx hash", ticket.transactionHash ?? "Chưa có"],
+    ["Nguồn dữ liệu", ticket.source],
+    ["Trạng thái sync", ticket.syncStatus]
   ];
 
   return (
@@ -82,14 +89,14 @@ const TicketDetailPage = () => {
           <Link
             to="/tickets"
             className="flex min-h-[44px] min-w-[44px] items-center justify-center border border-foreground/20"
-            aria-label="Quay lai danh sach ve"
+            aria-label="Quay lại danh sách vé"
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>
           <div className="min-w-0">
             <h1 className="truncate text-lg font-medium tracking-tight">{ticket.eventName}</h1>
             <p className="font-mono text-[10px] uppercase text-foreground/50">
-              Token {shortId(ticket.tokenId)}
+              {ticket.ticketType}
             </p>
           </div>
         </div>
@@ -98,7 +105,7 @@ const TicketDetailPage = () => {
       {data?.status === "partial" && (
         <div className="border-b border-yellow-500/30 bg-yellow-500/10 px-4 py-3">
           <p className="font-mono text-[10px] text-yellow-200">
-            Mot phan du lieu ticketing chua san sang. Dang hien thi du lieu da sync/local.
+            Một phần dữ liệu chưa sẵn sàng. Đang hiển thị dữ liệu đã sync.
           </p>
         </div>
       )}
@@ -116,13 +123,13 @@ const TicketDetailPage = () => {
         {qr.isBackendError && qr.source === "local" && (
           <div className="mb-4 border border-yellow-500/30 bg-yellow-500/10 p-3">
             <p className="font-mono text-[10px] text-yellow-200">
-              Backend QR chua tao duoc. Local QR chi dung cho dev/fallback.
+              Backend QR chưa tạo được. Local QR chỉ dùng cho dev/fallback.
             </p>
           </div>
         )}
 
         <div className="divide-y divide-foreground/10 border border-foreground/20">
-          {facts.map(([label, value]) => (
+          {userFacts.map(([label, value]) => (
             <div key={label} className="flex items-start justify-between gap-4 p-3">
               <span className={fieldClass}>{label}</span>
               <span className="max-w-[62%] break-all text-right font-mono text-xs text-foreground/80">
@@ -135,14 +142,6 @@ const TicketDetailPage = () => {
         <div className="mt-4 grid grid-cols-2 gap-3">
           <button
             type="button"
-            onClick={() => void copyText(ticket.tokenId, "Token ID")}
-            className="flex min-h-[44px] items-center justify-center gap-2 border border-foreground/20 px-3 font-mono text-[10px] uppercase"
-          >
-            <Copy className="h-4 w-4" />
-            Copy token
-          </button>
-          <button
-            type="button"
             onClick={() => void copyText(qr.qrValue, "QR payload")}
             disabled={!qr.qrValue}
             className="flex min-h-[44px] items-center justify-center gap-2 border border-foreground/20 px-3 font-mono text-[10px] uppercase disabled:opacity-50"
@@ -150,15 +149,48 @@ const TicketDetailPage = () => {
             <Copy className="h-4 w-4" />
             Copy QR
           </button>
+          <Link
+            to="/marketplace/sell"
+            className="flex min-h-[44px] items-center justify-center gap-2 border border-foreground/20 px-3 font-mono text-[10px] uppercase"
+          >
+            <ExternalLink className="h-4 w-4" />
+            Bán lại
+          </Link>
         </div>
 
-        <Link
-          to="/marketplace/sell"
-          className="mt-3 flex min-h-[44px] items-center justify-center gap-2 border border-foreground/20 px-3 font-mono text-[10px] uppercase"
+        <button
+          type="button"
+          onClick={() => setShowTechDetails((v) => !v)}
+          className="mt-6 flex w-full items-center justify-between border-t border-foreground/10 pt-4 font-mono text-[10px] uppercase text-foreground/35 hover:text-foreground/55"
         >
-          <ExternalLink className="h-4 w-4" />
-          Ban lai tren marketplace
-        </Link>
+          Chi tiết kỹ thuật
+          <ChevronDown
+            className={`h-3.5 w-3.5 transition-transform ${showTechDetails ? "rotate-180" : ""}`}
+          />
+        </button>
+
+        {showTechDetails && (
+          <div className="mt-3 divide-y divide-foreground/10 border border-foreground/15">
+            {techFacts.map(([label, value]) => (
+              <div key={label} className="flex items-start justify-between gap-4 p-3">
+                <span className={fieldClass}>{label}</span>
+                <div className="flex max-w-[62%] items-center gap-1.5">
+                  <span className="break-all text-right font-mono text-[10px] text-foreground/50">
+                    {value}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void copyText(value, label)}
+                    className="shrink-0 text-foreground/30 hover:text-foreground/60"
+                    aria-label={`Copy ${label}`}
+                  >
+                    <Copy className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
     </MobileLayout>
   );
