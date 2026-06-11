@@ -1,4 +1,18 @@
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
+
+/**
+ * Deterministically maps any string ID (e.g. "evt_abc", "tt_cce1ad") to a
+ * safe positive uint53 suitable for use as a uint256 in the contract.
+ * SHA-256 of the input → take the first 6 bytes → interpret as big-endian
+ * unsigned integer. Result is always in [1, 2^48) so it fits JS Number safely.
+ */
+export function hashStringId(id: string): number {
+  const digest = createHash("sha256").update(id, "utf8").digest();
+  const high = digest.readUInt32BE(0);
+  const low = digest.readUInt16BE(4);
+  return high * 0x10000 + low || 1;
+}
 
 export interface PurchaseTypedData {
   types: {

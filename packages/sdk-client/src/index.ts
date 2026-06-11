@@ -514,8 +514,8 @@ export class ApiClient {
       amount: number;
       currency: "VND";
       gateway: "momo" | "vnpay";
-      eventId: number;
-      ticketTypeId: number;
+      eventId: string;
+      ticketTypeId: string;
       quantity: number;
       ticketIds?: string[];
       buyerWalletAddress: string;

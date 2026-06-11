@@ -15,6 +15,7 @@ import {
 } from "./config.js";
 import {
   buildPurchaseTypedData,
+  hashStringId,
   computePrefundShortfall,
   computePaymentHash,
   deriveAddressFromPrivateKey,
@@ -542,14 +543,38 @@ async function ensureSchema(pool: Pool): Promise<void> {
       gateway TEXT NOT NULL CHECK (gateway IN ('momo', 'vnpay')),
       status TEXT NOT NULL CHECK (status IN ('pending', 'confirmed', 'failed', 'cancelled')),
       gateway_transaction_id TEXT,
-      event_id INTEGER,
-      ticket_type_id INTEGER,
+      event_id BIGINT,
+      ticket_type_id BIGINT,
       quantity INTEGER,
       ticket_ids TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
       buyer_wallet_address TEXT,
       created_at TIMESTAMPTZ NOT NULL,
       updated_at TIMESTAMPTZ NOT NULL
     );
+  `);
+
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE payment_intents ALTER COLUMN event_id TYPE BIGINT;
+    EXCEPTION WHEN others THEN NULL; END $$;
+  `);
+
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE payment_intents ALTER COLUMN ticket_type_id TYPE BIGINT;
+    EXCEPTION WHEN others THEN NULL; END $$;
+  `);
+
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE payment_hashes ALTER COLUMN event_id TYPE BIGINT;
+    EXCEPTION WHEN others THEN NULL; END $$;
+  `);
+
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE payment_hashes ALTER COLUMN ticket_type_id TYPE BIGINT;
+    EXCEPTION WHEN others THEN NULL; END $$;
   `);
 
   await pool.query(`
@@ -615,8 +640,8 @@ async function ensureSchema(pool: Pool): Promise<void> {
       status TEXT NOT NULL CHECK (status IN ('issued', 'expired')),
       issued_at TIMESTAMPTZ NOT NULL,
       expires_at TIMESTAMPTZ NOT NULL,
-      event_id INTEGER NOT NULL,
-      ticket_type_id INTEGER NOT NULL,
+      event_id BIGINT NOT NULL,
+      ticket_type_id BIGINT NOT NULL,
       quantity INTEGER NOT NULL,
       ticket_ids TEXT[] NOT NULL,
       buyer_wallet_address TEXT NOT NULL,
@@ -1107,6 +1132,29 @@ export async function createPaymentOrchestratorServer(config: PaymentOrchestrato
           error: error instanceof Error ? error.message : String(error)
         });
       }
+
+      // Confirm purchase in ticketing-service
+      if (updatedPayment.reservationId) {
+        const confirmUrl = `${config.ticketingServiceBaseUrl}/tickets/purchase/${updatedPayment.reservationId}/confirm`;
+        try {
+          await fetch(confirmUrl, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-internal-api-key": config.internalApiKey
+            },
+            body: JSON.stringify({
+              gatewayTransactionId: updatedPayment.gatewayTransactionId,
+              status: "confirmed"
+            })
+          });
+        } catch (error) {
+          log(config.serviceName, "warn", "Failed to confirm purchase in ticketing-service", {
+            reservationId: updatedPayment.reservationId,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
+      }
     }
 
     await pool.query(
@@ -1337,8 +1385,18 @@ export async function createPaymentOrchestratorServer(config: PaymentOrchestrato
         const amount = body.amount;
         const currency = (body.currency ?? "VND").trim().toUpperCase();
         const gateway = body.gateway?.trim().toLowerCase() as PaymentGateway | undefined;
-        const eventId = parsePositiveInteger(body.eventId);
-        const ticketTypeId = parsePositiveInteger(body.ticketTypeId);
+        const eventId =
+          typeof body.eventId === "string" && body.eventId.trim()
+            ? hashStringId(body.eventId.trim())
+            : typeof body.eventId === "number"
+              ? hashStringId(String(body.eventId))
+              : undefined;
+        const ticketTypeId =
+          typeof body.ticketTypeId === "string" && body.ticketTypeId.trim()
+            ? hashStringId(body.ticketTypeId.trim())
+            : typeof body.ticketTypeId === "number"
+              ? hashStringId(String(body.ticketTypeId))
+              : undefined;
         const quantity = parsePositiveInteger(body.quantity);
         const buyerWalletAddress = normalizeWalletAddress(
           body.buyerWalletAddress ?? body.buyer ?? body.walletAddress
