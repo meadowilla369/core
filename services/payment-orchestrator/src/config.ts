@@ -18,6 +18,9 @@ export interface PaymentOrchestratorConfig {
   ticketLedgerAddress?: string;
   prefundAmountWei?: string;
   castBinaryPath?: string;
+  ticketingServiceBaseUrl: string;
+  eventServiceBaseUrl: string;
+  internalApiKey: string;
 }
 
 export const DEFAULT_BACKEND_SIGNER_PRIVATE_KEY =
@@ -93,6 +96,9 @@ export function loadConfig(): PaymentOrchestratorConfig {
       process.env.WALLET_PREFUND_AMOUNT_WEI,
       DEFAULT_WALLET_PREFUND_AMOUNT_WEI
     ),
-    castBinaryPath: process.env.CAST_BINARY_PATH ?? "cast"
+    castBinaryPath: process.env.CAST_BINARY_PATH ?? "cast",
+    ticketingServiceBaseUrl: process.env.TICKETING_SERVICE_BASE_URL ?? "http://127.0.0.1:3005",
+    eventServiceBaseUrl: process.env.EVENT_SERVICE_BASE_URL ?? "http://127.0.0.1:3004",
+    internalApiKey: process.env.INTERNAL_API_KEY ?? "internal-dev-key"
   };
 }

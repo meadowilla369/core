@@ -4,6 +4,7 @@ export interface TicketingConfig {
   port: number;
   reservationTtlSec: number;
   internalApiKey: string;
+  eventServiceBaseUrl: string;
   contractSyncServiceBaseUrl: string;
 }
 
@@ -23,6 +24,7 @@ export function loadConfig(): TicketingConfig {
     port: parseNumber(process.env.PORT, 3005),
     reservationTtlSec: parseNumber(process.env.RESERVATION_TTL_SEC, 900),
     internalApiKey: process.env.INTERNAL_API_KEY ?? "internal-dev-key",
+    eventServiceBaseUrl: process.env.EVENT_SERVICE_BASE_URL ?? "http://127.0.0.1:3004",
     contractSyncServiceBaseUrl:
       process.env.CONTRACT_SYNC_SERVICE_BASE_URL ?? "http://127.0.0.1:3014"
   };
