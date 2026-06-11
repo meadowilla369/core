@@ -1,14 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import {
-  AlertTriangle,
-  ArrowLeft,
-  CheckCircle2,
-  Clock,
-  Copy,
-  Shield,
-  Sparkles,
-  Ticket
-} from "lucide-react";
+import { useMemo, useState } from "react";
+import { ArrowLeft, CheckCircle2, Clock, Copy, Shield, Sparkles, Ticket } from "lucide-react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -97,9 +88,7 @@ const PrimaryPurchasePage = () => {
   const client = useApiClient();
   const queryClient = useQueryClient();
   const initialTierIndex = Math.max(0, Number(searchParams.get("tier") ?? "0") || 0);
-  const [quantity, setQuantity] = useState("1");
-  const [onChainEventId, setOnChainEventId] = useState("1");
-  const [onChainTicketTypeId, setOnChainTicketTypeId] = useState(String(initialTierIndex + 1));
+  const [quantity] = useState("1");
   const [walletBootstrap, setWalletBootstrap] = useState<WalletRegistrationData | null>(null);
   const [paymentIntent, setPaymentIntent] = useState<PaymentIntentData | null>(null);
   const [prepared, setPrepared] = useState<PreparedPrimaryState | null>(null);
@@ -115,10 +104,6 @@ const PrimaryPurchasePage = () => {
   const event = data;
   const selectedTier =
     event?.ticketTypes[initialTierIndex] ?? event?.ticketTypes[0] ?? fallbackTicketType;
-
-  useEffect(() => {
-    setOnChainTicketTypeId(String(initialTierIndex + 1));
-  }, [initialTierIndex]);
 
   const quantityValue = Math.max(1, Number(quantity) || 1);
   const subtotal = selectedTier.price * quantityValue;
@@ -152,27 +137,31 @@ const PrimaryPurchasePage = () => {
         throw new Error("Missing event id");
       }
 
-      const parsedEventId = Number(onChainEventId);
-      const parsedTicketTypeId = Number(onChainTicketTypeId);
-      if (!Number.isInteger(parsedEventId) || parsedEventId <= 0) {
-        throw new Error("On-chain event ID phải là số nguyên dương");
-      }
-      if (!Number.isInteger(parsedTicketTypeId) || parsedTicketTypeId <= 0) {
-        throw new Error("On-chain ticket type ID phải là số nguyên dương");
-      }
-
       const now = Date.now();
       const orderId = `ord_primary_${id}_${now}`;
-      const reservationId = `res_primary_${id}_${now}`;
+
+      const [wallet, reservation] = await Promise.all([
+        client.registerPaymentWallet(
+          { walletAddress: getSessionWalletAddress() },
+          { userId: getSessionUserId() }
+        ),
+        client.reserveTickets(
+          { eventId: id, ticketTypeId: selectedTier.id, quantity: quantityValue },
+          { userId: getSessionUserId(), idempotencyKey: `primary:reserve:${orderId}` }
+        )
+      ]);
+
+      const reservationId = reservation.data.reservationId;
+      await client.initiateTicketPurchase(
+        { reservationId, paymentMethod: "momo" },
+        { userId: getSessionUserId(), idempotencyKey: `primary:purchase:${orderId}` }
+      );
+
       const ticketIds = Array.from(
         { length: quantityValue },
         (_, index) => `${reservationId}:${index + 1}`
       );
 
-      const wallet = await client.registerPaymentWallet(
-        { walletAddress: getSessionWalletAddress() },
-        { userId: getSessionUserId() }
-      );
       const payment = await client.createPaymentIntent(
         {
           orderId,
@@ -180,8 +169,8 @@ const PrimaryPurchasePage = () => {
           amount: subtotal,
           currency: "VND",
           gateway: "momo",
-          eventId: parsedEventId,
-          ticketTypeId: parsedTicketTypeId,
+          eventId: id,
+          ticketTypeId: selectedTier.id,
           quantity: quantityValue,
           ticketIds,
           buyerWalletAddress: getSessionWalletAddress()
@@ -589,6 +578,21 @@ const PrimaryPurchasePage = () => {
                 </div>
               ))}
             </div>
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              {[
+                { label: "Event ID", value: id ?? "—" },
+                { label: "Ticket Type ID", value: selectedTier.id }
+              ].map((item) => (
+                <div key={item.label} className="border border-foreground/10 p-2.5">
+                  <span className="font-mono text-[9px] text-foreground/40 block">
+                    {item.label}
+                  </span>
+                  <span className="font-mono text-[10px] text-foreground/70 block mt-0.5 break-all">
+                    {item.value}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>
@@ -628,58 +632,14 @@ const PrimaryPurchasePage = () => {
       </section>
 
       <section className="px-4 pb-4">
-        <h3 className="font-mono text-[10px] tracking-widest text-foreground/50 mb-3">
-          [ PRIMARY FLOW ]
-        </h3>
-        <div className="border border-foreground/20 p-4 space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block">
-              <span className="font-mono text-[10px] text-foreground/50 block mb-2">
-                On-chain event ID
-              </span>
-              <input
-                value={onChainEventId}
-                onChange={(event) => setOnChainEventId(event.target.value)}
-                className="w-full bg-transparent border border-foreground/20 px-3 py-2 font-mono text-xs outline-none"
-              />
-            </label>
-            <label className="block">
-              <span className="font-mono text-[10px] text-foreground/50 block mb-2">
-                On-chain ticket type ID
-              </span>
-              <input
-                value={onChainTicketTypeId}
-                onChange={(event) => setOnChainTicketTypeId(event.target.value)}
-                className="w-full bg-transparent border border-foreground/20 px-3 py-2 font-mono text-xs outline-none"
-              />
-            </label>
-            <label className="block">
-              <span className="font-mono text-[10px] text-foreground/50 block mb-2">Quantity</span>
-              <input
-                value={quantity}
-                onChange={(event) => setQuantity(event.target.value)}
-                className="w-full bg-transparent border border-foreground/20 px-3 py-2 font-mono text-xs outline-none"
-              />
-            </label>
-          </div>
-
-          <div className="border border-green-600/30 bg-green-600/5 p-3 flex items-start gap-3">
-            <Shield className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
-            <div>
-              <span className="text-xs font-medium text-green-600">Demo flow wired end-to-end</span>
-              <p className="font-mono text-[10px] text-foreground/50 mt-0.5">
-                FE sẽ register wallet, tạo payment intent, giả lập webhook MoMo dev, lấy
-                `paymentHash/signature`, build tx draft, rồi broadcast trực tiếp lên local Anvil để
-                contract-sync-service xác nhận owner mới.
-              </p>
-            </div>
-          </div>
-
-          <div className="border border-foreground/10 p-3 flex items-start gap-3">
-            <AlertTriangle className="w-4 h-4 text-foreground/40 mt-0.5 flex-shrink-0" />
-            <p className="font-mono text-[10px] text-foreground/40">
-              `event-service` hiện chưa map sang on-chain numeric ids. Hai input phía trên đang là
-              bridge tạm thời để flow primary không bị nghẽn.
+        <div className="border border-green-600/30 bg-green-600/5 p-3 flex items-start gap-3">
+          <Shield className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+          <div>
+            <span className="text-xs font-medium text-green-600">Demo flow wired end-to-end</span>
+            <p className="font-mono text-[10px] text-foreground/50 mt-0.5">
+              FE sẽ register wallet, tạo payment intent, giả lập webhook MoMo dev, lấy
+              paymentHash/signature, build tx draft, rồi broadcast trực tiếp lên local Anvil để
+              contract-sync-service xác nhận owner mới.
             </p>
           </div>
         </div>
