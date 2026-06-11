@@ -160,18 +160,20 @@ run_live_ios() {
   source "$ENV_FILE"
   set +a
   configure_device_env
-  local https_args=()
+  local https_args
+  https_args=""
   if [[ "${VITE_DEV_HTTPS:-}" == "true" ]]; then
-    https_args+=(--https)
+    https_args=" --https"
   fi
 
   (
     cd "$ROOT_DIR"
+    # shellcheck disable=SC2086
     pnpm --filter @ticket-platform/app-web exec cap run ios \
       --live-reload \
       --host "$LOCALCHAIN_PUBLIC_HOST" \
       --port "${VITE_PORT:-$DEFAULT_VITE_PORT}" \
-      "${https_args[@]}"
+      $https_args
   )
 }
 
