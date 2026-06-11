@@ -223,6 +223,16 @@ function extractOrganizerId(req: IncomingMessage): string | null {
   return organizerId?.trim() || null;
 }
 
+function extractInternalApiKey(req: IncomingMessage): string | null {
+  const value = req.headers["x-internal-api-key"];
+  if (!value) {
+    return null;
+  }
+
+  const key = Array.isArray(value) ? value[0] : value;
+  return key?.trim() || null;
+}
+
 function toIso(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
@@ -294,6 +304,31 @@ function computeAvailability(event: EventRecord) {
     sold: type.soldCount,
     quantity: type.quantity
   }));
+}
+
+function validatePublishReady(event: EventRecord): string[] {
+  const missing: string[] = [];
+  const metadata = event.metadata;
+
+  if (!event.title.trim()) missing.push("title");
+  if (!event.city.trim()) missing.push("city");
+  if (!event.venue.trim()) missing.push("venue");
+  if (!event.startAt.trim()) missing.push("startAt");
+  if (!event.endAt.trim()) missing.push("endAt");
+  if (!metadata?.category.trim()) missing.push("metadata.category");
+  if (!metadata?.address.trim()) missing.push("metadata.address");
+  if (!metadata?.description.trim()) missing.push("metadata.description");
+  if (!metadata?.heroImageDataUrl.trim()) missing.push("metadata.heroImageDataUrl");
+  if (!metadata?.posterImageDataUrl.trim()) missing.push("metadata.posterImageDataUrl");
+  if (event.ticketTypes.length === 0) missing.push("ticketTypes");
+
+  for (const [index, ticketType] of event.ticketTypes.entries()) {
+    if (!ticketType.name.trim()) missing.push(`ticketTypes.${index}.name`);
+    if (ticketType.price < 0) missing.push(`ticketTypes.${index}.price`);
+    if (ticketType.quantity <= 0) missing.push(`ticketTypes.${index}.quantity`);
+  }
+
+  return missing;
 }
 
 function sanitizeSummary(event: EventRecord) {
@@ -609,13 +644,6 @@ export async function createEventServer(config: EventServiceConfig) {
           });
         }
 
-        const status: EventStatus =
-          body.status === "active" || body.status === "in_review" || body.status === "cancelled"
-            ? body.status
-            : "draft";
-
-        const metadata = normalizeMetadata(body.metadata);
-
         const ticketTypes =
           body.ticketTypes?.map((item, index) => ({
             id: item.id?.trim() || `tt_${randomUUID().replace(/-/g, "").slice(0, 10)}`,
@@ -686,6 +714,26 @@ export async function createEventServer(config: EventServiceConfig) {
         }
 
         const events = await listEvents(pool, { organizerId });
+
+        // Fetch locked counts from ticketing-service (best-effort, defaults to 0 on failure)
+        const lockedByEventId = new Map<string, number>();
+        try {
+          const invRes = await fetch(`${config.ticketingServiceBaseUrl}/tickets/inventory`);
+          if (invRes.ok) {
+            const invBody = (await invRes.json()) as {
+              data: { eventId: string; lockedCount: number }[];
+            };
+            for (const row of invBody.data) {
+              lockedByEventId.set(
+                row.eventId,
+                (lockedByEventId.get(row.eventId) ?? 0) + row.lockedCount
+              );
+            }
+          }
+        } catch {
+          // non-fatal: ticketsLocked will be 0
+        }
+
         const snapshot = {
           organizerId,
           generatedAt: new Date().toISOString(),
@@ -699,7 +747,7 @@ export async function createEventServer(config: EventServiceConfig) {
             status: event.status,
             grossSalesVnd: event.ticketTypes.reduce((sum, t) => sum + t.price * t.soldCount, 0),
             ticketsSold: event.ticketTypes.reduce((sum, t) => sum + t.soldCount, 0),
-            ticketsLocked: 0,
+            ticketsLocked: lockedByEventId.get(event.id) ?? 0,
             ticketCapacity: event.ticketTypes.reduce((sum, t) => sum + t.quantity, 0),
             checkinRate: 0
           })),
@@ -857,16 +905,6 @@ export async function createEventServer(config: EventServiceConfig) {
         });
       }
 
-      const submitReviewMatch = url.pathname.match(/^\/events\/([^/]+)\/submit-review$/);
-      if (method === "POST" && submitReviewMatch) {
-        return transitionOrganizerEvent(pool, req, res, submitReviewMatch[1], "in_review");
-      }
-
-      const devPublishMatch = url.pathname.match(/^\/events\/([^/]+)\/dev-publish$/);
-      if (method === "POST" && devPublishMatch) {
-        return transitionOrganizerEvent(pool, req, res, devPublishMatch[1], "active");
-      }
-
       if (method === "DELETE" && detailMatch) {
         const organizerId = extractOrganizerId(req);
         if (!organizerId) {
@@ -996,6 +1034,56 @@ export async function createEventServer(config: EventServiceConfig) {
         return sendJson(res, 200, {
           success: true,
           data: computeAvailability(event)
+        });
+      }
+
+      const syncMatch = url.pathname.match(/^\/internal\/ticket-types\/([^/]+)\/sync-sold$/);
+      if (method === "POST" && syncMatch) {
+        if (extractInternalApiKey(req) !== config.internalApiKey) {
+          return sendJson(res, 401, {
+            success: false,
+            error: {
+              code: "UNAUTHORIZED_INTERNAL",
+              message: "Missing or invalid x-internal-api-key"
+            }
+          });
+        }
+
+        const body = await readJson<{ quantity?: number }>(req);
+        const quantity = Number(body.quantity) || 0;
+        if (quantity <= 0) {
+          return sendJson(res, 400, {
+            success: false,
+            error: {
+              code: "INVALID_QUANTITY",
+              message: "quantity must be a positive number"
+            }
+          });
+        }
+
+        const ticketTypeId = syncMatch[1];
+        const result = await queryOne<{ id: string }>(
+          pool,
+          `UPDATE event_ticket_types SET sold_count = sold_count + $1, updated_at = NOW() WHERE id = $2 RETURNING id`,
+          [quantity, ticketTypeId]
+        );
+
+        if (!result) {
+          return sendJson(res, 404, {
+            success: false,
+            error: {
+              code: "TICKET_TYPE_NOT_FOUND",
+              message: "Ticket type not found"
+            }
+          });
+        }
+
+        return sendJson(res, 200, {
+          success: true,
+          data: {
+            ticketTypeId,
+            quantity
+          }
         });
       }
 

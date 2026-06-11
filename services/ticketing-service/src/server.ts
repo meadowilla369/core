@@ -502,7 +502,7 @@ export async function createTicketingServer(config: TicketingConfig) {
   await redis.connect();
   await ensureSchema(pool);
 
-  const eventServiceBaseUrl = process.env.EVENT_SERVICE_BASE_URL ?? "http://127.0.0.1:3004";
+  const eventServiceBaseUrl = config.eventServiceBaseUrl;
 
   // Sync inventory from event-service on startup
   try {
@@ -995,6 +995,8 @@ export async function createTicketingServer(config: TicketingConfig) {
 
           return {
             success: true,
+            confirmedTicketTypeId: reservationRow.ticket_type_id as string,
+            confirmedQuantity: Number(reservationRow.quantity),
             data: {
               ...reservationResponse(updated as ReservationRecord),
               ticketsIssued: Number(issued?.count ?? 0),
@@ -1003,8 +1005,28 @@ export async function createTicketingServer(config: TicketingConfig) {
           };
         });
 
-        await setCachedResponse(redis, idempotencyScope, response);
-        return sendJson(res, 200, response);
+        if (response.confirmedTicketTypeId && response.confirmedQuantity) {
+          const ticketTypeId = response.confirmedTicketTypeId;
+          const quantity = response.confirmedQuantity;
+          const syncUrl = `${config.eventServiceBaseUrl}/internal/ticket-types/${encodeURIComponent(ticketTypeId)}/sync-sold`;
+          fetch(syncUrl, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-internal-api-key": config.internalApiKey
+            },
+            body: JSON.stringify({ quantity })
+          }).catch((error: unknown) => {
+            log(config.serviceName, "warn", "Failed to sync sold count to event-service", {
+              ticketTypeId,
+              error: error instanceof Error ? error.message : String(error)
+            });
+          });
+        }
+
+        const clientResponse = { success: response.success, data: response.data };
+        await setCachedResponse(redis, idempotencyScope, clientResponse);
+        return sendJson(res, 200, clientResponse);
       }
 
       const reservationMatch = url.pathname.match(/^\/tickets\/reservations\/([^/]+)$/);
