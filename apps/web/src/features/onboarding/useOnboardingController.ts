@@ -10,6 +10,12 @@ import {
   saveOnboardingDraft,
   savePersistedSessionSnapshot
 } from "./storage";
+import {
+  secureGet,
+  secureSet,
+  SECURE_KEY_PRIVATE_KEY,
+  SECURE_KEY_WALLET_ADDRESS
+} from "@/lib/secureStorage";
 
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -219,11 +225,21 @@ export function useOnboardingController() {
       }
 
       setState((current) => reduceOnboardingState(current, { type: "WALLET_GENERATING" }));
+
+      // Priority: Keychain (native) → localStorage snapshot → create new
+      const securePrivateKey = await secureGet(SECURE_KEY_PRIVATE_KEY);
       const existingSnapshot = loadPersistedSessionSnapshot();
-      const wallet =
-        existingSnapshot?.walletAddress && existingSnapshot.privateKey
-          ? hydrateLocalWallet(existingSnapshot.privateKey as `0x${string}`)
-          : createLocalWallet();
+      const existingPrivateKey = securePrivateKey ?? existingSnapshot?.privateKey ?? null;
+
+      const wallet = existingPrivateKey
+        ? hydrateLocalWallet(existingPrivateKey as `0x${string}`)
+        : createLocalWallet();
+
+      // Persist to Keychain on native so it survives logout/reinstall
+      if (Capacitor.isNativePlatform()) {
+        await secureSet(SECURE_KEY_PRIVATE_KEY, wallet.privateKey as string);
+        await secureSet(SECURE_KEY_WALLET_ADDRESS, wallet.walletAddress as string);
+      }
 
       await continueWalletBootstrap(auth, wallet);
 

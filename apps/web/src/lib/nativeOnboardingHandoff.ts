@@ -2,7 +2,8 @@ import type { ApiClient } from "@ticket-platform/sdk-client";
 
 import { savePersistedSessionSnapshot } from "../features/onboarding/storage.ts";
 import type { OnboardingPrefundState } from "../features/onboarding/types.ts";
-import { createLocalWallet } from "../features/onboarding/wallet.ts";
+import { createLocalWallet, hydrateLocalWallet } from "../features/onboarding/wallet.ts";
+import { secureGet, secureSet, SECURE_KEY_PRIVATE_KEY, SECURE_KEY_WALLET_ADDRESS } from "./secureStorage.ts";
 import { webAppConfig } from "./config.ts";
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -36,7 +37,16 @@ export async function bootstrapNativeWalletFromHandoff(client: ApiClient, handof
     deviceName: "Entr native app",
     platform: "native"
   });
-  const wallet = createLocalWallet();
+
+  // Reuse existing wallet from Keychain if available
+  const securePrivateKey = await secureGet(SECURE_KEY_PRIVATE_KEY);
+  const wallet = securePrivateKey
+    ? hydrateLocalWallet(securePrivateKey as `0x${string}`)
+    : createLocalWallet();
+
+  // Persist to Keychain
+  await secureSet(SECURE_KEY_PRIVATE_KEY, wallet.privateKey as string);
+  await secureSet(SECURE_KEY_WALLET_ADDRESS, wallet.walletAddress as string);
   const registered = await client.registerPaymentWallet(
     { walletAddress: wallet.walletAddress },
     { userId: exchanged.data.userId }
