@@ -45,6 +45,7 @@ export interface OnboardingState {
 
 export interface PersistedSessionSnapshot {
   userId: string;
+  sessionId?: string;
   walletAddress: `0x${string}` | string;
   privateKey?: `0x${string}` | string;
   phone: string;

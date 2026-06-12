@@ -90,12 +90,11 @@ function extractUserId(req: IncomingMessage): string | null {
   return userId?.trim() || null;
 }
 
-function derivePhoneNumber(userId: string): string {
-  const suffix = userId
-    .replace(/[^0-9]/g, "")
-    .slice(-8)
-    .padStart(8, "0");
-  return `+849${suffix}`;
+function extractInternalApiKey(req: IncomingMessage): string | null {
+  const value = req.headers["x-internal-api-key"];
+  if (!value) return null;
+  const key = Array.isArray(value) ? value[0] : value;
+  return key?.trim() || null;
 }
 
 function toIso(value: string | Date): string {
@@ -209,7 +208,7 @@ async function appendAudit(
   );
 }
 
-async function ensureUser(pool: Pool, userId: string): Promise<UserProfileRow> {
+async function ensureUser(pool: Pool, userId: string, phone?: string): Promise<UserProfileRow> {
   const existing = await queryOne<UserProfileRow>(
     pool,
     `SELECT id, phone_number, full_name, email, email_verified, is_frozen, freeze_reason, updated_at FROM user_profiles WHERE id = $1`,
@@ -217,11 +216,19 @@ async function ensureUser(pool: Pool, userId: string): Promise<UserProfileRow> {
   );
 
   if (existing) {
+    // If we now have the real phone and it was previously derived/wrong, update it
+    if (phone && existing.phone_number !== phone) {
+      await pool.query(
+        `UPDATE user_profiles SET phone_number = $2, updated_at = NOW() WHERE id = $1`,
+        [userId, phone]
+      );
+      return { ...existing, phone_number: phone };
+    }
     return existing;
   }
 
   const now = new Date().toISOString();
-  const phoneNumber = derivePhoneNumber(userId);
+  const phoneNumber = phone ?? userId;
 
   await withPostgresTransaction(pool, async (client) => {
     await client.query(
@@ -267,6 +274,27 @@ export async function createUserServer(config: UserServiceConfig) {
             storage: "postgres",
             timestamp: new Date().toISOString()
           }
+        });
+      }
+
+      const ensureMatch = url.pathname.match(/^\/internal\/users\/([^/]+)\/ensure$/);
+      if (method === "POST" && ensureMatch) {
+        if (extractInternalApiKey(req) !== config.internalApiKey) {
+          return sendJson(res, 401, {
+            success: false,
+            error: {
+              code: "UNAUTHORIZED_INTERNAL",
+              message: "Missing or invalid x-internal-api-key"
+            }
+          });
+        }
+
+        const body = await readJson<{ phone?: string }>(req);
+        const targetUserId = decodeURIComponent(ensureMatch[1]);
+        const profileRow = await ensureUser(pool, targetUserId, body.phone?.trim() || undefined);
+        return sendJson(res, 200, {
+          success: true,
+          data: mapProfile(profileRow)
         });
       }
 

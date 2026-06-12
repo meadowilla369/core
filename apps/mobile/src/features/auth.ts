@@ -32,8 +32,8 @@ export function verifyOtp(phoneNumber: string, otpCode: string): OtpVerifyResult
   }
 
   return {
-    userId: `usr_${phoneNumber.replace(/\D/g, "").slice(-8)}`,
+    userId: `usr_${phoneNumber.replace(/\D/g, "")}`,
     sessionId: `sess_${Date.now()}`,
-    walletAddress: `0xwallet${phoneNumber.replace(/\D/g, "").slice(-8)}`
+    walletAddress: `0xwallet${phoneNumber.replace(/\D/g, "")}`
   };
 }

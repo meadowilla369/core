@@ -412,6 +412,16 @@ export class ApiClient {
     return this.request("/v1/auth/handoff/exchange", { method: "POST", body: input });
   }
 
+  async revokeSession(
+    sessionId: string,
+    ctx: { userId: string }
+  ): Promise<ApiSuccessResponse<{ sessionId: string; revokedAt: string }>> {
+    return this.request(`/v1/auth/sessions/${encodeURIComponent(sessionId)}`, {
+      method: "DELETE",
+      headers: { "x-user-id": ctx.userId }
+    });
+  }
+
   async getMyProfile(userId: string): Promise<ApiSuccessResponse<UserProfileData>> {
     return this.request("/v1/users/me", {
       method: "GET",

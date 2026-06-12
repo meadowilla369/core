@@ -6,26 +6,10 @@ import { toast } from "@ticket-platform/shared-ui";
 import {
   clearPersistedSessionSnapshot,
   loadOnboardingDraft,
+  loadPersistedSessionSnapshot,
   saveOnboardingDraft,
   savePersistedSessionSnapshot
 } from "./storage";
-import {
-  createInitialOnboardingState,
-  reduceOnboardingState,
-  shouldResumeFromStorage,
-  toPersistedSessionSnapshot
-} from "./machine";
-import { createLocalWallet } from "./wallet";
-import { normalizeOnboardingError } from "./errors";
-import { buildOnboardingViewModel } from "./view-model";
-import type {
-  OnboardingAuthSession,
-  OnboardingPrefundState,
-  OnboardingState,
-  OnboardingWalletDraft
-} from "./types";
-import { webAppConfig } from "@/lib/config";
-import { useApiClient } from "@/providers/AppProviders";
 
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -235,7 +219,11 @@ export function useOnboardingController() {
       }
 
       setState((current) => reduceOnboardingState(current, { type: "WALLET_GENERATING" }));
-      const wallet = createLocalWallet();
+      const existingSnapshot = loadPersistedSessionSnapshot();
+      const wallet =
+        existingSnapshot?.walletAddress && existingSnapshot.privateKey
+          ? hydrateLocalWallet(existingSnapshot.privateKey as `0x${string}`)
+          : createLocalWallet();
 
       await continueWalletBootstrap(auth, wallet);
 

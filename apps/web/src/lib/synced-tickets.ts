@@ -77,6 +77,12 @@ export function loadPurchasedTicketMetadata(
   }
 }
 
+export function clearPurchasedTicketMetadata(
+  storage: StorageLike | null = getBrowserStorage()
+): void {
+  storage?.removeItem(PURCHASED_TICKET_METADATA_KEY);
+}
+
 export function savePurchasedTicketMetadata(
   ticket: PurchasedTicketMetadata,
   storage: StorageLike | null = getBrowserStorage()

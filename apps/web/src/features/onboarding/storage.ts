@@ -58,3 +58,25 @@ export function savePersistedSessionSnapshot(session: PersistedSessionSnapshot) 
 export function clearPersistedSessionSnapshot() {
   getStorage()?.removeItem(ONBOARDING_SESSION_KEY);
 }
+
+export function clearAuthTokens() {
+  const snapshot = loadPersistedSessionSnapshot();
+  if (!snapshot) return;
+  // Keep wallet fields, wipe only auth/session tokens
+  savePersistedSessionSnapshot({
+    ...snapshot,
+    sessionId: undefined,
+    accessToken: "",
+    refreshToken: "",
+    accessTokenExpiresAt: new Date(0).toISOString(),
+    refreshTokenExpiresAt: new Date(0).toISOString()
+  });
+}
+
+export function hasValidSession(): boolean {
+  const snapshot = loadPersistedSessionSnapshot();
+  if (!snapshot?.refreshToken || !snapshot.refreshTokenExpiresAt) {
+    return false;
+  }
+  return new Date(snapshot.refreshTokenExpiresAt).getTime() > Date.now();
+}

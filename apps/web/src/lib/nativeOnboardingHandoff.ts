@@ -51,6 +51,7 @@ export async function bootstrapNativeWalletFromHandoff(client: ApiClient, handof
 
   savePersistedSessionSnapshot({
     userId: exchanged.data.userId,
+    sessionId: exchanged.data.sessionId,
     phone: exchanged.data.phone,
     walletAddress: wallet.walletAddress,
     privateKey: wallet.privateKey,

@@ -122,7 +122,7 @@ function hashToken(token: string): string {
 
 function deriveUserId(phone: string): string {
   const digits = phone.replace(/\D/g, "");
-  return `usr_${digits.slice(-10) || randomUUID().replace(/-/g, "").slice(0, 10)}`;
+  return `usr_${digits || randomUUID().replace(/-/g, "").slice(0, 10)}`;
 }
 
 function extractUserIdHeader(req: IncomingMessage): string | null {
@@ -438,6 +438,18 @@ export async function createAuthServer(config: AuthConfig) {
           );
         });
 
+        // Fire-and-forget: ensure user profile exists with the real phone number.
+        fetch(`${config.userServiceBaseUrl}/internal/users/${encodeURIComponent(userId)}/ensure`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-internal-api-key": config.internalApiKey
+          },
+          body: JSON.stringify({ phone })
+        }).catch(() => {
+          // Non-fatal — profile will be created lazily on first /users/me call
+        });
+
         return sendJson(res, 200, {
           success: true,
           data: {
@@ -669,6 +681,18 @@ export async function createAuthServer(config: AuthConfig) {
             ]
           );
         });
+
+        fetch(
+          `${config.userServiceBaseUrl}/internal/users/${encodeURIComponent(handoff.user_id)}/ensure`,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-internal-api-key": config.internalApiKey
+            },
+            body: JSON.stringify({ phone: handoff.phone })
+          }
+        ).catch(() => {});
 
         return sendJson(res, 200, {
           success: true,

@@ -9,6 +9,8 @@ export interface AuthConfig {
   accessTokenTtlSec: number;
   refreshTokenTtlSec: number;
   exposeOtpInResponse: boolean;
+  userServiceBaseUrl: string;
+  internalApiKey: string;
 }
 
 function parseNumber(value: string | undefined, fallback: number): number {
@@ -48,6 +50,8 @@ export function loadConfig(): AuthConfig {
     otpRateWindowSec: parseNumber(process.env.OTP_RATE_WINDOW_SEC, 900),
     accessTokenTtlSec: parseNumber(process.env.ACCESS_TOKEN_TTL_SEC, 900),
     refreshTokenTtlSec: parseNumber(process.env.REFRESH_TOKEN_TTL_SEC, 2_592_000),
-    exposeOtpInResponse: parseBoolean(process.env.AUTH_EXPOSE_OTP_IN_RESPONSE, true)
+    exposeOtpInResponse: parseBoolean(process.env.AUTH_EXPOSE_OTP_IN_RESPONSE, true),
+    userServiceBaseUrl: process.env.USER_SERVICE_BASE_URL ?? "http://127.0.0.1:3002",
+    internalApiKey: process.env.INTERNAL_API_KEY ?? "internal-dev-key"
   };
 }

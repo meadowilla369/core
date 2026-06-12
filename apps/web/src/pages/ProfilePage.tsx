@@ -5,6 +5,7 @@ import ProfileAvatar from "@/components/mobile/ProfileAvatar";
 import { profileFallback } from "@/lib/fallback-data";
 import { getInitials } from "@/lib/format";
 import { useProfileCustomization, useProfileSummary } from "@/hooks/use-profile";
+import { useLogout } from "@/hooks/use-logout";
 
 const menuItems = [
   { icon: CreditCard, label: "Phương thức thanh toán", path: "/profile/payments" },
@@ -16,6 +17,7 @@ const menuItems = [
 const ProfilePage = () => {
   const { data, isError } = useProfileSummary();
   const { customization } = useProfileCustomization();
+  const { logout, isLoggingOut } = useLogout();
   const profile = data ?? profileFallback;
   const displayName = customization.displayName ?? profile.displayName;
   const avatarInitials = customization.displayName
@@ -102,9 +104,14 @@ const ProfilePage = () => {
 
       {/* Logout */}
       <section className="p-4 mt-6">
-        <button className="w-full flex items-center justify-center gap-2 py-4 border border-destructive/50 text-destructive font-mono text-sm hover:bg-destructive/10 transition-colors">
+        <button
+          type="button"
+          onClick={() => void logout()}
+          disabled={isLoggingOut}
+          className="w-full flex items-center justify-center gap-2 py-4 border border-destructive/50 text-destructive font-mono text-sm hover:bg-destructive/10 transition-colors disabled:opacity-50"
+        >
           <LogOut className="w-4 h-4" />
-          ĐĂNG XUẤT
+          {isLoggingOut ? "ĐANG ĐĂNG XUẤT..." : "ĐĂNG XUẤT"}
         </button>
       </section>
 

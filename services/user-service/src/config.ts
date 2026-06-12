@@ -2,6 +2,7 @@ export interface UserServiceConfig {
   serviceName: string;
   host: string;
   port: number;
+  internalApiKey: string;
 }
 
 function parseNumber(value: string | undefined, fallback: number): number {
@@ -17,6 +18,7 @@ export function loadConfig(): UserServiceConfig {
   return {
     serviceName: process.env.SERVICE_NAME ?? "user-service",
     host: process.env.HOST ?? "127.0.0.1",
-    port: parseNumber(process.env.PORT, 3002)
+    port: parseNumber(process.env.PORT, 3002),
+    internalApiKey: process.env.INTERNAL_API_KEY ?? "internal-dev-key"
   };
 }
