@@ -91,7 +91,13 @@ const OnboardingPage = () => {
           walletAddress={controller.state.wallet?.walletAddress ?? null}
           isWorking={controller.isVerifyingOtp || controller.isRetrying}
           onExplainWallet={() => setActiveHelp("what-is-wallet")}
-          onContinue={controller.state.stage === "otp_verified" ? continueToApp : undefined}
+          onContinue={
+            Capacitor.isNativePlatform()
+              ? undefined
+              : controller.state.stage === "otp_verified"
+                ? continueToApp
+                : undefined
+          }
         />
       )}
 

@@ -11,11 +11,28 @@ import {
   savePersistedSessionSnapshot
 } from "./storage";
 import {
+  createInitialOnboardingState,
+  reduceOnboardingState,
+  shouldResumeFromStorage,
+  toPersistedSessionSnapshot
+} from "./machine";
+import type {
+  OnboardingAuthSession,
+  OnboardingPrefundState,
+  OnboardingState,
+  OnboardingWalletDraft
+} from "./types";
+import { normalizeOnboardingError } from "./errors";
+import { buildOnboardingViewModel } from "./view-model";
+import { createLocalWallet, hydrateLocalWallet } from "./wallet";
+import { webAppConfig } from "@/lib/config";
+import {
   secureGet,
   secureSet,
   SECURE_KEY_PRIVATE_KEY,
   SECURE_KEY_WALLET_ADDRESS
 } from "@/lib/secureStorage";
+import { useApiClient } from "@/providers/AppProviders";
 
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -255,21 +272,20 @@ export function useOnboardingController() {
       });
     },
     onError: (error) => {
-      const fallbackCode =
-        state.stage === "wallet_generating" || state.stage === "wallet_registering"
-          ? "BOOTSTRAP_FAILED"
-          : "OTP_EXPIRED";
-      const fallbackMessage =
-        fallbackCode === "BOOTSTRAP_FAILED"
-          ? "Wallet bootstrap that bai"
-          : "OTP khong hop le hoac da het han";
-
-      setState((current) =>
-        reduceOnboardingState(current, {
+      setState((current) => {
+        const fallbackCode =
+          current.stage === "wallet_generating" || current.stage === "wallet_registering"
+            ? "BOOTSTRAP_FAILED"
+            : "OTP_EXPIRED";
+        const fallbackMessage =
+          fallbackCode === "BOOTSTRAP_FAILED"
+            ? "Wallet bootstrap that bai"
+            : "OTP khong hop le hoac da het han";
+        return reduceOnboardingState(current, {
           type: "FAILED",
           payload: normalizeOnboardingError(error, fallbackCode, fallbackMessage)
-        })
-      );
+        });
+      });
     }
   });
 
