@@ -36,8 +36,8 @@ interface MarkAsUsedJob {
   completedAt?: string;
 }
 
-// Minimal ABI selector for markAsUsed(uint256)
-const MARK_AS_USED_SIG = "markAsUsed(uint256)";
+// TicketLedger uses markUsedBatch(uint256[]) with CHECKIN_ROLE
+const MARK_AS_USED_SIG = "markUsedBatch(uint256[])";
 
 function sendJson(res: ServerResponse, statusCode: number, payload: unknown): void {
   res.statusCode = statusCode;
@@ -127,8 +127,8 @@ export function createCheckinServer(config: CheckinConfig) {
         "--private-key",
         config.operatorPrivateKey,
         config.ticketNftAddress,
-        `${MARK_AS_USED_SIG}`,
-        tokenId
+        MARK_AS_USED_SIG,
+        `[${tokenId}]`
       ],
       { encoding: "utf8" }
     );

@@ -281,7 +281,7 @@ async function upsertProjection(
   const transactionHash = event.transactionHash?.trim() ?? "";
   const logIndex = typeof event.logIndex === "number" ? event.logIndex : -1;
   const eventName = event.eventName?.trim() ?? "";
-  const contractAddress = event.contractAddress?.trim() ?? "";
+  const contractAddress = event.contractAddress?.trim().toLowerCase() ?? "";
   const chainId = typeof event.chainId === "number" && event.chainId > 0 ? event.chainId : 31337;
   const blockNumber =
     typeof event.blockNumber === "number" && event.blockNumber >= 0 ? event.blockNumber : -1;

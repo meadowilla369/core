@@ -39,14 +39,6 @@ const LEGACY_TICKET_EVENTS = [
   },
   {
     type: "event",
-    name: "TicketUsed",
-    inputs: [
-      { name: "tokenId", type: "uint256", indexed: true },
-      { name: "usedAt", type: "uint256", indexed: false }
-    ]
-  },
-  {
-    type: "event",
     name: "TicketRefunded",
     inputs: [
       { name: "tokenId", type: "uint256", indexed: true },
@@ -259,7 +251,7 @@ export class RpcListener {
       blockNumber: log.blockNumber ?? 0n,
       transactionHash: log.transactionHash ?? "0x",
       logIndex: log.logIndex ?? 0,
-      address: log.address
+      address: log.address.toLowerCase() as `0x${string}`
     };
   }
 
@@ -305,26 +297,6 @@ export class RpcListener {
       }
     });
 
-    const unwatchUsed = client.watchContractEvent({
-      address,
-      abi: LEGACY_TICKET_EVENTS,
-      eventName: "TicketUsed",
-      onLogs: (logs) => {
-        const events: ContractEventInput[] = [];
-        for (const log of logs) {
-          if (!log.args) continue;
-          const args = log.args as { tokenId: bigint; usedAt: bigint };
-          events.push(mapTicketUsed(args, this.buildMeta(log, chainId)));
-        }
-        void this.ingestAndLog("RPC legacy TicketUsed events received", events);
-      },
-      onError: (error) => {
-        this.log(this.config.serviceName, "error", "RPC legacy TicketUsed watch error", {
-          error: String(error)
-        });
-      }
-    });
-
     const unwatchRefunded = client.watchContractEvent({
       address,
       abi: LEGACY_TICKET_EVENTS,
@@ -345,7 +317,7 @@ export class RpcListener {
       }
     });
 
-    this.unwatchers.push(unwatchTransfer, unwatchUsed, unwatchRefunded);
+    this.unwatchers.push(unwatchTransfer, unwatchRefunded);
   }
 
   private watchCurrentTicketLedger(address: `0x${string}`, chainId: number): void {
