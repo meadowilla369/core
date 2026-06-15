@@ -183,7 +183,7 @@ export interface RpcListenerConfig {
   serviceName: string;
 }
 
-export type IngestFn = (events: ContractEventInput[]) => EventProcessingResult[];
+export type IngestFn = (events: ContractEventInput[]) => Promise<EventProcessingResult[]>;
 
 type UnwatchFn = () => void;
 
@@ -263,12 +263,12 @@ export class RpcListener {
     };
   }
 
-  private ingestAndLog(message: string, events: ContractEventInput[]): void {
+  private async ingestAndLog(message: string, events: ContractEventInput[]): Promise<void> {
     if (events.length === 0) {
       return;
     }
 
-    const results = this.ingest(events);
+    const results = await this.ingest(events);
     const processed = results.filter((result) => result.status === "processed").length;
     const duplicates = results.filter((result) => result.status === "duplicate").length;
     const rejected = results.filter((result) => result.status === "rejected");
@@ -296,7 +296,7 @@ export class RpcListener {
           const args = log.args as { from: `0x${string}`; to: `0x${string}`; tokenId: bigint };
           events.push(mapTransfer(args, this.buildMeta(log, chainId)));
         }
-        this.ingestAndLog("RPC legacy Transfer events received", events);
+        void this.ingestAndLog("RPC legacy Transfer events received", events);
       },
       onError: (error) => {
         this.log(this.config.serviceName, "error", "RPC legacy Transfer watch error", {
@@ -316,7 +316,7 @@ export class RpcListener {
           const args = log.args as { tokenId: bigint; usedAt: bigint };
           events.push(mapTicketUsed(args, this.buildMeta(log, chainId)));
         }
-        this.ingestAndLog("RPC legacy TicketUsed events received", events);
+        void this.ingestAndLog("RPC legacy TicketUsed events received", events);
       },
       onError: (error) => {
         this.log(this.config.serviceName, "error", "RPC legacy TicketUsed watch error", {
@@ -336,7 +336,7 @@ export class RpcListener {
           const args = log.args as { tokenId: bigint; amount: bigint };
           events.push(mapTicketRefunded(args, this.buildMeta(log, chainId)));
         }
-        this.ingestAndLog("RPC legacy TicketRefunded events received", events);
+        void this.ingestAndLog("RPC legacy TicketRefunded events received", events);
       },
       onError: (error) => {
         this.log(this.config.serviceName, "error", "RPC legacy TicketRefunded watch error", {
@@ -368,7 +368,7 @@ export class RpcListener {
           };
           events.push(mapTicketPurchased(args, this.buildMeta(log, chainId)));
         }
-        this.ingestAndLog("RPC TicketPurchased events received", events);
+        void this.ingestAndLog("RPC TicketPurchased events received", events);
       },
       onError: (error) => {
         this.log(this.config.serviceName, "error", "RPC TicketPurchased watch error", {
@@ -392,7 +392,7 @@ export class RpcListener {
           };
           events.push(mapTicketTransferred(args, this.buildMeta(log, chainId)));
         }
-        this.ingestAndLog("RPC TicketTransferred events received", events);
+        void this.ingestAndLog("RPC TicketTransferred events received", events);
       },
       onError: (error) => {
         this.log(this.config.serviceName, "error", "RPC TicketTransferred watch error", {
@@ -422,7 +422,7 @@ export class RpcListener {
             )
           );
         }
-        this.ingestAndLog("RPC current TicketUsed events received", events);
+        void this.ingestAndLog("RPC current TicketUsed events received", events);
       },
       onError: (error) => {
         this.log(this.config.serviceName, "error", "RPC current TicketUsed watch error", {
@@ -442,7 +442,7 @@ export class RpcListener {
           const args = log.args as { ticketId: bigint; refundAmount: bigint };
           events.push(mapTicketCancelled(args, this.buildMeta(log, chainId)));
         }
-        this.ingestAndLog("RPC TicketCancelled events received", events);
+        void this.ingestAndLog("RPC TicketCancelled events received", events);
       },
       onError: (error) => {
         this.log(this.config.serviceName, "error", "RPC TicketCancelled watch error", {
@@ -473,7 +473,7 @@ export class RpcListener {
           };
           events.push(mapListed(args, this.buildMeta(log, chainId)));
         }
-        this.ingestAndLog("RPC legacy Listed events received", events);
+        void this.ingestAndLog("RPC legacy Listed events received", events);
       },
       onError: (error) => {
         this.log(this.config.serviceName, "error", "RPC legacy Listed watch error", {
@@ -498,7 +498,7 @@ export class RpcListener {
           };
           events.push(mapSaleCompleted(args, this.buildMeta(log, chainId)));
         }
-        this.ingestAndLog("RPC legacy SaleCompleted events received", events);
+        void this.ingestAndLog("RPC legacy SaleCompleted events received", events);
       },
       onError: (error) => {
         this.log(this.config.serviceName, "error", "RPC legacy SaleCompleted watch error", {
@@ -529,7 +529,7 @@ export class RpcListener {
           };
           events.push(mapTicketListed(args, this.buildMeta(log, chainId)));
         }
-        this.ingestAndLog("RPC TicketListed events received", events);
+        void this.ingestAndLog("RPC TicketListed events received", events);
       },
       onError: (error) => {
         this.log(this.config.serviceName, "error", "RPC TicketListed watch error", {
@@ -569,7 +569,7 @@ export class RpcListener {
             );
           }
         }
-        this.ingestAndLog("RPC current ListingCancelled events received", events);
+        void this.ingestAndLog("RPC current ListingCancelled events received", events);
       },
       onError: (error) => {
         this.log(this.config.serviceName, "error", "RPC current ListingCancelled watch error", {
@@ -595,7 +595,7 @@ export class RpcListener {
           };
           events.push(mapTicketSold(args, this.buildMeta(log, chainId)));
         }
-        this.ingestAndLog("RPC TicketSold events received", events);
+        void this.ingestAndLog("RPC TicketSold events received", events);
       },
       onError: (error) => {
         this.log(this.config.serviceName, "error", "RPC TicketSold watch error", {

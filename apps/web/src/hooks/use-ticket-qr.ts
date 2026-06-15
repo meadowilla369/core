@@ -76,6 +76,14 @@ export function useTicketQr(ticket: TicketOwnershipView | null) {
     return () => window.clearTimeout(timer);
   }, [payload, refetch]);
 
+  // Failsafe: if QR is already expired when the component mounts (e.g. after
+  // backgrounding the app), trigger an immediate refetch.
+  useEffect(() => {
+    if (secondsRemaining === 0 && payload?.source === "backend" && !query.isFetching) {
+      void refetch();
+    }
+  }, [secondsRemaining, payload?.source, query.isFetching, refetch]);
+
   return {
     payload,
     qrValue,

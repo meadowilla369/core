@@ -4,7 +4,7 @@ import { RpcListener } from "./rpc-listener.js";
 import { createContractSyncApp } from "./server.js";
 
 const config = loadConfig();
-const { server, ingestEvents } = createContractSyncApp(config);
+const { server, ingestEvents, close } = await createContractSyncApp(config);
 
 server.listen(config.port, config.host, () => {
   log(config.serviceName, "info", "Contract sync service listening", {
@@ -36,14 +36,13 @@ if (rpcConfig) {
   );
 }
 
-function shutdown(signal: string): void {
+async function shutdown(signal: string): Promise<void> {
   log(config.serviceName, "info", "Shutdown signal received", { signal });
   rpcListener?.stop();
-  server.close(() => {
-    log(config.serviceName, "info", "Server closed");
-    process.exit(0);
-  });
+  await close();
+  log(config.serviceName, "info", "Server closed");
+  process.exit(0);
 }
 
-process.on("SIGINT", () => shutdown("SIGINT"));
-process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("SIGINT"));
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
