@@ -7,7 +7,9 @@ export interface CheckinConfig {
   maxClockSkewSec: number;
   markAsUsedPollMs: number;
   markAsUsedMaxRetries: number;
-  markAsUsedFailureRate: number;
+  rpcUrl: string | undefined;
+  ticketNftAddress: string | undefined;
+  operatorPrivateKey: string | undefined;
 }
 
 function parseNumber(value: string | undefined, fallback: number): number {
@@ -17,27 +19,6 @@ function parseNumber(value: string | undefined, fallback: number): number {
 
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function parseRate(value: string | undefined, fallback: number): number {
-  if (!value) {
-    return fallback;
-  }
-
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) {
-    return fallback;
-  }
-
-  if (parsed < 0) {
-    return 0;
-  }
-
-  if (parsed > 1) {
-    return 1;
-  }
-
-  return parsed;
 }
 
 export function loadConfig(): CheckinConfig {
@@ -50,6 +31,8 @@ export function loadConfig(): CheckinConfig {
     maxClockSkewSec: parseNumber(process.env.MAX_CLOCK_SKEW_SEC, 10),
     markAsUsedPollMs: parseNumber(process.env.MARK_AS_USED_POLL_MS, 1000),
     markAsUsedMaxRetries: parseNumber(process.env.MARK_AS_USED_MAX_RETRIES, 3),
-    markAsUsedFailureRate: parseRate(process.env.MARK_AS_USED_FAILURE_RATE, 0)
+    rpcUrl: process.env.RPC_URL?.trim() || undefined,
+    ticketNftAddress: process.env.TICKET_NFT_ADDRESS?.trim() || undefined,
+    operatorPrivateKey: process.env.OPERATOR_PRIVATE_KEY?.trim() || undefined
   };
 }

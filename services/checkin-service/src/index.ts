@@ -12,7 +12,8 @@ server.listen(config.port, config.host, () => {
     maxQrAgeSec: config.maxQrAgeSec,
     maxClockSkewSec: config.maxClockSkewSec,
     markAsUsedPollMs: config.markAsUsedPollMs,
-    markAsUsedMaxRetries: config.markAsUsedMaxRetries
+    markAsUsedMaxRetries: config.markAsUsedMaxRetries,
+    chainConfigured: !!(config.rpcUrl && config.ticketNftAddress && config.operatorPrivateKey)
   });
 });
 
