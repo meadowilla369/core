@@ -9,6 +9,8 @@
 - `migrations/0005_payments_refunds_webhooks.sql`: Payments, webhook evidence, and refunds.
 - `migrations/0006_checkin_disputes_support.sql`: Check-in, dispute, and support tables.
 - `migrations/0007_hot_path_indexes.sql`: Throughput indexes and partial indexes.
+- `migrations/0008_payment_hashes_wallet_prefunds.sql`: Wallet prefund ledger and backend-issued payment hash evidence.
+- `migrations/0009_onchain_sync_inventory.sql`: On-chain event/ticket-type mappings, ticket inventory counters, raw chain event log persistence, and token ownership projection.
 
 ## Seed Strategy
 

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 
 import {
@@ -16,10 +16,10 @@ type EventStatus = "draft" | "in_review" | "active" | "cancelled";
 
 interface TicketType {
   id: string;
+  onchainTicketTypeId?: string | null;
   name: string;
   price: number;
   quantity: number;
-  soldCount: number;
   perks: string[];
 }
 
@@ -34,6 +34,7 @@ interface EventMetadata {
 
 interface EventRecord {
   id: string;
+  onchainEventId?: string | null;
   organizerId: string;
   title: string;
   city: string;
@@ -86,12 +87,13 @@ interface UpdateEventBody {
 
 interface EventRow {
   id: string;
+  onchain_event_id: string | null;
   organizer_id: string;
   title: string;
   city: string;
   venue: string;
-  start_at: string | Date;
-  end_at: string | Date;
+  starts_at: string | Date;
+  ends_at: string | Date;
   status: EventStatus;
   metadata: Record<string, unknown> | null;
 }
@@ -99,11 +101,29 @@ interface EventRow {
 interface TicketTypeRow {
   id: string;
   event_id: string;
+  onchain_ticket_type_id: string | null;
   name: string;
   price: number | string;
   quantity: number | string;
-  sold_count: number | string;
   perks: string[] | string | null;
+}
+
+interface GateRecord {
+  id: string;
+  eventId: string;
+  name: string;
+  location?: string | null;
+  status: "active" | "disabled";
+  createdAt: string;
+}
+
+interface GateRow {
+  id: string;
+  event_id: string;
+  name: string;
+  location: string | null;
+  status: "active" | "disabled";
+  created_at: string | Date;
 }
 
 class InvalidJsonError extends Error {
@@ -137,7 +157,6 @@ const seedEvents: EventRecord[] = [
         name: "General Admission",
         price: 900000,
         quantity: 5000,
-        soldCount: 1250,
         perks: ["Vao cong", "Khu vuc dung"]
       },
       {
@@ -145,7 +164,6 @@ const seedEvents: EventRecord[] = [
         name: "VIP",
         price: 2200000,
         quantity: 300,
-        soldCount: 120,
         perks: ["Loi vao rieng", "Khu vuc VIP"]
       }
     ]
@@ -173,7 +191,6 @@ const seedEvents: EventRecord[] = [
         name: "Standard",
         price: 650000,
         quantity: 800,
-        soldCount: 180,
         perks: ["Ghe tieu chuan", "Vao cong"]
       },
       {
@@ -181,7 +198,6 @@ const seedEvents: EventRecord[] = [
         name: "VVIP",
         price: 1800000,
         quantity: 100,
-        soldCount: 40,
         perks: ["Ghe gan san khau", "Nuoc uong chao mung"]
       }
     ]
@@ -223,16 +239,6 @@ function extractOrganizerId(req: IncomingMessage): string | null {
   return organizerId?.trim() || null;
 }
 
-function extractInternalApiKey(req: IncomingMessage): string | null {
-  const value = req.headers["x-internal-api-key"];
-  if (!value) {
-    return null;
-  }
-
-  const key = Array.isArray(value) ? value[0] : value;
-  return key?.trim() || null;
-}
-
 function toIso(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
@@ -272,38 +278,37 @@ function normalizeMetadata(input?: EventWriteMetadata): EventMetadata | null {
   };
 }
 
+function hashStringId(id: string): string {
+  const digest = createHash("sha256").update(id, "utf8").digest();
+  const high = digest.readUInt32BE(0);
+  const low = digest.readUInt16BE(4);
+  return String(high * 0x10000 + low || 1);
+}
+
 function mapEventRow(row: EventRow, ticketTypes: TicketTypeRow[]): EventRecord {
   const metadata = row.metadata as EventMetadata | null;
   return {
     id: row.id,
+    onchainEventId: row.onchain_event_id,
     organizerId: row.organizer_id,
     title: row.title,
     city: row.city,
     venue: row.venue,
-    startAt: toIso(row.start_at),
-    endAt: toIso(row.end_at),
+    startAt: toIso(row.starts_at),
+    endAt: toIso(row.ends_at),
     status: row.status,
     metadata,
     ticketTypes: ticketTypes
       .filter((item) => item.event_id === row.id)
       .map((item) => ({
         id: item.id,
+        onchainTicketTypeId: item.onchain_ticket_type_id,
         name: item.name,
         price: Number(item.price),
         quantity: Number(item.quantity),
-        soldCount: Number(item.sold_count),
         perks: toStringArray(item.perks)
       }))
   };
-}
-
-function computeAvailability(event: EventRecord) {
-  return event.ticketTypes.map((type) => ({
-    ticketTypeId: type.id,
-    available: Math.max(type.quantity - type.soldCount, 0),
-    sold: type.soldCount,
-    quantity: type.quantity
-  }));
 }
 
 function validatePublishReady(event: EventRecord): string[] {
@@ -334,6 +339,7 @@ function validatePublishReady(event: EventRecord): string[] {
 function sanitizeSummary(event: EventRecord) {
   return {
     id: event.id,
+    onchainEventId: event.onchainEventId,
     organizerId: event.organizerId,
     title: event.title,
     city: event.city,
@@ -342,20 +348,113 @@ function sanitizeSummary(event: EventRecord) {
     endAt: event.endAt,
     status: event.status,
     metadata: event.metadata,
-    heroImageUrl: event.metadata?.heroImageDataUrl
+    heroImageUrl: event.metadata?.heroImageDataUrl,
+    ticketTypes: event.ticketTypes.map((tt) => ({
+      id: tt.id,
+      name: tt.name,
+      price: tt.price,
+      quantity: tt.quantity,
+      perks: tt.perks
+    }))
   };
+}
+
+function mapGateRow(row: GateRow): GateRecord {
+  return {
+    id: row.id,
+    eventId: row.event_id,
+    name: row.name,
+    location: row.location,
+    status: row.status,
+    createdAt: toIso(row.created_at)
+  };
+}
+
+function defaultGatesForEvent(eventId: string): GateRecord[] {
+  return [
+    {
+      id: `${eventId}_gate_main`,
+      eventId,
+      name: "Main gate",
+      location: "Main entrance",
+      status: "active",
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: `${eventId}_gate_vip`,
+      eventId,
+      name: "VIP gate",
+      location: "VIP entrance",
+      status: "active",
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: `${eventId}_gate_backstage`,
+      eventId,
+      name: "Backstage gate",
+      location: "Staff entrance",
+      status: "active",
+      createdAt: new Date().toISOString()
+    }
+  ];
+}
+
+async function ensureDefaultGates(pool: Pool, eventId: string): Promise<void> {
+  const existing = await queryOne<{ count: string }>(
+    pool,
+    `SELECT COUNT(*)::text AS count FROM gates WHERE event_id = $1`,
+    [eventId]
+  );
+
+  if (Number(existing?.count ?? 0) > 0) {
+    await pool.query(
+      `UPDATE gates SET status = 'active' WHERE event_id = $1 AND status <> 'active'`,
+      [eventId]
+    );
+    return;
+  }
+
+  for (const gate of defaultGatesForEvent(eventId)) {
+    await pool.query(
+      `
+        INSERT INTO gates (id, event_id, name, location, status)
+        VALUES ($1, $2, $3, $4, 'active')
+        ON CONFLICT (id) DO UPDATE
+        SET status = 'active',
+            name = EXCLUDED.name,
+            location = EXCLUDED.location
+      `,
+      [gate.id, eventId, gate.name, gate.location]
+    );
+  }
+}
+
+async function listEventGates(pool: Pool, eventId: string): Promise<GateRecord[]> {
+  const rows = await queryMany<GateRow>(
+    pool,
+    `
+      SELECT id, event_id, name, location, status, created_at
+      FROM gates
+      WHERE event_id = $1
+      ORDER BY created_at ASC, id ASC
+    `,
+    [eventId]
+  );
+
+  return rows.map(mapGateRow);
 }
 
 async function ensureSchema(pool: Pool): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS events (
       id TEXT PRIMARY KEY,
+      onchain_event_id NUMERIC(78, 0) UNIQUE,
       organizer_id TEXT NOT NULL,
       title TEXT NOT NULL,
       city TEXT NOT NULL,
       venue TEXT NOT NULL,
-      start_at TIMESTAMPTZ NOT NULL,
-      end_at TIMESTAMPTZ NOT NULL,
+      starts_at TIMESTAMPTZ NOT NULL,
+      ends_at TIMESTAMPTZ NOT NULL,
       status TEXT NOT NULL CHECK (status IN ('draft', 'in_review', 'active', 'cancelled')),
       metadata JSONB,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -376,24 +475,49 @@ async function ensureSchema(pool: Pool): Promise<void> {
   `);
 
   await pool.query(`
-    ALTER TABLE event_ticket_types ADD COLUMN IF NOT EXISTS perks JSONB NOT NULL DEFAULT '[]'::jsonb
+    ALTER TABLE events ADD COLUMN IF NOT EXISTS onchain_event_id NUMERIC(78, 0)
   `);
 
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS event_ticket_types (
+    CREATE TABLE IF NOT EXISTS ticket_types (
       id TEXT PRIMARY KEY,
       event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      onchain_ticket_type_id NUMERIC(78, 0) UNIQUE,
       name TEXT NOT NULL,
-      price INTEGER NOT NULL,
+      unit_price INTEGER NOT NULL,
       quantity INTEGER NOT NULL,
-      sold_count INTEGER NOT NULL DEFAULT 0,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      perks JSONB NOT NULL DEFAULT '[]'::jsonb
     );
   `);
 
   await pool.query(`
-    ALTER TABLE event_ticket_types ADD COLUMN IF NOT EXISTS perks JSONB NOT NULL DEFAULT '[]'::jsonb;
+    ALTER TABLE ticket_types ADD COLUMN IF NOT EXISTS onchain_ticket_type_id NUMERIC(78, 0);
+  `);
+
+  await pool.query(`
+    ALTER TABLE ticket_types ADD COLUMN IF NOT EXISTS perks JSONB NOT NULL DEFAULT '[]'::jsonb;
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS gates (
+      id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      event_id TEXT NOT NULL REFERENCES events(id),
+      name TEXT NOT NULL,
+      location TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    ALTER TABLE gates ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+  `);
+
+  await pool.query(`
+    ALTER TABLE gates DROP CONSTRAINT IF EXISTS gates_status_check;
+  `);
+
+  await pool.query(`
+    ALTER TABLE gates ADD CONSTRAINT gates_status_check CHECK (status IN ('active', 'disabled'));
   `);
 
   const existing = await queryOne<{ count: string }>(
@@ -408,11 +532,12 @@ async function ensureSchema(pool: Pool): Promise<void> {
     await withPostgresTransaction(pool, async (client) => {
       await client.query(
         `
-          INSERT INTO events (id, organizer_id, title, city, venue, start_at, end_at, status, metadata)
-          VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7::timestamptz, $8, $9::jsonb)
+          INSERT INTO events (id, onchain_event_id, organizer_id, title, city, venue, starts_at, ends_at, status, metadata)
+          VALUES ($1, $2, $3, $4, $5, $6, $7::timestamptz, $8::timestamptz, $9, $10::jsonb)
         `,
         [
           event.id,
+          hashStringId(event.id),
           event.organizerId,
           event.title,
           event.city,
@@ -427,16 +552,18 @@ async function ensureSchema(pool: Pool): Promise<void> {
       for (const ticketType of event.ticketTypes) {
         await client.query(
           `
-            INSERT INTO event_ticket_types (id, event_id, name, price, quantity, sold_count, perks)
+            INSERT INTO ticket_types (
+              id, event_id, onchain_ticket_type_id, name, unit_price, quantity, perks
+            )
             VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
           `,
           [
             ticketType.id,
             event.id,
+            hashStringId(ticketType.id),
             ticketType.name,
             ticketType.price,
             ticketType.quantity,
-            ticketType.soldCount,
             JSON.stringify(ticketType.perks)
           ]
         );
@@ -470,13 +597,18 @@ async function listEvents(
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
   const eventRows = await queryMany<EventRow>(
     pool,
-    `SELECT id, organizer_id, title, city, venue, start_at, end_at, status, metadata FROM events ${whereClause} ORDER BY start_at ASC`,
+    `SELECT id, onchain_event_id, organizer_id, title, city, venue, starts_at, ends_at, status, metadata
+     FROM events ${whereClause}
+     ORDER BY starts_at ASC`,
     values
   );
 
   const ticketTypeRows = await queryMany<TicketTypeRow>(
     pool,
-    `SELECT id, event_id, name, price, quantity, sold_count, perks FROM event_ticket_types WHERE event_id = ANY($1::text[]) ORDER BY id ASC`,
+    `SELECT tt.id, tt.event_id, tt.onchain_ticket_type_id, tt.name, tt.unit_price AS price, tt.quantity, tt.perks
+     FROM ticket_types tt
+     WHERE tt.event_id = ANY($1::text[])
+     ORDER BY tt.id ASC`,
     [eventRows.map((item) => item.id)]
   );
 
@@ -486,7 +618,9 @@ async function listEvents(
 async function loadEvent(pool: Pool, eventId: string): Promise<EventRecord | null> {
   const eventRow = await queryOne<EventRow>(
     pool,
-    `SELECT id, organizer_id, title, city, venue, start_at, end_at, status, metadata FROM events WHERE id = $1`,
+    `SELECT id, onchain_event_id, organizer_id, title, city, venue, starts_at, ends_at, status, metadata
+     FROM events
+     WHERE id = $1`,
     [eventId]
   );
 
@@ -496,7 +630,10 @@ async function loadEvent(pool: Pool, eventId: string): Promise<EventRecord | nul
 
   const ticketTypeRows = await queryMany<TicketTypeRow>(
     pool,
-    `SELECT id, event_id, name, price, quantity, sold_count, perks FROM event_ticket_types WHERE event_id = $1 ORDER BY id ASC`,
+    `SELECT tt.id, tt.event_id, tt.onchain_ticket_type_id, tt.name, tt.unit_price AS price, tt.quantity, tt.perks
+     FROM ticket_types tt
+     WHERE tt.event_id = $1
+     ORDER BY tt.id ASC`,
     [eventId]
   );
 
@@ -565,10 +702,37 @@ async function transitionOrganizerEvent(
     });
   }
 
-  await pool.query(`UPDATE events SET status = $2, updated_at = NOW() WHERE id = $1`, [
-    eventId,
-    nextStatus
-  ]);
+  await withPostgresTransaction(pool, async (client) => {
+    await client.query(`UPDATE events SET status = $2, updated_at = NOW() WHERE id = $1`, [
+      eventId,
+      nextStatus
+    ]);
+
+    if (nextStatus === "active") {
+      const existing = await queryOne<{ count: string }>(
+        client,
+        `SELECT COUNT(*)::text AS count FROM gates WHERE event_id = $1`,
+        [eventId]
+      );
+
+      if (Number(existing?.count ?? 0) > 0) {
+        await client.query(
+          `UPDATE gates SET status = 'active' WHERE event_id = $1 AND status <> 'active'`,
+          [eventId]
+        );
+      } else {
+        for (const gate of defaultGatesForEvent(eventId)) {
+          await client.query(
+            `
+              INSERT INTO gates (id, event_id, name, location, status)
+              VALUES ($1, $2, $3, $4, 'active')
+            `,
+            [gate.id, eventId, gate.name, gate.location]
+          );
+        }
+      }
+    }
+  });
 
   return sendJson(res, 200, {
     success: true,
@@ -650,7 +814,6 @@ export async function createEventServer(config: EventServiceConfig) {
             name: item.name?.trim() || `Ticket ${index + 1}`,
             price: typeof item.price === "number" ? item.price : 0,
             quantity: typeof item.quantity === "number" ? item.quantity : 0,
-            soldCount: 0,
             perks: toStringArray(item.perks)
           })) ?? [];
 
@@ -659,11 +822,12 @@ export async function createEventServer(config: EventServiceConfig) {
         await withPostgresTransaction(pool, async (client) => {
           await client.query(
             `
-              INSERT INTO events (id, organizer_id, title, city, venue, start_at, end_at, status, metadata)
-              VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7::timestamptz, $8, $9::jsonb)
+              INSERT INTO events (id, onchain_event_id, organizer_id, title, city, venue, starts_at, ends_at, status, metadata)
+              VALUES ($1, $2, $3, $4, $5, $6, $7::timestamptz, $8::timestamptz, $9, $10::jsonb)
             `,
             [
               eventId,
+              hashStringId(eventId),
               organizerId,
               title,
               city,
@@ -678,16 +842,18 @@ export async function createEventServer(config: EventServiceConfig) {
           for (const ticketType of ticketTypes) {
             await client.query(
               `
-                INSERT INTO event_ticket_types (id, event_id, name, price, quantity, sold_count, perks)
+                INSERT INTO ticket_types (
+                  id, event_id, onchain_ticket_type_id, name, unit_price, quantity, perks
+                )
                 VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
               `,
               [
                 ticketType.id,
                 eventId,
+                hashStringId(ticketType.id),
                 ticketType.name,
                 ticketType.price,
                 ticketType.quantity,
-                0,
                 JSON.stringify(ticketType.perks)
               ]
             );
@@ -715,48 +881,139 @@ export async function createEventServer(config: EventServiceConfig) {
 
         const events = await listEvents(pool, { organizerId });
 
-        // Fetch locked counts from ticketing-service (best-effort, defaults to 0 on failure)
-        const lockedByEventId = new Map<string, number>();
-        try {
-          const invRes = await fetch(`${config.ticketingServiceBaseUrl}/tickets/inventory`);
-          if (invRes.ok) {
-            const invBody = (await invRes.json()) as {
-              data: { eventId: string; lockedCount: number }[];
-            };
-            for (const row of invBody.data) {
-              lockedByEventId.set(
-                row.eventId,
-                (lockedByEventId.get(row.eventId) ?? 0) + row.lockedCount
-              );
-            }
+        const eventIds = events.map((e) => e.id);
+        const inventoryRows =
+          eventIds.length > 0
+            ? await queryMany<{
+                event_id: string;
+                sold_count: string;
+                locked_count: string;
+                gross_sales_vnd: string;
+              }>(
+                pool,
+                `SELECT tt.event_id,
+                      COALESCE(SUM(ti.sold_count), 0)::text AS sold_count,
+                      COALESCE(SUM(ti.locked_count), 0)::text AS locked_count,
+                      COALESCE(SUM(ti.sold_count * tt.unit_price), 0)::text AS gross_sales_vnd
+               FROM ticket_inventory ti
+               INNER JOIN ticket_types tt ON tt.id = ti.ticket_type_id
+               WHERE tt.event_id = ANY($1::text[])
+               GROUP BY tt.event_id`,
+                [eventIds]
+              )
+            : [];
+
+        const soldByEventId = new Map(inventoryRows.map((r) => [r.event_id, Number(r.sold_count)]));
+        const lockedByEventId = new Map(
+          inventoryRows.map((r) => [r.event_id, Number(r.locked_count)])
+        );
+        const grossByEventId = new Map(
+          inventoryRows.map((r) => [r.event_id, Number(r.gross_sales_vnd)])
+        );
+
+        const checkinRows =
+          eventIds.length > 0
+            ? await queryMany<{
+                event_id: string;
+                gate_id: string | null;
+                checked_in_count: string;
+              }>(
+                pool,
+                `SELECT event_id, gate_id, COUNT(*)::text AS checked_in_count
+               FROM check_ins
+               WHERE event_id = ANY($1::text[])
+               GROUP BY event_id, gate_id`,
+                [eventIds]
+              )
+            : [];
+
+        const gateRows =
+          eventIds.length > 0
+            ? await queryMany<GateRow>(
+                pool,
+                `SELECT id, event_id, name, location, status, created_at
+               FROM gates
+               WHERE event_id = ANY($1::text[])
+               ORDER BY created_at ASC, id ASC`,
+                [eventIds]
+              )
+            : [];
+
+        const rejectionRows =
+          eventIds.length > 0
+            ? await queryMany<{
+                event_id: string;
+                gate_id: string | null;
+                reason: string;
+                rejection_count: string;
+              }>(
+                pool,
+                `SELECT event_id, gate_id, reason, COUNT(*)::text AS rejection_count
+               FROM scan_rejections
+               WHERE event_id = ANY($1::text[])
+               GROUP BY event_id, gate_id, reason`,
+                [eventIds]
+              )
+            : [];
+
+        type RejectionKey = `${string}|${string}`;
+        const duplicateByGate = new Map<RejectionKey, number>();
+        const invalidByGate = new Map<RejectionKey, number>();
+        for (const row of rejectionRows) {
+          const key: RejectionKey = `${row.event_id}|${row.gate_id ?? ""}`;
+          const count = Number(row.rejection_count);
+          if (row.reason === "ALREADY_USED" || row.reason === "NONCE_REPLAYED") {
+            duplicateByGate.set(key, (duplicateByGate.get(key) ?? 0) + count);
+          } else {
+            invalidByGate.set(key, (invalidByGate.get(key) ?? 0) + count);
           }
-        } catch {
-          // non-fatal: ticketsLocked will be 0
+        }
+
+        const checkinCountByEventId = new Map<string, number>();
+        const checkinCountByGateKey = new Map<RejectionKey, number>();
+        for (const row of checkinRows) {
+          const key: RejectionKey = `${row.event_id}|${row.gate_id ?? ""}`;
+          checkinCountByGateKey.set(key, Number(row.checked_in_count));
+          checkinCountByEventId.set(
+            row.event_id,
+            (checkinCountByEventId.get(row.event_id) ?? 0) + Number(row.checked_in_count)
+          );
         }
 
         const snapshot = {
           organizerId,
           generatedAt: new Date().toISOString(),
-          events: events.map((event) => ({
-            id: event.id,
-            title: event.title,
-            city: event.city,
-            venue: event.venue,
-            startAt: event.startAt,
-            endAt: event.endAt,
-            status: event.status,
-            grossSalesVnd: event.ticketTypes.reduce((sum, t) => sum + t.price * t.soldCount, 0),
-            ticketsSold: event.ticketTypes.reduce((sum, t) => sum + t.soldCount, 0),
-            ticketsLocked: lockedByEventId.get(event.id) ?? 0,
-            ticketCapacity: event.ticketTypes.reduce((sum, t) => sum + t.quantity, 0),
-            checkinRate: 0
-          })),
-          gates: [] as {
-            gateId: string;
-            checkedInCount: number;
-            duplicateCount: number;
-            invalidCount: number;
-          }[],
+          events: events.map((event) => {
+            const capacity = event.ticketTypes.reduce((sum, t) => sum + t.quantity, 0);
+            const checkedIn = checkinCountByEventId.get(event.id) ?? 0;
+            return {
+              id: event.id,
+              title: event.title,
+              city: event.city,
+              venue: event.venue,
+              startAt: event.startAt,
+              endAt: event.endAt,
+              status: event.status,
+              grossSalesVnd: grossByEventId.get(event.id) ?? 0,
+              ticketsSold: soldByEventId.get(event.id) ?? 0,
+              ticketsLocked: lockedByEventId.get(event.id) ?? 0,
+              ticketCapacity: capacity,
+              checkinRate: capacity > 0 ? checkedIn / capacity : 0
+            };
+          }),
+          gates: gateRows.map((r) => {
+            const key: `${string}|${string}` = `${r.event_id}|${r.id}`;
+            return {
+              gateId: r.id,
+              eventId: r.event_id,
+              name: r.name,
+              location: r.location,
+              status: r.status,
+              checkedInCount: checkinCountByGateKey.get(key) ?? 0,
+              duplicateCount: duplicateByGate.get(key) ?? 0,
+              invalidCount: invalidByGate.get(key) ?? 0
+            };
+          }),
           queues: [] as {
             id: string;
             label: string;
@@ -827,8 +1084,8 @@ export async function createEventServer(config: EventServiceConfig) {
               SET title = COALESCE($2, title),
                   city = COALESCE($3, city),
                   venue = COALESCE($4, venue),
-                  start_at = COALESCE($5::timestamptz, start_at),
-                  end_at = COALESCE($6::timestamptz, end_at),
+                  starts_at = COALESCE($5::timestamptz, starts_at),
+                  ends_at = COALESCE($6::timestamptz, ends_at),
                   metadata = COALESCE($7::jsonb, metadata),
                   updated_at = NOW()
               WHERE id = $1
@@ -845,21 +1102,25 @@ export async function createEventServer(config: EventServiceConfig) {
           );
 
           if (body.ticketTypes) {
-            await client.query(`DELETE FROM event_ticket_types WHERE event_id = $1`, [eventId]);
+            await client.query(`DELETE FROM ticket_types WHERE event_id = $1`, [eventId]);
 
             for (const [index, ticketType] of body.ticketTypes.entries()) {
+              const ticketTypeId =
+                ticketType.id?.trim() || `tt_${randomUUID().replace(/-/g, "").slice(0, 10)}`;
               await client.query(
                 `
-                  INSERT INTO event_ticket_types (id, event_id, name, price, quantity, sold_count, perks)
+                  INSERT INTO ticket_types (
+                    id, event_id, onchain_ticket_type_id, name, unit_price, quantity, perks
+                  )
                   VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
                 `,
                 [
-                  ticketType.id?.trim() || `tt_${randomUUID().replace(/-/g, "").slice(0, 10)}`,
+                  ticketTypeId,
                   eventId,
+                  hashStringId(ticketTypeId),
                   ticketType.name?.trim() || `Ticket ${index + 1}`,
                   typeof ticketType.price === "number" ? ticketType.price : 0,
                   typeof ticketType.quantity === "number" ? ticketType.quantity : 0,
-                  0,
                   JSON.stringify(toStringArray(ticketType.perks))
                 ]
               );
@@ -940,8 +1201,27 @@ export async function createEventServer(config: EventServiceConfig) {
           });
         }
 
-        await pool.query("DELETE FROM event_ticket_types WHERE event_id = $1", [eventId]);
-        await pool.query("DELETE FROM events WHERE id = $1", [eventId]);
+        await withPostgresTransaction(pool, async (client) => {
+          const scanned = await queryOne<{ count: string }>(
+            client,
+            `SELECT COUNT(*)::text AS count FROM check_ins WHERE event_id = $1`,
+            [eventId]
+          );
+
+          if (Number(scanned?.count ?? 0) > 0) {
+            await client.query(`UPDATE gates SET status = 'disabled' WHERE event_id = $1`, [
+              eventId
+            ]);
+            await client.query(
+              `UPDATE events SET status = 'cancelled', updated_at = NOW() WHERE id = $1`,
+              [eventId]
+            );
+          } else {
+            await client.query("DELETE FROM gates WHERE event_id = $1", [eventId]);
+            await client.query("DELETE FROM ticket_types WHERE event_id = $1", [eventId]);
+            await client.query("DELETE FROM events WHERE id = $1", [eventId]);
+          }
+        });
 
         return sendJson(res, 200, {
           success: true,
@@ -985,15 +1265,42 @@ export async function createEventServer(config: EventServiceConfig) {
           });
         }
 
-        await pool.query(
-          `UPDATE events SET status = 'cancelled', updated_at = NOW() WHERE id = $1`,
-          [eventId]
-        );
+        await withPostgresTransaction(pool, async (client) => {
+          await client.query(
+            `UPDATE events SET status = 'cancelled', updated_at = NOW() WHERE id = $1`,
+            [eventId]
+          );
+          await client.query(`UPDATE gates SET status = 'disabled' WHERE event_id = $1`, [eventId]);
+        });
         const updated = await loadEvent(pool, eventId);
 
         return sendJson(res, 200, {
           success: true,
           data: updated
+        });
+      }
+
+      const gatesMatch = url.pathname.match(/^\/events\/([^/]+)\/gates$/);
+      if (method === "GET" && gatesMatch) {
+        const event = await loadEvent(pool, gatesMatch[1]);
+
+        if (!event) {
+          return sendJson(res, 404, {
+            success: false,
+            error: {
+              code: "EVENT_NOT_FOUND",
+              message: "Event not found"
+            }
+          });
+        }
+
+        if (event.status === "active") {
+          await ensureDefaultGates(pool, event.id);
+        }
+
+        return sendJson(res, 200, {
+          success: true,
+          data: await listEventGates(pool, event.id)
         });
       }
 
@@ -1019,9 +1326,12 @@ export async function createEventServer(config: EventServiceConfig) {
 
       const availabilityMatch = url.pathname.match(/^\/events\/([^/]+)\/availability$/);
       if (method === "GET" && availabilityMatch) {
-        const event = await loadEvent(pool, availabilityMatch[1]);
+        const eventId = availabilityMatch[1];
+        const exists = await queryOne<{ id: string }>(pool, `SELECT id FROM events WHERE id = $1`, [
+          eventId
+        ]);
 
-        if (!event) {
+        if (!exists) {
           return sendJson(res, 404, {
             success: false,
             error: {
@@ -1031,59 +1341,35 @@ export async function createEventServer(config: EventServiceConfig) {
           });
         }
 
-        return sendJson(res, 200, {
-          success: true,
-          data: computeAvailability(event)
-        });
-      }
-
-      const syncMatch = url.pathname.match(/^\/internal\/ticket-types\/([^/]+)\/sync-sold$/);
-      if (method === "POST" && syncMatch) {
-        if (extractInternalApiKey(req) !== config.internalApiKey) {
-          return sendJson(res, 401, {
-            success: false,
-            error: {
-              code: "UNAUTHORIZED_INTERNAL",
-              message: "Missing or invalid x-internal-api-key"
-            }
-          });
-        }
-
-        const body = await readJson<{ quantity?: number }>(req);
-        const quantity = Number(body.quantity) || 0;
-        if (quantity <= 0) {
-          return sendJson(res, 400, {
-            success: false,
-            error: {
-              code: "INVALID_QUANTITY",
-              message: "quantity must be a positive number"
-            }
-          });
-        }
-
-        const ticketTypeId = syncMatch[1];
-        const result = await queryOne<{ id: string }>(
+        const rows = await queryMany<{
+          ticket_type_id: string;
+          quantity: string;
+          sold_count: string;
+          locked_count: string;
+        }>(
           pool,
-          `UPDATE event_ticket_types SET sold_count = sold_count + $1, updated_at = NOW() WHERE id = $2 RETURNING id`,
-          [quantity, ticketTypeId]
+          `SELECT tt.id AS ticket_type_id, tt.quantity::text,
+                  COALESCE(ti.sold_count, 0)::text AS sold_count,
+                  COALESCE(ti.locked_count, 0)::text AS locked_count
+           FROM ticket_types tt
+           LEFT JOIN ticket_inventory ti ON ti.ticket_type_id = tt.id
+           WHERE tt.event_id = $1
+           ORDER BY tt.id ASC`,
+          [eventId]
         );
 
-        if (!result) {
-          return sendJson(res, 404, {
-            success: false,
-            error: {
-              code: "TICKET_TYPE_NOT_FOUND",
-              message: "Ticket type not found"
-            }
-          });
-        }
-
         return sendJson(res, 200, {
           success: true,
-          data: {
-            ticketTypeId,
-            quantity
-          }
+          data: rows.map((r) => ({
+            ticketTypeId: r.ticket_type_id,
+            quantity: Number(r.quantity),
+            sold: Number(r.sold_count),
+            locked: Number(r.locked_count),
+            available: Math.max(
+              Number(r.quantity) - Number(r.sold_count) - Number(r.locked_count),
+              0
+            )
+          }))
         });
       }
 

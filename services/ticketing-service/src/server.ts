@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 
 import {
@@ -23,7 +23,6 @@ interface ReserveBody {
 
 interface PurchaseBody {
   reservationId?: string;
-  paymentMethod?: string;
 }
 
 interface PurchaseConfirmBody {
@@ -45,8 +44,6 @@ interface ReservationRow {
   expires_at: string | Date;
   created_at: string | Date;
   payment_intent_id: string | null;
-  payment_method: string | null;
-  payment_initiated_at: string | Date | null;
   paid_at: string | Date | null;
   gateway_transaction_id: string | null;
   inventory_locked: boolean;
@@ -65,6 +62,7 @@ interface TicketRow {
 interface InventoryRow {
   ticket_type_id: string;
   event_id: string;
+  event_status: string;
   unit_price: number | string;
   quantity: number | string;
   sold_count: number | string;
@@ -83,8 +81,6 @@ interface ReservationRecord {
   expiresAtMs: number;
   createdAt: string;
   paymentIntentId?: string;
-  paymentMethod?: string;
-  paymentInitiatedAt?: string;
   paidAt?: string;
   gatewayTransactionId?: string;
   inventoryLocked: boolean;
@@ -111,19 +107,6 @@ interface SyncedTokenRecord {
 interface ApiSuccessResponse<T> {
   success: true;
   data: T;
-}
-
-interface EventServiceTicketType {
-  id: string;
-  name: string;
-  price: number;
-  quantity: number;
-  soldCount: number;
-}
-
-interface EventServiceEvent {
-  id: string;
-  ticketTypes: EventServiceTicketType[];
 }
 
 class InvalidJsonError extends Error {
@@ -234,8 +217,6 @@ function mapReservation(row: ReservationRow): ReservationRecord {
     expiresAtMs: new Date(row.expires_at).getTime(),
     createdAt: toIso(row.created_at),
     paymentIntentId: row.payment_intent_id ?? undefined,
-    paymentMethod: row.payment_method ?? undefined,
-    paymentInitiatedAt: row.payment_initiated_at ? toIso(row.payment_initiated_at) : undefined,
     paidAt: row.paid_at ? toIso(row.paid_at) : undefined,
     gatewayTransactionId: row.gateway_transaction_id ?? undefined,
     inventoryLocked: row.inventory_locked
@@ -281,11 +262,9 @@ function reservationResponse(reservation: ReservationRecord): Record<string, unk
     totalAmount: reservation.totalAmount,
     status: reservation.status,
     paymentIntentId: reservation.paymentIntentId,
-    paymentMethod: reservation.paymentMethod,
     gatewayTransactionId: reservation.gatewayTransactionId,
     expiresAt: new Date(reservation.expiresAtMs).toISOString(),
     createdAt: reservation.createdAt,
-    paymentInitiatedAt: reservation.paymentInitiatedAt,
     paidAt: reservation.paidAt
   };
 }
@@ -320,12 +299,8 @@ async function ensureSchema(pool: Pool): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS ticket_inventory (
       ticket_type_id TEXT PRIMARY KEY,
-      event_id TEXT NOT NULL,
-      unit_price INTEGER NOT NULL,
-      quantity INTEGER NOT NULL,
       sold_count INTEGER NOT NULL DEFAULT 0,
       locked_count INTEGER NOT NULL DEFAULT 0,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
@@ -343,8 +318,6 @@ async function ensureSchema(pool: Pool): Promise<void> {
       expires_at TIMESTAMPTZ NOT NULL,
       created_at TIMESTAMPTZ NOT NULL,
       payment_intent_id TEXT,
-      payment_method TEXT,
-      payment_initiated_at TIMESTAMPTZ,
       paid_at TIMESTAMPTZ,
       gateway_transaction_id TEXT,
       inventory_locked BOOLEAN NOT NULL DEFAULT TRUE,
@@ -365,67 +338,19 @@ async function ensureSchema(pool: Pool): Promise<void> {
   `);
 }
 
-/**
- * Sync inventory from event-service.
- * Fetches all events and their ticket types from event-service, then upserts
- * ticket_inventory rows. For new ticket types, inserts fresh rows. For existing
- * ticket types, updates quantity and unit_price from event-service but preserves
- * the local sold_count and locked_count (operational state owned by ticketing).
- */
-async function syncInventoryFromEventService(
-  pool: Pool,
-  eventServiceBaseUrl: string,
-  serviceName: string
-): Promise<{ synced: number; events: number }> {
-  const response = await fetch(`${eventServiceBaseUrl}/events`);
-  if (!response.ok) {
-    throw new Error(`event-service /events returned ${response.status}`);
-  }
-
-  const body = (await response.json()) as { success: boolean; data: Array<{ id: string }> };
-  if (!body.success || !Array.isArray(body.data)) {
-    throw new Error("event-service /events returned unexpected body");
-  }
-
-  let synced = 0;
-  for (const eventSummary of body.data) {
-    const detailResponse = await fetch(`${eventServiceBaseUrl}/events/${eventSummary.id}`);
-    if (!detailResponse.ok) {
-      log(serviceName, "warn", "Failed to fetch event detail for sync", {
-        eventId: eventSummary.id,
-        status: detailResponse.status
-      });
-      continue;
-    }
-
-    const detailBody = (await detailResponse.json()) as {
-      success: boolean;
-      data: EventServiceEvent;
-    };
-
-    if (!detailBody.success || !detailBody.data?.ticketTypes) {
-      continue;
-    }
-
-    const event = detailBody.data;
-    for (const tt of event.ticketTypes) {
-      await pool.query(
-        `
-        INSERT INTO ticket_inventory (ticket_type_id, event_id, unit_price, quantity, sold_count, locked_count)
-        VALUES ($1, $2, $3, $4, $5, 0)
-        ON CONFLICT (ticket_type_id) DO UPDATE SET
-          unit_price = EXCLUDED.unit_price,
-          quantity = EXCLUDED.quantity,
-          updated_at = NOW()
-        `,
-        [tt.id, event.id, tt.price, tt.quantity, tt.soldCount]
-      );
-      synced++;
-    }
-  }
-
-  return { synced, events: body.data.length };
-}
+const INVENTORY_SELECT = `
+  SELECT
+    ti.ticket_type_id,
+    tt.event_id,
+    e.status AS event_status,
+    tt.unit_price,
+    tt.quantity,
+    ti.sold_count,
+    ti.locked_count
+  FROM ticket_inventory ti
+  INNER JOIN ticket_types tt ON tt.id = ti.ticket_type_id
+  INNER JOIN events e ON e.id = tt.event_id
+`;
 
 async function loadReservation(
   client: Pool | PoolClient,
@@ -435,7 +360,7 @@ async function loadReservation(
     client,
     `
       SELECT id, user_id, event_id, ticket_type_id, quantity, unit_price, total_amount, status, expires_at, created_at,
-             payment_intent_id, payment_method, payment_initiated_at, paid_at, gateway_transaction_id, inventory_locked
+             payment_intent_id, paid_at, gateway_transaction_id, inventory_locked
       FROM reservations
       WHERE id = $1
     `,
@@ -451,7 +376,7 @@ async function expireReservationById(pool: Pool, reservationId: string): Promise
       client,
       `
         SELECT id, user_id, event_id, ticket_type_id, quantity, unit_price, total_amount, status, expires_at, created_at,
-               payment_intent_id, payment_method, payment_initiated_at, paid_at, gateway_transaction_id, inventory_locked
+               payment_intent_id, paid_at, gateway_transaction_id, inventory_locked
         FROM reservations
         WHERE id = $1
         FOR UPDATE
@@ -502,30 +427,6 @@ export async function createTicketingServer(config: TicketingConfig) {
   await redis.connect();
   await ensureSchema(pool);
 
-  const eventServiceBaseUrl = config.eventServiceBaseUrl;
-
-  // Sync inventory from event-service on startup
-  try {
-    const result = await syncInventoryFromEventService(
-      pool,
-      eventServiceBaseUrl,
-      config.serviceName
-    );
-    log(config.serviceName, "info", "Inventory synced from event-service", {
-      events: result.events,
-      ticketTypesSynced: result.synced
-    });
-  } catch (error) {
-    log(
-      config.serviceName,
-      "warn",
-      "Failed to sync inventory from event-service on startup; will use existing inventory if any",
-      {
-        error: error instanceof Error ? error.message : String(error)
-      }
-    );
-  }
-
   const cleanupTimer = setInterval(() => {
     void expireDueReservations(pool).catch((error) => {
       log(config.serviceName, "error", "Failed to expire reservations", {
@@ -556,38 +457,11 @@ export async function createTicketingServer(config: TicketingConfig) {
         });
       }
 
-      // Manual inventory sync endpoint
-      if (method === "POST" && url.pathname === "/tickets/inventory/sync") {
-        try {
-          const result = await syncInventoryFromEventService(
-            pool,
-            eventServiceBaseUrl,
-            config.serviceName
-          );
-          return sendJson(res, 200, {
-            success: true,
-            data: {
-              events: result.events,
-              ticketTypesSynced: result.synced,
-              syncedAt: new Date().toISOString()
-            }
-          });
-        } catch (error) {
-          return sendJson(res, 502, {
-            success: false,
-            error: {
-              code: "INVENTORY_SYNC_FAILED",
-              message: error instanceof Error ? error.message : "Failed to sync from event-service"
-            }
-          });
-        }
-      }
-
       // Inventory status endpoint
       if (method === "GET" && url.pathname === "/tickets/inventory") {
         const inventory = await queryMany<InventoryRow>(
           pool,
-          `SELECT ticket_type_id, event_id, unit_price, quantity, sold_count, locked_count FROM ticket_inventory ORDER BY event_id, ticket_type_id`
+          `${INVENTORY_SELECT} ORDER BY tt.event_id, ti.ticket_type_id`
         );
 
         return sendJson(res, 200, {
@@ -653,23 +527,42 @@ export async function createTicketingServer(config: TicketingConfig) {
         const ticketTypeId = body.ticketTypeId;
 
         const reservation = await withPostgresTransaction(pool, async (client) => {
-          const inventory = await queryOne<InventoryRow>(
+          let inventory = await queryOne<InventoryRow>(
             client,
             `
-              SELECT ticket_type_id, event_id, unit_price, quantity, sold_count, locked_count
-              FROM ticket_inventory
-              WHERE ticket_type_id = $1
+              ${INVENTORY_SELECT}
+              WHERE ti.ticket_type_id = $1
               FOR UPDATE
             `,
             [ticketTypeId]
           );
 
           if (!inventory) {
-            throw new Error("UNKNOWN_TICKET_TYPE");
+            const inserted = await client.query(
+              `INSERT INTO ticket_inventory (ticket_type_id, sold_count, locked_count, updated_at)
+               SELECT id, 0, 0, NOW() FROM ticket_types WHERE id = $1
+               ON CONFLICT (ticket_type_id) DO NOTHING`,
+              [ticketTypeId]
+            );
+            if ((inserted.rowCount ?? 0) === 0) {
+              throw new Error("UNKNOWN_TICKET_TYPE");
+            }
+            inventory = await queryOne<InventoryRow>(
+              client,
+              `${INVENTORY_SELECT} WHERE ti.ticket_type_id = $1 FOR UPDATE`,
+              [ticketTypeId]
+            );
+            if (!inventory) {
+              throw new Error("UNKNOWN_TICKET_TYPE");
+            }
           }
 
           if (inventory.event_id !== eventId) {
             throw new Error("EVENT_TICKET_TYPE_MISMATCH");
+          }
+
+          if (inventory.event_status !== "active") {
+            throw new Error("TICKET_TYPE_NOT_AVAILABLE");
           }
 
           if (inventoryAvailable(inventory) < quantity) {
@@ -720,6 +613,9 @@ export async function createTicketingServer(config: TicketingConfig) {
           if (error.message === "EVENT_TICKET_TYPE_MISMATCH") {
             throw Object.assign(new Error(error.message), { statusCode: 400 });
           }
+          if (error.message === "TICKET_TYPE_NOT_AVAILABLE") {
+            throw Object.assign(new Error(error.message), { statusCode: 409 });
+          }
           if (error.message === "INSUFFICIENT_INVENTORY") {
             throw Object.assign(new Error(error.message), { statusCode: 409 });
           }
@@ -767,25 +663,24 @@ export async function createTicketingServer(config: TicketingConfig) {
         }
 
         const body = await readJson<PurchaseBody>(req);
-        if (!body.reservationId || !body.paymentMethod) {
+        if (!body.reservationId) {
           return sendJson(res, 400, {
             success: false,
             error: {
               code: "INVALID_PURCHASE_PAYLOAD",
-              message: "reservationId and paymentMethod are required"
+              message: "reservationId is required"
             }
           });
         }
 
         const reservationId = body.reservationId;
-        const paymentMethod = body.paymentMethod;
 
         const result = await withPostgresTransaction(pool, async (client) => {
           const reservationRow = await queryOne<ReservationRow>(
             client,
             `
               SELECT id, user_id, event_id, ticket_type_id, quantity, unit_price, total_amount, status, expires_at, created_at,
-                     payment_intent_id, payment_method, payment_initiated_at, paid_at, gateway_transaction_id, inventory_locked
+                     payment_intent_id, paid_at, gateway_transaction_id, inventory_locked
               FROM reservations
               WHERE id = $1
               FOR UPDATE
@@ -820,16 +715,14 @@ export async function createTicketingServer(config: TicketingConfig) {
 
           const paymentIntentId =
             reservationRow.payment_intent_id ?? `pay_${randomUUID().replace(/-/g, "")}`;
-          const paymentInitiatedAt = new Date().toISOString();
 
           await client.query(
             `
               UPDATE reservations
-              SET status = 'payment_pending', payment_method = $2, payment_initiated_at = $3::timestamptz,
-                  payment_intent_id = $4, updated_at = NOW()
+              SET status = 'payment_pending', payment_intent_id = $2, updated_at = NOW()
               WHERE id = $1
             `,
-            [reservationId, paymentMethod, paymentInitiatedAt, paymentIntentId]
+            [reservationId, paymentIntentId]
           );
 
           const updated = await loadReservation(client, reservationId);
@@ -892,7 +785,7 @@ export async function createTicketingServer(config: TicketingConfig) {
             client,
             `
               SELECT id, user_id, event_id, ticket_type_id, quantity, unit_price, total_amount, status, expires_at, created_at,
-                     payment_intent_id, payment_method, payment_initiated_at, paid_at, gateway_transaction_id, inventory_locked
+                     payment_intent_id, paid_at, gateway_transaction_id, inventory_locked
               FROM reservations
               WHERE id = $1
               FOR UPDATE
@@ -1004,25 +897,6 @@ export async function createTicketingServer(config: TicketingConfig) {
             }
           };
         });
-
-        if (response.confirmedTicketTypeId && response.confirmedQuantity) {
-          const ticketTypeId = response.confirmedTicketTypeId;
-          const quantity = response.confirmedQuantity;
-          const syncUrl = `${config.eventServiceBaseUrl}/internal/ticket-types/${encodeURIComponent(ticketTypeId)}/sync-sold`;
-          fetch(syncUrl, {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              "x-internal-api-key": config.internalApiKey
-            },
-            body: JSON.stringify({ quantity })
-          }).catch((error: unknown) => {
-            log(config.serviceName, "warn", "Failed to sync sold count to event-service", {
-              ticketTypeId,
-              error: error instanceof Error ? error.message : String(error)
-            });
-          });
-        }
 
         const clientResponse = { success: response.success, data: response.data };
         await setCachedResponse(redis, idempotencyScope, clientResponse);
@@ -1192,15 +1066,22 @@ export async function createTicketingServer(config: TicketingConfig) {
           });
         }
 
+        const qrTimestamp = Date.now();
+        const qrNonce = randomUUID();
+        const qrPayload = `${qrTicket.tokenId}.${qrTicket.eventId}.${qrTimestamp}.${qrNonce}.${qrTicket.walletAddress}`;
+        const qrSignature = createHmac("sha256", config.qrSignatureSecret)
+          .update(qrPayload, "utf8")
+          .digest("hex");
+
         const response = {
           success: true,
           data: {
             tokenId: qrTicket.tokenId,
             eventId: qrTicket.eventId,
-            timestamp: Date.now(),
-            nonce: randomUUID(),
+            timestamp: qrTimestamp,
+            nonce: qrNonce,
             walletAddress: qrTicket.walletAddress,
-            signature: `0x${randomUUID().replace(/-/g, "")}${randomUUID().replace(/-/g, "")}`
+            signature: qrSignature
           }
         };
 
