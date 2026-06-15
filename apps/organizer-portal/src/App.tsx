@@ -10,6 +10,7 @@ import { InventoryPage } from "@/pages/InventoryPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { OverviewPage } from "@/pages/OverviewPage";
 import { RefundsPage } from "@/pages/RefundsPage";
+import { ScannerPage } from "@/pages/ScannerPage";
 import { SettlementPage } from "@/pages/SettlementPage";
 import { SystemHealthPage } from "@/pages/SystemHealthPage";
 
@@ -37,6 +38,10 @@ const pageMeta: Record<string, { title: string; description: string }> = {
   "/check-in": {
     title: "Live Check-In",
     description: "Watch gate health, duplicate scans, invalid scans, and sync jobs."
+  },
+  "/scanner": {
+    title: "Gate Scanner",
+    description: "Use device camera to scan attendee QR codes at the gate."
   },
   "/refunds": {
     title: "Refunds",
@@ -94,6 +99,7 @@ function RoutedApp() {
         <Route path="/events/:eventId/review" element={<EventReviewPage />} />
         <Route path="/inventory" element={<InventoryPage />} />
         <Route path="/check-in" element={<CheckinPage />} />
+        <Route path="/scanner" element={<ScannerPage />} />
         <Route path="/refunds" element={<RefundsPage />} />
         <Route path="/disputes" element={<DisputesPage />} />
         <Route path="/settlement" element={<SettlementPage />} />

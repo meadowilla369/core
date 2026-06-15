@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowRight, ImagePlus, Plus, Save, Trash2 } from "lucide-react";
+import { ArrowRight, DoorOpen, ImagePlus, Plus, Save, Trash2 } from "lucide-react";
 import { EventDetailPreview } from "@/components/EventDetailPreview";
 import {
   buildEventCreatePayload,
@@ -352,6 +352,20 @@ export function EventCreatePage() {
           <div>
             <h2 className="text-lg font-semibold">Review gates</h2>
             <div className="mt-4 grid gap-3">
+              <div className="rounded-md border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">
+                <div className="flex items-start gap-3">
+                  <DoorOpen className="mt-0.5 h-4 w-4 shrink-0" />
+                  <div>
+                    <p className="font-semibold">
+                      Check-in gates are created when the event goes active.
+                    </p>
+                    <p className="mt-1 text-blue-800">
+                      Main gate, VIP gate, and Backstage gate will be provisioned automatically
+                      during dev publish, then the scanner will use those live gate IDs.
+                    </p>
+                  </div>
+                </div>
+              </div>
               {validation.missingFields.length === 0 ? (
                 <p className="rounded-md border border-green-200 bg-green-50 p-3 text-green-700">
                   Ready to continue to review.

@@ -3,8 +3,10 @@ import type { EventCreatePayload } from "../domain/event-create";
 
 export interface OrganizerApi {
   getSnapshot(): Promise<OrganizerSnapshot>;
+  listEvents(query?: { status?: string }): Promise<OrganizerEventDetail[]>;
   createEvent(input: EventCreatePayload): Promise<OrganizerEventDetail>;
   getEvent(eventId: string): Promise<OrganizerEventDetail>;
+  listEventGates(eventId: string): Promise<CheckinGate[]>;
   updateEvent(eventId: string, input: Partial<EventCreatePayload>): Promise<OrganizerEventDetail>;
   deleteEvent(eventId: string): Promise<void>;
   cancelEvent(eventId: string): Promise<OrganizerEventDetail>;
@@ -30,6 +32,15 @@ export interface OrganizerTicketType {
   perks: string[];
 }
 
+export interface CheckinGate {
+  id: string;
+  eventId: string;
+  name: string;
+  location?: string | null;
+  status: "active" | "disabled";
+  createdAt: string;
+}
+
 export interface OrganizerEventDetail {
   id: string;
   organizerId: string;
@@ -45,6 +56,7 @@ export interface OrganizerEventDetail {
 
 export class DemoOrganizerApi implements OrganizerApi {
   private readonly events = new Map<string, OrganizerEventDetail>();
+  private readonly gates = new Map<string, CheckinGate[]>();
 
   async getSnapshot(): Promise<OrganizerSnapshot> {
     const demoEvents: OrganizerSnapshot["events"] = demoOrganizerSnapshot.events.map((e) => ({
@@ -111,6 +123,11 @@ export class DemoOrganizerApi implements OrganizerApi {
     return event;
   }
 
+  async listEvents(query: { status?: string } = {}): Promise<OrganizerEventDetail[]> {
+    const events = Array.from(this.events.values());
+    return query.status ? events.filter((event) => event.status === query.status) : events;
+  }
+
   async getEvent(eventId: string): Promise<OrganizerEventDetail> {
     const event = this.events.get(eventId);
     if (!event) {
@@ -148,12 +165,17 @@ export class DemoOrganizerApi implements OrganizerApi {
 
   async deleteEvent(eventId: string): Promise<void> {
     this.events.delete(eventId);
+    this.gates.delete(eventId);
   }
 
   async cancelEvent(eventId: string): Promise<OrganizerEventDetail> {
     const event = await this.getEvent(eventId);
     const updated: OrganizerEventDetail = { ...event, status: "cancelled" };
     this.events.set(eventId, updated);
+    this.gates.set(
+      eventId,
+      (this.gates.get(eventId) ?? []).map((gate) => ({ ...gate, status: "disabled" }))
+    );
     return updated;
   }
 
@@ -168,7 +190,39 @@ export class DemoOrganizerApi implements OrganizerApi {
     const event = await this.getEvent(eventId);
     const updated: OrganizerEventDetail = { ...event, status: "active" };
     this.events.set(eventId, updated);
+    if (!this.gates.has(eventId)) {
+      this.gates.set(eventId, [
+        {
+          id: `${eventId}_gate_main`,
+          eventId,
+          name: "Main gate",
+          location: "Main entrance",
+          status: "active",
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: `${eventId}_gate_vip`,
+          eventId,
+          name: "VIP gate",
+          location: "VIP entrance",
+          status: "active",
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: `${eventId}_gate_backstage`,
+          eventId,
+          name: "Backstage gate",
+          location: "Staff entrance",
+          status: "active",
+          createdAt: new Date().toISOString()
+        }
+      ]);
+    }
     return updated;
+  }
+
+  async listEventGates(eventId: string): Promise<CheckinGate[]> {
+    return this.gates.get(eventId) ?? [];
   }
 }
 
@@ -191,9 +245,29 @@ export class HttpOrganizerApi implements OrganizerApi {
     return body.data;
   }
 
+  async listEvents(query: { status?: string } = {}): Promise<OrganizerEventDetail[]> {
+    const search = new URLSearchParams();
+    if (query.status) {
+      search.set("status", query.status);
+    }
+    const suffix = search.toString();
+    const body = await requestJson<{ success: true; data: OrganizerEventDetail[] }>(
+      `/v1/events${suffix ? `?${suffix}` : ""}`,
+      { organizerId: this.organizerId }
+    );
+    return body.data;
+  }
+
   async getEvent(eventId: string): Promise<OrganizerEventDetail> {
     const body = await requestJson<{ success: true; data: OrganizerEventDetail }>(
       `/v1/events/${eventId}`
+    );
+    return body.data;
+  }
+
+  async listEventGates(eventId: string): Promise<CheckinGate[]> {
+    const body = await requestJson<{ success: true; data: CheckinGate[] }>(
+      `/v1/events/${eventId}/gates`
     );
     return body.data;
   }

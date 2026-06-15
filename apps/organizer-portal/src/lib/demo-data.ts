@@ -17,6 +17,7 @@ export interface OrganizerEventSummary {
 
 export interface GateSnapshot {
   gateId: string;
+  eventId?: string;
   checkedInCount: number;
   duplicateCount: number;
   invalidCount: number;

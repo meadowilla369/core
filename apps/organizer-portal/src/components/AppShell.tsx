@@ -7,6 +7,7 @@ import {
   HeartPulse,
   LifeBuoy,
   QrCode,
+  ScanLine,
   Ticket,
   WalletCards
 } from "lucide-react";
@@ -16,6 +17,7 @@ const navItems = [
   { to: "/events", label: "Events", icon: Ticket },
   { to: "/inventory", label: "Ticket inventory", icon: WalletCards },
   { to: "/check-in", label: "Live check-in", icon: QrCode },
+  { to: "/scanner", label: "Gate scanner", icon: ScanLine },
   { to: "/refunds", label: "Refunds", icon: Banknote },
   { to: "/disputes", label: "Disputes", icon: LifeBuoy },
   { to: "/settlement", label: "Settlement", icon: Activity },
