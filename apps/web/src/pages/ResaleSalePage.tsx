@@ -1,54 +1,133 @@
 import { useState } from "react";
-import { ArrowLeft, Tag, Info, TrendingUp, TrendingDown, Minus } from "lucide-react";
-import { Link } from "react-router-dom";
+import { ArrowLeft, Info, Minus, Tag, TrendingUp } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { useMutation } from "@tanstack/react-query";
+import { createWalletClient, defineChain, http } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import {
+  assembleTx4,
+  buildMarketplaceListTx,
+  type SignedAuthorization
+} from "@ticket-platform/sdk-client";
 import MobileLayout from "@/components/mobile/MobileLayout";
-
-const myTickets = [
-  {
-    id: "t1",
-    event: "Cyber Symphony 2025",
-    tier: "VIP",
-    section: "A",
-    row: "12",
-    seat: "7",
-    originalPrice: "3.500.000₫",
-    date: "15 Th3"
-  },
-  {
-    id: "t2",
-    event: "Neon Nights Festival",
-    tier: "Phổ Thông",
-    section: "C",
-    row: "25",
-    seat: "14",
-    originalPrice: "950.000₫",
-    date: "22 Th4"
-  },
-  {
-    id: "t3",
-    event: "Summer Slam",
-    tier: "Khán Đài",
-    section: "B",
-    row: "8",
-    seat: "3",
-    originalPrice: "2.100.000₫",
-    date: "20 Th7"
-  }
-];
-
-const priceHistory = [
-  { label: "Sàn hiện tại", value: "3.200.000₫" },
-  { label: "Trung bình 7 ngày", value: "3.450.000₫" },
-  { label: "Cao nhất", value: "5.100.000₫" },
-  { label: "Thấp nhất", value: "2.800.000₫" }
-];
+import { useMyTickets } from "@/hooks/use-tickets";
+import { useApiClient } from "@/providers/AppProviders";
+import { toast } from "@ticket-platform/shared-ui";
+import {
+  getSessionUserId,
+  getSessionWallet,
+  getSessionWalletAddress,
+  signSessionAuthorization
+} from "@/lib/session";
+import { webAppConfig } from "@/lib/config";
 
 const ResaleSalePage = () => {
-  const [selectedTicket, setSelectedTicket] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const client = useApiClient();
+  const { data: ticketData, isLoading } = useMyTickets();
+  const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
   const [price, setPrice] = useState("");
   const [acceptTerms, setAcceptTerms] = useState(false);
 
-  const selected = myTickets.find((t) => t.id === selectedTicket);
+  const availableTickets = (ticketData?.tickets ?? []).filter(
+    (t) => t.listingStatus === "none" && !t.isUsed
+  );
+
+  const selected = availableTickets.find((t) => t.tokenId === selectedTokenId);
+
+  const listMutation = useMutation({
+    mutationFn: async () => {
+      if (!selected || !price) throw new Error("Chưa chọn vé hoặc chưa đặt giá");
+
+      const askPrice = Number(price);
+      if (isNaN(askPrice) || askPrice <= 0) throw new Error("Giá không hợp lệ");
+
+      const userId = getSessionUserId();
+      const walletAddress = getSessionWalletAddress();
+
+      // 1. Tạo listing metadata record trên backend
+      const listingResponse = await client.createMarketplaceListing(
+        {
+          tokenId: selected.tokenId,
+          eventId: selected.eventId,
+          originalPrice: selected.originalPrice ?? askPrice,
+          askPrice,
+          sellerWalletAddress: walletAddress
+        },
+        { userId, kycStatus: webAppConfig.defaultKycStatus }
+      );
+
+      // 2. Build EIP-7702 batch tx: [transferTicket, listTicket]
+      const txDraft = buildMarketplaceListTx({
+        ticketLedgerAddress: webAppConfig.ticketLedgerAddress,
+        marketplaceAddress: webAppConfig.marketplaceAddress,
+        handlerAddress: webAppConfig.handlerAddress,
+        tokenId: BigInt(selected.tokenId),
+        askPrice: BigInt(askPrice),
+        chainId: BigInt(webAppConfig.chainId),
+        nonce: 0n
+      });
+
+      // 3. Ký EIP-7702 authorization
+      const signedAuthorization: SignedAuthorization = await signSessionAuthorization({
+        authorization: {
+          address: txDraft.authorizationTuple.address,
+          chainId: txDraft.authorizationTuple.chainId
+        }
+      });
+
+      // 4. Assemble type-4 tx
+      const payload = txDraft.assemble(signedAuthorization);
+      const tx = assembleTx4(payload, walletAddress as `0x${string}`);
+
+      // 5. Broadcast lên chain qua viem walletClient
+      const wallet = getSessionWallet();
+      if (!wallet.privateKey) {
+        throw new Error("Private key không có trong session. Chạy lại onboarding.");
+      }
+
+      const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
+      const chain = defineChain({
+        id: webAppConfig.chainId,
+        name: "localchain",
+        nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+        rpcUrls: { default: { http: [webAppConfig.rpcUrl] } }
+      });
+      const walletClient = createWalletClient({
+        account,
+        chain,
+        transport: http(webAppConfig.rpcUrl)
+      });
+
+      const txHash = await walletClient.sendTransaction({
+        account,
+        to: tx.to ?? account.address,
+        data: tx.data,
+        value: tx.value,
+        authorizationList: tx.authorizationList,
+        chain
+      });
+
+      return {
+        listingId: listingResponse.data.id,
+        txHash
+      };
+    },
+    onSuccess: ({ listingId, txHash }) => {
+      toast({
+        title: "Đã đăng bán thành công",
+        description: `Listing ${listingId} · tx ${String(txHash).slice(0, 10)}...`
+      });
+      void navigate("/marketplace");
+    },
+    onError: (error) => {
+      toast({
+        title: "Đăng bán thất bại",
+        description: error instanceof Error ? error.message : "Lỗi không xác định",
+        variant: "destructive"
+      });
+    }
+  });
 
   return (
     <MobileLayout>
@@ -75,74 +154,64 @@ const ResaleSalePage = () => {
         <h3 className="font-mono text-[10px] tracking-widest text-foreground/50 mb-3">
           [ 01 — CHỌN VÉ ]
         </h3>
-        <div className="space-y-2">
-          {myTickets.map((ticket) => (
-            <button
-              key={ticket.id}
-              onClick={() => setSelectedTicket(ticket.id)}
-              className={`w-full text-left border p-4 transition-colors ${
-                selectedTicket === ticket.id
-                  ? "border-foreground bg-foreground/5"
-                  : "border-foreground/20 hover:border-foreground/40"
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-sm font-medium tracking-tight">{ticket.event}</h4>
-                  <p className="font-mono text-[10px] text-foreground/50 mt-0.5">
-                    {ticket.tier} · {ticket.section}-{ticket.row}-{ticket.seat} · {ticket.date}
-                  </p>
-                </div>
-                <div
-                  className={`w-5 h-5 border flex items-center justify-center ${
-                    selectedTicket === ticket.id
-                      ? "border-foreground bg-foreground"
-                      : "border-foreground/30"
-                  }`}
-                >
-                  {selectedTicket === ticket.id && <div className="w-2 h-2 bg-background" />}
-                </div>
-              </div>
-              <div className="mt-2 flex items-center gap-2">
-                <Tag className="w-3 h-3 text-foreground/40" />
-                <span className="font-mono text-[10px] text-foreground/40">
-                  Giá gốc: {ticket.originalPrice}
-                </span>
-              </div>
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {/* Step 2: Market Data */}
-      {selected && (
-        <section className="px-4 pb-4">
-          <h3 className="font-mono text-[10px] tracking-widest text-foreground/50 mb-3">
-            [ 02 — THAM KHẢO GIÁ ]
-          </h3>
-          <div className="border border-foreground/20 divide-y divide-foreground/10">
-            {priceHistory.map((item) => (
-              <div key={item.label} className="flex items-center justify-between p-3">
-                <span className="font-mono text-[10px] text-foreground/50">{item.label}</span>
-                <span className="font-mono text-xs font-medium">{item.value}</span>
-              </div>
+        {isLoading ? (
+          <div className="space-y-2">
+            {[1, 2].map((i) => (
+              <div key={i} className="h-20 animate-pulse bg-foreground/10" />
             ))}
           </div>
-
-          <div className="mt-3 border border-foreground/10 p-3 flex items-start gap-2">
-            <TrendingUp className="w-3.5 h-3.5 text-green-600 mt-0.5 flex-shrink-0" />
-            <p className="font-mono text-[10px] text-foreground/50">
-              Giá sàn tăng 12% trong 7 ngày. Nhu cầu cao cho hạng {selected.tier}.
-            </p>
+        ) : availableTickets.length === 0 ? (
+          <p className="font-mono text-[10px] text-foreground/40 border border-foreground/10 p-4">
+            Không có vé nào có thể đăng bán.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {availableTickets.map((ticket) => (
+              <button
+                key={ticket.tokenId}
+                onClick={() => setSelectedTokenId(ticket.tokenId)}
+                className={`w-full text-left border p-4 transition-colors ${
+                  selectedTokenId === ticket.tokenId
+                    ? "border-foreground bg-foreground/5"
+                    : "border-foreground/20 hover:border-foreground/40"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm font-medium tracking-tight">{ticket.eventName}</h4>
+                    <p className="font-mono text-[10px] text-foreground/50 mt-0.5">
+                      {ticket.ticketType} · {ticket.seatInfo}
+                    </p>
+                  </div>
+                  <div
+                    className={`w-5 h-5 border flex items-center justify-center ${
+                      selectedTokenId === ticket.tokenId
+                        ? "border-foreground bg-foreground"
+                        : "border-foreground/30"
+                    }`}
+                  >
+                    {selectedTokenId === ticket.tokenId && (
+                      <div className="w-2 h-2 bg-background" />
+                    )}
+                  </div>
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <Tag className="w-3 h-3 text-foreground/40" />
+                  <span className="font-mono text-[10px] text-foreground/40">
+                    Token: {ticket.tokenId}
+                  </span>
+                </div>
+              </button>
+            ))}
           </div>
-        </section>
-      )}
+        )}
+      </section>
 
-      {/* Step 3: Set Price */}
+      {/* Step 2: Set Price */}
       {selected && (
         <section className="px-4 pb-4">
           <h3 className="font-mono text-[10px] tracking-widest text-foreground/50 mb-3">
-            [ 03 — ĐẶT GIÁ ]
+            [ 02 — ĐẶT GIÁ ]
           </h3>
           <div className="border border-foreground/20 p-4">
             <label className="font-mono text-[10px] text-foreground/50 block mb-2">
@@ -150,7 +219,7 @@ const ResaleSalePage = () => {
             </label>
             <div className="flex items-center border border-foreground/20">
               <input
-                type="text"
+                type="number"
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
                 placeholder="0"
@@ -159,24 +228,25 @@ const ResaleSalePage = () => {
               <span className="pr-4 font-mono text-sm text-foreground/40">₫</span>
             </div>
 
-            {/* Quick price buttons */}
             <div className="flex gap-2 mt-3">
               {[
-                { label: "Sàn", icon: Minus, value: "3200000" },
-                { label: "+10%", icon: TrendingUp, value: "3850000" },
-                { label: "+20%", icon: TrendingUp, value: "4200000" }
+                { label: "Giá gốc", icon: Minus, multiplier: 1 },
+                { label: "+10%", icon: TrendingUp, multiplier: 1.1 },
+                { label: "+20%", icon: TrendingUp, multiplier: 1.2 }
               ].map((btn) => (
                 <button
                   key={btn.label}
-                  onClick={() => setPrice(btn.value)}
-                  className="flex-1 py-2 border border-foreground/20 font-mono text-[10px] hover:bg-foreground/10 transition-colors"
+                  onClick={() =>
+                    setPrice(String(Math.round((selected.originalPrice ?? 0) * btn.multiplier)))
+                  }
+                  disabled={!selected.originalPrice}
+                  className="flex-1 py-2 border border-foreground/20 font-mono text-[10px] hover:bg-foreground/10 transition-colors disabled:opacity-30"
                 >
                   {btn.label}
                 </button>
               ))}
             </div>
 
-            {/* Fee preview */}
             <div className="mt-4 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="font-mono text-[10px] text-foreground/40">Phí nền tảng (5%)</span>
@@ -202,8 +272,8 @@ const ResaleSalePage = () => {
             <Info className="w-4 h-4 text-foreground/40 mt-0.5 flex-shrink-0" />
             <div>
               <p className="font-mono text-[10px] text-foreground/50">
-                Khi đăng bán, vé sẽ bị khóa và không thể sử dụng cho đến khi gỡ bán. Nếu bán thành
-                công, vé sẽ tự động chuyển quyền sở hữu.
+                Khi đăng bán, vé sẽ được chuyển vào escrow và không thể sử dụng cho đến khi gỡ bán
+                hoặc bán thành công.
               </p>
               <button
                 onClick={() => setAcceptTerms(!acceptTerms)}
@@ -229,14 +299,15 @@ const ResaleSalePage = () => {
       {selected && (
         <div className="sticky bottom-16 p-4 bg-background/95 backdrop-blur-sm border-t border-foreground/10">
           <button
-            disabled={!price || !acceptTerms}
+            disabled={!price || !acceptTerms || listMutation.isPending}
+            onClick={() => listMutation.mutate()}
             className={`w-full py-4 font-medium tracking-tight transition-colors ${
-              price && acceptTerms
+              price && acceptTerms && !listMutation.isPending
                 ? "bg-foreground text-background hover:bg-foreground/90"
                 : "bg-foreground/20 text-foreground/40 cursor-not-allowed"
             }`}
           >
-            Đăng Bán Vé
+            {listMutation.isPending ? "ĐANG XỬ LÝ..." : "ĐĂNG BÁN VÉ"}
           </button>
         </div>
       )}

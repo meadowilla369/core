@@ -49,6 +49,9 @@ export interface TicketOwnershipView {
   source: TicketDataSource;
   syncStatus: TicketSyncStatus;
   transactionHash?: string;
+  listingStatus: "none" | "active" | "cancelled" | "completed";
+  isUsed: boolean;
+  originalPrice?: number;
 }
 
 export function findTicketByTokenId(
@@ -77,7 +80,10 @@ function toTicketOwnershipView(
     createdAt: ticket.createdAt,
     source: ticket.source,
     syncStatus,
-    transactionHash: ticket.transactionHash
+    transactionHash: ticket.transactionHash,
+    listingStatus: ticket.listingStatus,
+    isUsed: ticket.isUsed,
+    originalPrice: ticket.originalPrice
   };
 }
 

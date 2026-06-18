@@ -23,6 +23,9 @@ export interface MergedTicketRecord extends TicketRecord {
   ownerWalletAddress: string | null;
   source: "contract-sync";
   transactionHash?: string;
+  listingStatus: "none" | "active" | "cancelled" | "completed";
+  isUsed: boolean;
+  originalPrice?: number;
 }
 
 function getBrowserStorage(): StorageLike | null {
@@ -129,7 +132,10 @@ export function toSyncedTicketRecord(
     ) || null,
     source: "contract-sync",
     transactionHash: metadata?.transactionHash ?? token.lastTransactionHash ?? undefined,
-    createdAt: metadata?.createdAt ?? ticketingTicket?.createdAt ?? token.updatedAt
+    createdAt: metadata?.createdAt ?? ticketingTicket?.createdAt ?? token.updatedAt,
+    listingStatus: token.listingStatus ?? "none",
+    isUsed: token.isUsed ?? false,
+    originalPrice: token.lastSalePrice ?? undefined
   };
 }
 
