@@ -14,8 +14,11 @@ import {
 } from "./ethereum.js";
 import { log } from "./logger.js";
 
-type ListingStatus = "active" | "cancelled" | "completed";
-type BuyHashStatus = "issued" | "expired";
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type BuyHashStatus = "issued" | "expired" | "used";
 
 interface CreateListingBody {
   tokenId?: string;
@@ -25,11 +28,18 @@ interface CreateListingBody {
   sellerWalletAddress?: string;
 }
 
-interface PurchaseListingBody {
-  paymentId?: string;
-  gateway?: string;
-  gatewayReference?: string;
+interface InitiateBuyBody {
+  orderId?: string;
+  amount?: number;
   buyerWalletAddress?: string;
+  onChainListingId?: number | string;
+}
+
+interface BroadcastBuyBody {
+  authorizationHash?: string;
+  signedAuthorization?: Record<string, unknown>;
+  tx?: { to?: string; data?: string; chainId?: number };
+  paymentId?: string;
 }
 
 interface Listing {
@@ -41,58 +51,24 @@ interface Listing {
   originalPrice: number;
   askPrice: number;
   currency: "VND";
-  status: ListingStatus;
   createdAt: string;
-  updatedAt: string;
-  buyerUserId?: string;
-  paymentId?: string;
-  settlementId?: string;
 }
 
-interface CompletedSale {
-  listingId: string;
-  paymentId: string;
-  settlementId: string;
-  escrowDataHash: string;
-  completeSaleRequestId: string;
-  completedAt: string;
+interface ListingWithState extends Listing {
+  listingStatus: "none" | "active" | "cancelled" | "completed";
+  onChainListingId: number | null;
 }
 
-interface FinalizeSettlementBody {
-  version?: number;
-  settlementId?: string;
-  listingId?: string;
-  paymentId?: string;
-  tokenId?: string;
-  seller?: string;
-  buyer?: string;
-  grossAmount?: number;
-  sellerAmount?: number;
-  platformFee?: number;
-  organizerRoyalty?: number;
-  currency?: string;
-  gateway?: number;
-  gatewayReference?: string;
-  settledAt?: number;
-  nonce?: string;
-}
-
-interface SettlementLedgerRecord {
-  settlementId: string;
-  listingId: string;
-  paymentId: string;
-  escrowDataHash: string;
-  submitTxHash: string;
-  status: "submitted";
-  submittedAt: string;
-}
-
-interface InitiateBuyBody {
-  orderId?: string;
-  amount?: number;
-  gateway?: string;
-  buyerWalletAddress?: string;
-  onChainListingId?: number | string;
+interface ListingRow {
+  id: string;
+  token_id: string;
+  event_id: string;
+  seller_user_id: string;
+  seller_wallet_address: string;
+  original_price: number | string;
+  ask_price: number | string;
+  currency: "VND";
+  created_at: string | Date;
 }
 
 interface BuyHashRecord {
@@ -113,42 +89,6 @@ interface BuyHashRecord {
   typedData: BuyTypedData;
 }
 
-interface ListingRow {
-  id: string;
-  token_id: string;
-  event_id: string;
-  seller_user_id: string;
-  seller_wallet_address: string;
-  original_price: number | string;
-  ask_price: number | string;
-  currency: "VND";
-  status: ListingStatus;
-  created_at: string | Date;
-  updated_at: string | Date;
-  buyer_user_id: string | null;
-  payment_id: string | null;
-  settlement_id: string | null;
-}
-
-interface CompletedSaleRow {
-  listing_id: string;
-  payment_id: string;
-  settlement_id: string;
-  escrow_data_hash: string;
-  complete_sale_request_id: string;
-  completed_at: string | Date;
-}
-
-interface SettlementLedgerRow {
-  settlement_id: string;
-  listing_id: string;
-  payment_id: string;
-  escrow_data_hash: string;
-  submit_tx_hash: string;
-  status: "submitted";
-  submitted_at: string | Date;
-}
-
 interface BuyHashRow {
   order_id: string;
   listing_id: string;
@@ -167,68 +107,17 @@ interface BuyHashRow {
   typed_data: BuyTypedData;
 }
 
-interface BroadcastBuyBody {
-  authorizationHash?: string;
-  signedAuthorization?: Record<string, unknown>;
-  tx?: {
-    to?: string;
-    data?: string;
-    chainId?: number;
-  };
-  paymentId?: string;
-  gateway?: string;
-  gatewayReference?: string;
-}
-
-interface ContractEventInput {
-  chainId?: number;
-  blockNumber?: number;
-  transactionHash?: string;
-  logIndex?: number;
-  eventName?: string;
-  contractAddress?: string;
-  occurredAt?: string;
-  payload?: Record<string, unknown>;
-}
-
-interface ContractSyncEventResponse {
-  accepted: number;
-  duplicates: number;
-  rejected: number;
-  results: Array<{
-    eventKey: string;
-    status: "processed" | "duplicate" | "rejected";
-    reason?: string;
-  }>;
-}
-
 interface ContractSyncTokenState {
   tokenId: string;
-  eventId?: string | null;
   sourceListingId?: string | null;
   ownerWalletAddress: string | null;
   ownerUserId: string | null;
   listingStatus: "none" | "active" | "cancelled" | "completed";
   isUsed: boolean;
   isRefunded: boolean;
-  usedAt: string | null;
-  refundedAt: string | null;
-  lastEventName: string | null;
-  lastSalePrice?: number | null;
   lastTransactionHash: string | null;
-  lastLogIndex: number | null;
   lastSyncedBlock: number;
   updatedAt: string;
-}
-
-interface ContractSyncStatus {
-  lastProcessedBlock: number;
-  totalEventsProcessed: number;
-  totalEventsDuplicate: number;
-  totalEventsRejected: number;
-  trackedTokens: number;
-  processedEventCount: number;
-  timestamp: string;
 }
 
 interface IdempotencyRow {
@@ -236,6 +125,10 @@ interface IdempotencyRow {
   response: unknown;
   expires_at: string | Date;
 }
+
+// ---------------------------------------------------------------------------
+// HTTP helpers
+// ---------------------------------------------------------------------------
 
 function sendJson(res: ServerResponse, statusCode: number, payload: unknown): void {
   res.statusCode = statusCode;
@@ -245,25 +138,17 @@ function sendJson(res: ServerResponse, statusCode: number, payload: unknown): vo
 
 async function readJson<T>(req: IncomingMessage): Promise<T> {
   const chunks: Buffer[] = [];
-
   for await (const chunk of req) {
     chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
   }
-
   const rawBody = Buffer.concat(chunks).toString("utf-8").trim();
-  if (!rawBody) {
-    return {} as T;
-  }
-
+  if (!rawBody) return {} as T;
   return JSON.parse(rawBody) as T;
 }
 
 function extractSingleHeader(req: IncomingMessage, headerName: string): string | null {
   const value = req.headers[headerName.toLowerCase()];
-  if (!value) {
-    return null;
-  }
-
+  if (!value) return null;
   const normalized = Array.isArray(value) ? value[0] : value;
   const trimmed = normalized?.trim();
   return trimmed ? trimmed : null;
@@ -274,8 +159,7 @@ function extractUserId(req: IncomingMessage): string | null {
 }
 
 function hasInternalAccess(req: IncomingMessage, config: MarketplaceConfig): boolean {
-  const key = extractSingleHeader(req, "x-internal-api-key");
-  return key === config.internalApiKey;
+  return extractSingleHeader(req, "x-internal-api-key") === config.internalApiKey;
 }
 
 function extractIdempotencyKey(req: IncomingMessage): string | null {
@@ -283,10 +167,7 @@ function extractIdempotencyKey(req: IncomingMessage): string | null {
 }
 
 function createIdempotencyScope(method: string, path: string, key: string | null): string | null {
-  if (!key) {
-    return null;
-  }
-
+  if (!key) return null;
   return `${method}:${path}:${key}`;
 }
 
@@ -298,26 +179,13 @@ function toIso(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
-function toGatewayCode(rawGateway: string): number | null {
-  const gateway = rawGateway.trim().toLowerCase();
-  if (gateway === "momo") {
-    return 1;
-  }
-
-  if (gateway === "vnpay") {
-    return 2;
-  }
-
-  return null;
-}
-
-function calculateFee(amount: number, bps: number): number {
-  return Math.floor((amount * bps) / 10000);
-}
-
 function normalizeWalletAddress(value: string | null | undefined): string {
   return value?.trim().toLowerCase() ?? "";
 }
+
+// ---------------------------------------------------------------------------
+// Mappers
+// ---------------------------------------------------------------------------
 
 function mapListing(row: ListingRow): Listing {
   return {
@@ -329,35 +197,7 @@ function mapListing(row: ListingRow): Listing {
     originalPrice: Number(row.original_price),
     askPrice: Number(row.ask_price),
     currency: row.currency,
-    status: row.status,
-    createdAt: toIso(row.created_at),
-    updatedAt: toIso(row.updated_at),
-    buyerUserId: row.buyer_user_id ?? undefined,
-    paymentId: row.payment_id ?? undefined,
-    settlementId: row.settlement_id ?? undefined
-  };
-}
-
-function mapCompletedSale(row: CompletedSaleRow): CompletedSale {
-  return {
-    listingId: row.listing_id,
-    paymentId: row.payment_id,
-    settlementId: row.settlement_id,
-    escrowDataHash: row.escrow_data_hash,
-    completeSaleRequestId: row.complete_sale_request_id,
-    completedAt: toIso(row.completed_at)
-  };
-}
-
-function mapSettlementLedger(row: SettlementLedgerRow): SettlementLedgerRecord {
-  return {
-    settlementId: row.settlement_id,
-    listingId: row.listing_id,
-    paymentId: row.payment_id,
-    escrowDataHash: row.escrow_data_hash,
-    submitTxHash: row.submit_tx_hash,
-    status: row.status,
-    submittedAt: toIso(row.submitted_at)
+    createdAt: toIso(row.created_at)
   };
 }
 
@@ -404,85 +244,47 @@ function buildBuyHashResponse(record: BuyHashRecord): Record<string, unknown> {
   };
 }
 
-function buildSyntheticTxHash(input: Record<string, unknown>): `0x${string}` {
-  return `0x${sha256Hex(JSON.stringify(input))}`;
-}
+// ---------------------------------------------------------------------------
+// DB schema
+// ---------------------------------------------------------------------------
 
 async function ensureSchema(pool: Pool): Promise<void> {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS marketplace_listings (
-      id TEXT PRIMARY KEY,
-      token_id TEXT NOT NULL,
-      event_id TEXT NOT NULL,
-      seller_user_id TEXT NOT NULL,
+      id                    TEXT PRIMARY KEY,
+      token_id              TEXT NOT NULL,
+      event_id              TEXT NOT NULL,
+      seller_user_id        TEXT NOT NULL,
       seller_wallet_address TEXT NOT NULL,
-      original_price INTEGER NOT NULL,
-      ask_price INTEGER NOT NULL,
-      currency TEXT NOT NULL DEFAULT 'VND',
-      status TEXT NOT NULL CHECK (status IN ('active', 'cancelled', 'completed')),
-      buyer_user_id TEXT,
-      payment_id TEXT,
-      settlement_id TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      original_price        INTEGER NOT NULL,
+      ask_price             INTEGER NOT NULL,
+      currency              TEXT NOT NULL DEFAULT 'VND',
+      created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
 
   await pool.query(`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_marketplace_active_listing_per_token
-    ON marketplace_listings (token_id)
-    WHERE status = 'active';
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS marketplace_completed_sales (
-      listing_id TEXT PRIMARY KEY REFERENCES marketplace_listings(id) ON DELETE CASCADE,
-      payment_id TEXT NOT NULL,
-      settlement_id TEXT NOT NULL,
-      escrow_data_hash TEXT NOT NULL,
-      complete_sale_request_id TEXT NOT NULL,
-      completed_at TIMESTAMPTZ NOT NULL
-    );
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS marketplace_settlement_ledger (
-      settlement_id TEXT PRIMARY KEY,
-      listing_id TEXT NOT NULL REFERENCES marketplace_listings(id) ON DELETE CASCADE,
-      payment_id TEXT NOT NULL,
-      escrow_data_hash TEXT NOT NULL,
-      submit_tx_hash TEXT NOT NULL,
-      status TEXT NOT NULL CHECK (status IN ('submitted')),
-      submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS marketplace_idempotency (
-      scope TEXT PRIMARY KEY,
-      response JSONB NOT NULL,
-      expires_at TIMESTAMPTZ NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_marketplace_listings_token_id
+    ON marketplace_listings (token_id);
   `);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS marketplace_buy_hashes (
-      order_id TEXT PRIMARY KEY,
-      listing_id TEXT NOT NULL REFERENCES marketplace_listings(id) ON DELETE CASCADE,
-      buyer_user_id TEXT NOT NULL,
-      buyer_wallet_address TEXT NOT NULL,
-      amount INTEGER NOT NULL,
-      nonce TEXT NOT NULL,
-      payment_hash TEXT NOT NULL,
-      signature TEXT NOT NULL,
-      signer_address TEXT NOT NULL,
-      status TEXT NOT NULL CHECK (status IN ('issued', 'expired')),
-      issued_at TIMESTAMPTZ NOT NULL,
-      expires_at TIMESTAMPTZ NOT NULL,
-      chain_id INTEGER NOT NULL,
-      verifying_contract TEXT NOT NULL,
-      typed_data JSONB NOT NULL
+      order_id              TEXT PRIMARY KEY,
+      listing_id            TEXT NOT NULL REFERENCES marketplace_listings(id) ON DELETE CASCADE,
+      buyer_user_id         TEXT NOT NULL,
+      buyer_wallet_address  TEXT NOT NULL,
+      amount                INTEGER NOT NULL,
+      nonce                 TEXT NOT NULL,
+      payment_hash          TEXT NOT NULL,
+      signature             TEXT NOT NULL,
+      signer_address        TEXT NOT NULL,
+      status                TEXT NOT NULL CHECK (status IN ('issued', 'expired', 'used')),
+      issued_at             TIMESTAMPTZ NOT NULL,
+      expires_at            TIMESTAMPTZ NOT NULL,
+      chain_id              INTEGER NOT NULL,
+      verifying_contract    TEXT NOT NULL,
+      typed_data            JSONB NOT NULL
     );
   `);
 
@@ -490,70 +292,46 @@ async function ensureSchema(pool: Pool): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_marketplace_buy_hashes_listing_user
     ON marketplace_buy_hashes (listing_id, buyer_user_id, issued_at DESC);
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS marketplace_idempotency (
+      scope      TEXT PRIMARY KEY,
+      response   JSONB NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
 }
 
 async function cleanupExpiredState(pool: Pool): Promise<void> {
   await pool.query(
-    `UPDATE marketplace_buy_hashes SET status = 'expired' WHERE status = 'issued' AND expires_at <= NOW()`
+    `UPDATE marketplace_buy_hashes SET status = 'expired'
+     WHERE status = 'issued' AND expires_at <= NOW()`
   );
   await pool.query(`DELETE FROM marketplace_idempotency WHERE expires_at <= NOW()`);
 }
 
-async function getCachedIdempotency(pool: Pool, scope: string | null): Promise<unknown | null> {
-  if (!scope) {
-    return null;
-  }
-
-  const row = await queryOne<IdempotencyRow>(
-    pool,
-    `SELECT scope, response, expires_at FROM marketplace_idempotency WHERE scope = $1 AND expires_at > NOW()`,
-    [scope]
-  );
-  return row?.response ?? null;
-}
-
-async function setCachedIdempotency(
-  pool: Pool,
-  scope: string | null,
-  response: unknown
-): Promise<void> {
-  if (!scope) {
-    return;
-  }
-
-  await pool.query(
-    `
-      INSERT INTO marketplace_idempotency (scope, response, expires_at)
-      VALUES ($1, $2::jsonb, NOW() + INTERVAL '24 hours')
-      ON CONFLICT (scope) DO UPDATE SET response = EXCLUDED.response, expires_at = EXCLUDED.expires_at
-    `,
-    [scope, JSON.stringify(response)]
-  );
-}
+// ---------------------------------------------------------------------------
+// DB queries
+// ---------------------------------------------------------------------------
 
 async function loadListing(pool: Pool, listingId: string): Promise<Listing | null> {
   const row = await queryOne<ListingRow>(
     pool,
-    `
-      SELECT id, token_id, event_id, seller_user_id, seller_wallet_address, original_price, ask_price,
-             currency, status, created_at, updated_at, buyer_user_id, payment_id, settlement_id
-      FROM marketplace_listings
-      WHERE id = $1
-    `,
+    `SELECT id, token_id, event_id, seller_user_id, seller_wallet_address,
+            original_price, ask_price, currency, created_at
+     FROM marketplace_listings WHERE id = $1`,
     [listingId]
   );
   return row ? mapListing(row) : null;
 }
 
-async function findActiveListingByToken(pool: Pool, tokenId: string): Promise<Listing | null> {
+async function loadListingByToken(pool: Pool, tokenId: string): Promise<Listing | null> {
   const row = await queryOne<ListingRow>(
     pool,
-    `
-      SELECT id, token_id, event_id, seller_user_id, seller_wallet_address, original_price, ask_price,
-             currency, status, created_at, updated_at, buyer_user_id, payment_id, settlement_id
-      FROM marketplace_listings
-      WHERE token_id = $1 AND status = 'active'
-    `,
+    `SELECT id, token_id, event_id, seller_user_id, seller_wallet_address,
+            original_price, ask_price, currency, created_at
+     FROM marketplace_listings WHERE token_id = $1`,
     [tokenId]
   );
   return row ? mapListing(row) : null;
@@ -566,21 +344,16 @@ async function loadLatestBuyHash(
 ): Promise<BuyHashRecord | null> {
   const row = await queryOne<BuyHashRow>(
     pool,
-    `
-      SELECT order_id, listing_id, buyer_user_id, buyer_wallet_address, amount, nonce, payment_hash,
-             signature, signer_address, status, issued_at, expires_at, chain_id, verifying_contract,
-             typed_data
-      FROM marketplace_buy_hashes
-      WHERE listing_id = $1 AND buyer_user_id = $2
-      ORDER BY issued_at DESC
-      LIMIT 1
-    `,
+    `SELECT order_id, listing_id, buyer_user_id, buyer_wallet_address, amount, nonce,
+            payment_hash, signature, signer_address, status, issued_at, expires_at,
+            chain_id, verifying_contract, typed_data
+     FROM marketplace_buy_hashes
+     WHERE listing_id = $1 AND buyer_user_id = $2
+     ORDER BY issued_at DESC LIMIT 1`,
     [listingId, buyerUserId]
   );
 
-  if (!row) {
-    return null;
-  }
+  if (!row) return null;
 
   if (row.status === "issued" && new Date(row.expires_at).getTime() <= Date.now()) {
     await pool.query(`UPDATE marketplace_buy_hashes SET status = 'expired' WHERE order_id = $1`, [
@@ -592,84 +365,73 @@ async function loadLatestBuyHash(
   return mapBuyHash(row);
 }
 
-async function postContractSyncEvents(
-  config: MarketplaceConfig,
-  events: ContractEventInput[]
-): Promise<ContractSyncEventResponse> {
-  const response = await fetch(`${config.contractSyncServiceBaseUrl}/internal/contracts/events`, {
-    method: "POST",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/json",
-      "x-internal-api-key": config.internalApiKey
-    },
-    body: JSON.stringify({ events })
-  });
+// ---------------------------------------------------------------------------
+// Idempotency
+// ---------------------------------------------------------------------------
 
-  const payloadText = await response.text();
-  const payload = payloadText ? JSON.parse(payloadText) : null;
-  if (!response.ok || !payload || payload.success !== true) {
-    throw new Error(
-      `Contract sync ingest failed with status ${response.status}${
-        payload?.error?.message ? `: ${payload.error.message}` : ""
-      }`
-    );
-  }
-
-  return payload.data as ContractSyncEventResponse;
+async function getCachedIdempotency(pool: Pool, scope: string | null): Promise<unknown | null> {
+  if (!scope) return null;
+  const row = await queryOne<IdempotencyRow>(
+    pool,
+    `SELECT scope, response, expires_at FROM marketplace_idempotency
+     WHERE scope = $1 AND expires_at > NOW()`,
+    [scope]
+  );
+  return row?.response ?? null;
 }
+
+async function setCachedIdempotency(
+  pool: Pool,
+  scope: string | null,
+  response: unknown
+): Promise<void> {
+  if (!scope) return;
+  await pool.query(
+    `INSERT INTO marketplace_idempotency (scope, response, expires_at)
+     VALUES ($1, $2::jsonb, NOW() + INTERVAL '24 hours')
+     ON CONFLICT (scope) DO UPDATE
+       SET response = EXCLUDED.response, expires_at = EXCLUDED.expires_at`,
+    [scope, JSON.stringify(response)]
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Contract-sync integration
+// ---------------------------------------------------------------------------
 
 async function loadContractSyncToken(
   config: MarketplaceConfig,
   tokenId: string
 ): Promise<ContractSyncTokenState | null> {
-  const response = await fetch(
-    `${config.contractSyncServiceBaseUrl}/tokens/${encodeURIComponent(tokenId)}`,
-    {
-      headers: {
-        accept: "application/json"
-      }
-    }
-  );
-
-  if (response.status === 404) {
-    return null;
-  }
-
-  const payloadText = await response.text();
-  const payload = payloadText ? JSON.parse(payloadText) : null;
-  if (!response.ok || !payload || payload.success !== true) {
-    throw new Error(
-      `Contract sync token lookup failed with status ${response.status}${
-        payload?.error?.message ? `: ${payload.error.message}` : ""
-      }`
+  try {
+    const response = await fetch(
+      `${config.contractSyncServiceBaseUrl}/tokens/${encodeURIComponent(tokenId)}`,
+      { headers: { accept: "application/json" } }
     );
-  }
-
-  return payload.data as ContractSyncTokenState;
-}
-
-async function loadContractSyncStatus(
-  config: MarketplaceConfig
-): Promise<ContractSyncStatus | null> {
-  const response = await fetch(`${config.contractSyncServiceBaseUrl}/sync/status`, {
-    headers: {
-      accept: "application/json"
-    }
-  });
-
-  if (!response.ok) {
+    if (response.status === 404) return null;
+    const payload = (await response.json()) as { success: boolean; data: ContractSyncTokenState };
+    if (!response.ok || !payload?.success) return null;
+    return payload.data;
+  } catch {
     return null;
   }
-
-  const payloadText = await response.text();
-  const payload = payloadText ? JSON.parse(payloadText) : null;
-  if (!payload || payload.success !== true) {
-    return null;
-  }
-
-  return payload.data as ContractSyncStatus;
 }
+
+async function enrichListingWithState(
+  config: MarketplaceConfig,
+  listing: Listing
+): Promise<ListingWithState> {
+  const tokenState = await loadContractSyncToken(config, listing.tokenId);
+  return {
+    ...listing,
+    listingStatus: tokenState?.listingStatus ?? "none",
+    onChainListingId: tokenState?.sourceListingId ? Number(tokenState.sourceListingId) : null
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Server
+// ---------------------------------------------------------------------------
 
 export async function createMarketplaceServer(config: MarketplaceConfig) {
   const pool = createPostgresPool(process.env);
@@ -678,7 +440,7 @@ export async function createMarketplaceServer(config: MarketplaceConfig) {
 
   const cleanupTimer = setInterval(() => {
     void cleanupExpiredState(pool).catch((error) => {
-      log(config.serviceName, "error", "Failed to cleanup marketplace persistence state", {
+      log(config.serviceName, "error", "Failed to cleanup marketplace state", {
         error: error instanceof Error ? error.message : String(error)
       });
     });
@@ -697,17 +459,12 @@ export async function createMarketplaceServer(config: MarketplaceConfig) {
       const method = req.method ?? "GET";
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
+      // ── Health ────────────────────────────────────────────────────────────
       if (method === "GET" && url.pathname === "/healthz") {
-        const counts = await queryOne<{ active: string; completed: string }>(
+        const counts = await queryOne<{ total: string }>(
           pool,
-          `
-            SELECT
-              COUNT(*) FILTER (WHERE status = 'active')::text AS active,
-              COUNT(*) FILTER (WHERE status = 'completed')::text AS completed
-            FROM marketplace_listings
-          `
+          `SELECT COUNT(*)::text AS total FROM marketplace_listings`
         );
-
         return sendJson(res, 200, {
           success: true,
           data: {
@@ -715,48 +472,33 @@ export async function createMarketplaceServer(config: MarketplaceConfig) {
             status: "ok",
             storage: "postgres",
             timestamp: new Date().toISOString(),
-            activeListings: Number(counts?.active ?? 0),
-            completedSales: Number(counts?.completed ?? 0)
+            totalListings: Number(counts?.total ?? 0)
           }
         });
       }
 
+      // ── GET /marketplace/listings ─────────────────────────────────────────
       if (method === "GET" && url.pathname === "/marketplace/listings") {
-        const statusFilter = url.searchParams.get("status")?.trim().toLowerCase();
         const eventFilter = url.searchParams.get("eventId")?.trim();
-        const conditions: string[] = [];
-        const values: string[] = [];
-
-        if (statusFilter) {
-          values.push(statusFilter);
-          conditions.push(`status = $${values.length}`);
-        }
-
-        if (eventFilter) {
-          values.push(eventFilter);
-          conditions.push(`event_id = $${values.length}`);
-        }
-
-        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
         const rows = await queryMany<ListingRow>(
           pool,
-          `
-            SELECT id, token_id, event_id, seller_user_id, seller_wallet_address, original_price,
-                   ask_price, currency, status, created_at, updated_at, buyer_user_id, payment_id,
-                   settlement_id
-            FROM marketplace_listings
-            ${whereClause}
-            ORDER BY created_at DESC
-          `,
-          values
+          eventFilter
+            ? `SELECT id, token_id, event_id, seller_user_id, seller_wallet_address,
+                      original_price, ask_price, currency, created_at
+               FROM marketplace_listings WHERE event_id = $1 ORDER BY created_at DESC`
+            : `SELECT id, token_id, event_id, seller_user_id, seller_wallet_address,
+                      original_price, ask_price, currency, created_at
+               FROM marketplace_listings ORDER BY created_at DESC`,
+          eventFilter ? [eventFilter] : []
         );
 
-        return sendJson(res, 200, {
-          success: true,
-          data: rows.map(mapListing)
-        });
+        const listings = rows.map(mapListing);
+        const enriched = await Promise.all(listings.map((l) => enrichListingWithState(config, l)));
+
+        return sendJson(res, 200, { success: true, data: enriched });
       }
 
+      // ── POST /marketplace/listings ────────────────────────────────────────
       if (method === "POST" && url.pathname === "/marketplace/listings") {
         const userId = extractUserId(req);
         if (!userId) {
@@ -770,10 +512,7 @@ export async function createMarketplaceServer(config: MarketplaceConfig) {
         if (kycStatus !== "approved") {
           return sendJson(res, 403, {
             success: false,
-            error: {
-              code: "KYC_REQUIRED",
-              message: "KYC approval is required before creating listing"
-            }
+            error: { code: "KYC_REQUIRED", message: "KYC approval required before listing" }
           });
         }
 
@@ -783,9 +522,7 @@ export async function createMarketplaceServer(config: MarketplaceConfig) {
           extractIdempotencyKey(req)
         );
         const cached = await getCachedIdempotency(pool, idempotencyScope);
-        if (cached) {
-          return sendJson(res, 200, cached);
-        }
+        if (cached) return sendJson(res, 200, cached);
 
         const body = await readJson<CreateListingBody>(req);
         const tokenId = body.tokenId?.trim() ?? "";
@@ -822,24 +559,27 @@ export async function createMarketplaceServer(config: MarketplaceConfig) {
           });
         }
 
-        const existingActive = await findActiveListingByToken(pool, tokenId);
-        if (existingActive) {
-          return sendJson(res, 409, {
-            success: false,
-            error: { code: "LISTING_ALREADY_ACTIVE", message: "Token already has active listing" }
-          });
+        // Check if token already has a listing record; if active on-chain, reject
+        const existingListing = await loadListingByToken(pool, tokenId);
+        if (existingListing) {
+          const tokenState = await loadContractSyncToken(config, tokenId);
+          if (tokenState?.listingStatus === "active") {
+            return sendJson(res, 409, {
+              success: false,
+              error: { code: "LISTING_ALREADY_ACTIVE", message: "Token already has active listing" }
+            });
+          }
+          // Completed or cancelled — remove old record to allow re-listing
+          await pool.query(`DELETE FROM marketplace_listings WHERE token_id = $1`, [tokenId]);
         }
 
         const listingId = `lst_${randomUUID().replace(/-/g, "")}`;
         const nowIso = new Date().toISOString();
         await pool.query(
-          `
-            INSERT INTO marketplace_listings (
-              id, token_id, event_id, seller_user_id, seller_wallet_address, original_price,
-              ask_price, currency, status, created_at, updated_at
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, 'VND', 'active', $8::timestamptz, $8::timestamptz)
-          `,
+          `INSERT INTO marketplace_listings
+             (id, token_id, event_id, seller_user_id, seller_wallet_address,
+              original_price, ask_price, currency, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'VND', $8::timestamptz)`,
           [
             listingId,
             tokenId,
@@ -852,16 +592,29 @@ export async function createMarketplaceServer(config: MarketplaceConfig) {
           ]
         );
 
-        const response = {
-          success: true,
-          data: await loadListing(pool, listingId)
-        };
+        const listing = await loadListing(pool, listingId);
+        const response = { success: true, data: listing };
         await setCachedIdempotency(pool, idempotencyScope, response);
         return sendJson(res, 200, response);
       }
 
-      const cancelListingMatch = /^\/marketplace\/listings\/([^/]+)$/.exec(url.pathname);
-      if (method === "DELETE" && cancelListingMatch) {
+      // ── GET /marketplace/listings/:id ─────────────────────────────────────
+      const singleListingMatch = /^\/marketplace\/listings\/([^/]+)$/.exec(url.pathname);
+      if (method === "GET" && singleListingMatch) {
+        const listing = await loadListing(pool, singleListingMatch[1]);
+        if (!listing) {
+          return sendJson(res, 404, {
+            success: false,
+            error: { code: "LISTING_NOT_FOUND", message: "Listing not found" }
+          });
+        }
+        const enriched = await enrichListingWithState(config, listing);
+        return sendJson(res, 200, { success: true, data: enriched });
+      }
+
+      // ── DELETE /marketplace/listings/:id ──────────────────────────────────
+      const cancelMatch = /^\/marketplace\/listings\/([^/]+)$/.exec(url.pathname);
+      if (method === "DELETE" && cancelMatch) {
         const userId = extractUserId(req);
         if (!userId) {
           return sendJson(res, 401, {
@@ -870,18 +623,11 @@ export async function createMarketplaceServer(config: MarketplaceConfig) {
           });
         }
 
-        const listing = await loadListing(pool, cancelListingMatch[1]);
+        const listing = await loadListing(pool, cancelMatch[1]);
         if (!listing) {
           return sendJson(res, 404, {
             success: false,
             error: { code: "LISTING_NOT_FOUND", message: "Listing not found" }
-          });
-        }
-
-        if (listing.status !== "active") {
-          return sendJson(res, 400, {
-            success: false,
-            error: { code: "LISTING_NOT_ACTIVE", message: "Only active listing can be cancelled" }
           });
         }
 
@@ -892,353 +638,11 @@ export async function createMarketplaceServer(config: MarketplaceConfig) {
           });
         }
 
-        await pool.query(
-          `UPDATE marketplace_listings SET status = 'cancelled', updated_at = NOW() WHERE id = $1`,
-          [listing.id]
-        );
-
-        return sendJson(res, 200, {
-          success: true,
-          data: await loadListing(pool, listing.id)
-        });
+        await pool.query(`DELETE FROM marketplace_listings WHERE id = $1`, [listing.id]);
+        return sendJson(res, 200, { success: true, data: { listingId: listing.id } });
       }
 
-      const purchaseMatch = /^\/marketplace\/listings\/([^/]+)\/purchase$/.exec(url.pathname);
-      if (method === "POST" && purchaseMatch) {
-        const userId = extractUserId(req);
-        if (!userId) {
-          return sendJson(res, 401, {
-            success: false,
-            error: { code: "UNAUTHORIZED", message: "Missing x-user-id header" }
-          });
-        }
-
-        const idempotencyScope = createIdempotencyScope(
-          method,
-          url.pathname,
-          extractIdempotencyKey(req)
-        );
-        const cached = await getCachedIdempotency(pool, idempotencyScope);
-        if (cached) {
-          return sendJson(res, 200, cached);
-        }
-
-        const listing = await loadListing(pool, purchaseMatch[1]);
-        if (!listing) {
-          return sendJson(res, 404, {
-            success: false,
-            error: { code: "LISTING_NOT_FOUND", message: "Listing not found" }
-          });
-        }
-
-        if (listing.status !== "active") {
-          return sendJson(res, 400, {
-            success: false,
-            error: { code: "LISTING_NOT_ACTIVE", message: "Listing is no longer active" }
-          });
-        }
-
-        if (listing.sellerUserId === userId) {
-          return sendJson(res, 400, {
-            success: false,
-            error: {
-              code: "SELF_PURCHASE_FORBIDDEN",
-              message: "Seller cannot purchase own listing"
-            }
-          });
-        }
-
-        const body = await readJson<PurchaseListingBody>(req);
-        const paymentId = body.paymentId?.trim() ?? "";
-        const buyerWalletAddress = normalizeWalletAddress(body.buyerWalletAddress);
-        const gateway = body.gateway?.trim().toLowerCase() ?? "";
-        const gatewayReference = body.gatewayReference?.trim() ?? "";
-
-        if (!paymentId || !buyerWalletAddress || !gateway || !gatewayReference) {
-          return sendJson(res, 400, {
-            success: false,
-            error: {
-              code: "INVALID_PURCHASE_PAYLOAD",
-              message: "paymentId, buyerWalletAddress, gateway, gatewayReference are required"
-            }
-          });
-        }
-
-        const gatewayCode = toGatewayCode(gateway);
-        if (!gatewayCode) {
-          return sendJson(res, 400, {
-            success: false,
-            error: { code: "UNSUPPORTED_GATEWAY", message: "gateway must be momo or vnpay" }
-          });
-        }
-
-        const grossAmount = listing.askPrice;
-        const platformFee = calculateFee(grossAmount, config.platformFeeBps);
-        const organizerRoyalty = calculateFee(grossAmount, config.organizerRoyaltyBps);
-        const sellerAmount = grossAmount - platformFee - organizerRoyalty;
-
-        if (sellerAmount <= 0) {
-          return sendJson(res, 400, {
-            success: false,
-            error: { code: "INVALID_SPLIT", message: "Invalid settlement split" }
-          });
-        }
-
-        const settledAt = Math.floor(Date.now() / 1000);
-        const settlementId = randomUUID();
-        const nonce = randomUUID().replace(/-/g, "");
-        const gatewayReferenceHash = sha256Hex(gatewayReference);
-
-        const escrowPayload = {
-          version: 1,
-          settlementId,
-          listingId: listing.id,
-          paymentId,
-          tokenId: listing.tokenId,
-          seller: listing.sellerWalletAddress,
-          buyer: buyerWalletAddress,
-          grossAmount,
-          sellerAmount,
-          platformFee,
-          organizerRoyalty,
-          currency: "VND",
-          gateway: gatewayCode,
-          gatewayReferenceHash,
-          settledAt,
-          nonce
-        };
-
-        const escrowDataHash = sha256Hex(JSON.stringify(escrowPayload));
-        const completeSaleRequestId = `cs_${randomUUID().replace(/-/g, "")}`;
-        const completedAt = new Date().toISOString();
-
-        await pool.query(
-          `
-            UPDATE marketplace_listings
-            SET status = 'completed', updated_at = $2::timestamptz, buyer_user_id = $3,
-                payment_id = $4, settlement_id = $5
-            WHERE id = $1 AND status = 'active'
-          `,
-          [listing.id, completedAt, userId, paymentId, settlementId]
-        );
-
-        await pool.query(
-          `
-            INSERT INTO marketplace_completed_sales (
-              listing_id, payment_id, settlement_id, escrow_data_hash, complete_sale_request_id,
-              completed_at
-            )
-            VALUES ($1, $2, $3, $4, $5, $6::timestamptz)
-            ON CONFLICT (listing_id) DO NOTHING
-          `,
-          [listing.id, paymentId, settlementId, escrowDataHash, completeSaleRequestId, completedAt]
-        );
-
-        const response = {
-          success: true,
-          data: {
-            listing: await loadListing(pool, listing.id),
-            settlement: {
-              escrowPayload,
-              escrowDataHash
-            },
-            completeSaleTrigger: {
-              requestId: completeSaleRequestId,
-              status: "queued"
-            }
-          }
-        };
-
-        log(config.serviceName, "info", "Listing purchase finalized", {
-          listingId: listing.id,
-          paymentId,
-          settlementId,
-          escrowDataHash,
-          completeSaleRequestId
-        });
-
-        await setCachedIdempotency(pool, idempotencyScope, response);
-        return sendJson(res, 200, response);
-      }
-
-      if (method === "GET" && url.pathname === "/marketplace/me/sales") {
-        const userId = extractUserId(req);
-        if (!userId) {
-          return sendJson(res, 401, {
-            success: false,
-            error: { code: "UNAUTHORIZED", message: "Missing x-user-id header" }
-          });
-        }
-
-        const rows = await queryMany<
-          CompletedSaleRow & {
-            token_id: string;
-            event_id: string;
-            buyer_user_id: string | null;
-            ask_price: number | string;
-            currency: string;
-            seller_user_id: string;
-          }
-        >(
-          pool,
-          `
-            SELECT cs.listing_id, cs.payment_id, cs.settlement_id, cs.escrow_data_hash,
-                   cs.complete_sale_request_id, cs.completed_at, l.token_id, l.event_id,
-                   l.buyer_user_id, l.ask_price, l.currency, l.seller_user_id
-            FROM marketplace_completed_sales cs
-            JOIN marketplace_listings l ON l.id = cs.listing_id
-            WHERE l.seller_user_id = $1
-            ORDER BY cs.completed_at DESC
-          `,
-          [userId]
-        );
-
-        return sendJson(res, 200, {
-          success: true,
-          data: rows.map((row) => ({
-            ...mapCompletedSale(row),
-            tokenId: row.token_id,
-            eventId: row.event_id,
-            buyerUserId: row.buyer_user_id ?? undefined,
-            askPrice: Number(row.ask_price),
-            currency: row.currency
-          }))
-        });
-      }
-
-      if (method === "POST" && url.pathname === "/internal/marketplace/settlements/finalize") {
-        if (!hasInternalAccess(req, config)) {
-          return sendJson(res, 401, {
-            success: false,
-            error: { code: "UNAUTHORIZED_INTERNAL", message: "Invalid internal API key" }
-          });
-        }
-
-        const body = await readJson<FinalizeSettlementBody>(req);
-        const settlementId = body.settlementId?.trim() ?? "";
-        const listingId = body.listingId?.trim() ?? "";
-        const paymentId = body.paymentId?.trim() ?? "";
-        const tokenId = body.tokenId?.trim() ?? "";
-        const seller = body.seller?.trim() ?? "";
-        const buyer = body.buyer?.trim() ?? "";
-        const currency = body.currency?.trim().toUpperCase() ?? "";
-        const gatewayReference = body.gatewayReference?.trim() ?? "";
-
-        if (
-          body.version !== 1 ||
-          !settlementId ||
-          !listingId ||
-          !paymentId ||
-          !tokenId ||
-          !seller ||
-          !buyer ||
-          !currency ||
-          !gatewayReference ||
-          typeof body.grossAmount !== "number" ||
-          typeof body.sellerAmount !== "number" ||
-          typeof body.platformFee !== "number" ||
-          typeof body.organizerRoyalty !== "number" ||
-          typeof body.gateway !== "number" ||
-          typeof body.settledAt !== "number" ||
-          !body.nonce
-        ) {
-          return sendJson(res, 400, {
-            success: false,
-            error: {
-              code: "INVALID_SETTLEMENT_PAYLOAD",
-              message: "Settlement payload missing required fields"
-            }
-          });
-        }
-
-        if (currency !== "VND") {
-          return sendJson(res, 400, {
-            success: false,
-            error: { code: "INVALID_CURRENCY", message: "Only VND settlement is supported" }
-          });
-        }
-
-        if (body.grossAmount !== body.sellerAmount + body.platformFee + body.organizerRoyalty) {
-          return sendJson(res, 400, {
-            success: false,
-            error: {
-              code: "INVALID_SETTLEMENT_SPLIT",
-              message: "grossAmount must equal sellerAmount + platformFee + organizerRoyalty"
-            }
-          });
-        }
-
-        const listing = await loadListing(pool, listingId);
-        if (!listing || listing.tokenId !== tokenId) {
-          return sendJson(res, 400, {
-            success: false,
-            error: { code: "LISTING_MISMATCH", message: "Listing and token mismatch" }
-          });
-        }
-
-        const existing = await queryOne<SettlementLedgerRow>(
-          pool,
-          `
-            SELECT settlement_id, listing_id, payment_id, escrow_data_hash, submit_tx_hash, status, submitted_at
-            FROM marketplace_settlement_ledger
-            WHERE settlement_id = $1
-          `,
-          [settlementId]
-        );
-        if (existing) {
-          return sendJson(res, 200, { success: true, data: mapSettlementLedger(existing) });
-        }
-
-        const gatewayReferenceHash = sha256Hex(gatewayReference);
-        const escrowPayload = {
-          version: body.version,
-          settlementId,
-          listingId,
-          paymentId,
-          tokenId,
-          seller,
-          buyer,
-          grossAmount: body.grossAmount,
-          sellerAmount: body.sellerAmount,
-          platformFee: body.platformFee,
-          organizerRoyalty: body.organizerRoyalty,
-          currency,
-          gateway: body.gateway,
-          gatewayReferenceHash,
-          settledAt: body.settledAt,
-          nonce: body.nonce
-        };
-
-        const escrowDataHash = sha256Hex(JSON.stringify(escrowPayload));
-        const submitTxHash = `0x${sha256Hex(`${escrowDataHash}:${Date.now()}`)}`;
-
-        await pool.query(
-          `
-            INSERT INTO marketplace_settlement_ledger (
-              settlement_id, listing_id, payment_id, escrow_data_hash, submit_tx_hash, status,
-              submitted_at
-            )
-            VALUES ($1, $2, $3, $4, $5, 'submitted', NOW())
-          `,
-          [settlementId, listingId, paymentId, escrowDataHash, submitTxHash]
-        );
-
-        const created = await queryOne<SettlementLedgerRow>(
-          pool,
-          `
-            SELECT settlement_id, listing_id, payment_id, escrow_data_hash, submit_tx_hash, status, submitted_at
-            FROM marketplace_settlement_ledger
-            WHERE settlement_id = $1
-          `,
-          [settlementId]
-        );
-
-        return sendJson(res, 200, {
-          success: true,
-          data: mapSettlementLedger(created as SettlementLedgerRow)
-        });
-      }
-
+      // ── POST /marketplace/listings/:id/initiate-buy ───────────────────────
       const initiateBuyMatch = /^\/marketplace\/listings\/([^/]+)\/initiate-buy$/.exec(
         url.pathname
       );
@@ -1259,10 +663,13 @@ export async function createMarketplaceServer(config: MarketplaceConfig) {
           });
         }
 
-        if (listing.status !== "active") {
+        // Check listing status from contract-sync (source of truth)
+        const tokenState = await loadContractSyncToken(config, listing.tokenId);
+        const listingStatus = tokenState?.listingStatus ?? "none";
+        if (listingStatus !== "active") {
           return sendJson(res, 400, {
             success: false,
-            error: { code: "LISTING_NOT_ACTIVE", message: "Listing is no longer active" }
+            error: { code: "LISTING_NOT_ACTIVE", message: "Listing is not active on-chain" }
           });
         }
 
@@ -1276,10 +683,7 @@ export async function createMarketplaceServer(config: MarketplaceConfig) {
         if (!config.backendSignerPrivateKey || !config.marketplaceAddress) {
           return sendJson(res, 503, {
             success: false,
-            error: {
-              code: "SIGNING_UNAVAILABLE",
-              message: "Marketplace buy-hash signing is not configured"
-            }
+            error: { code: "SIGNING_UNAVAILABLE", message: "Marketplace signing is not configured" }
           });
         }
 
@@ -1311,11 +715,12 @@ export async function createMarketplaceServer(config: MarketplaceConfig) {
             error: {
               code: "INVALID_ON_CHAIN_LISTING_ID",
               message:
-                "onChainListingId must be a positive integer matching the MarketplaceV2 listingId"
+                "onChainListingId must be a positive integer matching MarketplaceV2 listingId"
             }
           });
         }
 
+        // Return existing valid buy hash if present
         const existing = await loadLatestBuyHash(pool, listing.id, userId);
         if (existing && existing.status === "issued") {
           return sendJson(res, 200, { success: true, data: buildBuyHashResponse(existing) });
@@ -1343,19 +748,17 @@ export async function createMarketplaceServer(config: MarketplaceConfig) {
           privateKey: config.backendSignerPrivateKey,
           typedData
         });
+
         const issuedAt = new Date(nowMs).toISOString();
         const expiresAt = new Date(nowMs + (config.buyHashTtlSec ?? 900) * 1000).toISOString();
 
         await pool.query(
-          `
-            INSERT INTO marketplace_buy_hashes (
-              order_id, listing_id, buyer_user_id, buyer_wallet_address, amount, nonce,
-              payment_hash, signature, signer_address, status, issued_at, expires_at, chain_id,
-              verifying_contract, typed_data
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'issued', $10::timestamptz,
-                    $11::timestamptz, $12, $13, $14::jsonb)
-          `,
+          `INSERT INTO marketplace_buy_hashes
+             (order_id, listing_id, buyer_user_id, buyer_wallet_address, amount, nonce,
+              payment_hash, signature, signer_address, status, issued_at, expires_at,
+              chain_id, verifying_contract, typed_data)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'issued',
+                   $10::timestamptz, $11::timestamptz, $12, $13, $14::jsonb)`,
           [
             orderId,
             listing.id,
@@ -1376,13 +779,10 @@ export async function createMarketplaceServer(config: MarketplaceConfig) {
 
         const created = await queryOne<BuyHashRow>(
           pool,
-          `
-            SELECT order_id, listing_id, buyer_user_id, buyer_wallet_address, amount, nonce,
-                   payment_hash, signature, signer_address, status, issued_at, expires_at,
-                   chain_id, verifying_contract, typed_data
-            FROM marketplace_buy_hashes
-            WHERE order_id = $1
-          `,
+          `SELECT order_id, listing_id, buyer_user_id, buyer_wallet_address, amount, nonce,
+                  payment_hash, signature, signer_address, status, issued_at, expires_at,
+                  chain_id, verifying_contract, typed_data
+           FROM marketplace_buy_hashes WHERE order_id = $1`,
           [orderId]
         );
 
@@ -1398,6 +798,7 @@ export async function createMarketplaceServer(config: MarketplaceConfig) {
         });
       }
 
+      // ── GET /marketplace/listings/:id/buy-hash ────────────────────────────
       const buyHashMatch = /^\/marketplace\/listings\/([^/]+)\/buy-hash$/.exec(url.pathname);
       if (method === "GET" && buyHashMatch) {
         const userId = extractUserId(req);
@@ -1414,7 +815,7 @@ export async function createMarketplaceServer(config: MarketplaceConfig) {
             success: false,
             error: {
               code: "BUY_HASH_NOT_FOUND",
-              message: "No buy hash initiated for this listing. Call initiate-buy first."
+              message: "No buy hash found. Call initiate-buy first."
             }
           });
         }
@@ -1422,6 +823,7 @@ export async function createMarketplaceServer(config: MarketplaceConfig) {
         return sendJson(res, 200, { success: true, data: buildBuyHashResponse(record) });
       }
 
+      // ── POST /marketplace/listings/:id/broadcast-buy ──────────────────────
       const broadcastBuyMatch = /^\/marketplace\/listings\/([^/]+)\/broadcast-buy$/.exec(
         url.pathname
       );
@@ -1440,11 +842,8 @@ export async function createMarketplaceServer(config: MarketplaceConfig) {
           extractIdempotencyKey(req)
         );
         const cached = await getCachedIdempotency(pool, idempotencyScope);
-        if (cached) {
-          return sendJson(res, 200, cached);
-        }
+        if (cached) return sendJson(res, 200, cached);
 
-        const body = await readJson<BroadcastBuyBody>(req);
         const listing = await loadListing(pool, broadcastBuyMatch[1]);
         if (!listing) {
           return sendJson(res, 404, {
@@ -1454,223 +853,39 @@ export async function createMarketplaceServer(config: MarketplaceConfig) {
         }
 
         const buyHash = await loadLatestBuyHash(pool, listing.id, userId);
-        if (!buyHash) {
-          return sendJson(res, 404, {
-            success: false,
-            error: {
-              code: "BUY_HASH_NOT_FOUND",
-              message: "No buy hash initiated for this listing. Call initiate-buy first."
-            }
-          });
-        }
-
-        if (buyHash.status !== "issued") {
+        if (!buyHash || buyHash.status !== "issued") {
           return sendJson(res, 400, {
             success: false,
             error: {
-              code: "BUY_HASH_EXPIRED",
-              message: "Buy hash has expired. Initiate a new buy request."
+              code: "BUY_HASH_NOT_FOUND_OR_EXPIRED",
+              message: "No valid buy hash. Call initiate-buy first."
             }
           });
         }
 
-        if (listing.sellerUserId === userId) {
-          return sendJson(res, 400, {
-            success: false,
-            error: {
-              code: "SELF_PURCHASE_FORBIDDEN",
-              message: "Seller cannot purchase own listing"
-            }
-          });
-        }
+        const body = await readJson<BroadcastBuyBody>(req);
 
-        if (
-          listing.status === "completed" &&
-          listing.buyerUserId &&
-          listing.buyerUserId !== userId
-        ) {
-          return sendJson(res, 409, {
-            success: false,
-            error: {
-              code: "LISTING_ALREADY_COMPLETED",
-              message: "Listing has already been completed by another buyer"
-            }
-          });
-        }
-
-        const gateway = body.gateway?.trim().toLowerCase() || "momo";
-        const gatewayReference = body.gatewayReference?.trim() || `gw_demo_${buyHash.orderId}`;
-        const gatewayCode = toGatewayCode(gateway);
-        if (!gatewayCode) {
-          return sendJson(res, 400, {
-            success: false,
-            error: { code: "UNSUPPORTED_GATEWAY", message: "gateway must be momo or vnpay" }
-          });
-        }
-
-        const paymentId = body.paymentId?.trim() || `pay_${buyHash.orderId}`;
-        const txHash = buildSyntheticTxHash({
-          listingId: listing.id,
-          orderId: buyHash.orderId,
-          paymentHash: buyHash.paymentHash,
-          authorizationHash: body.authorizationHash ?? "",
-          signedAuthorization: body.signedAuthorization ?? null,
-          tx: body.tx ?? null
-        });
-
-        let finalizedListing = listing;
-        if (listing.status !== "completed") {
-          const grossAmount = listing.askPrice;
-          const platformFee = calculateFee(grossAmount, config.platformFeeBps);
-          const organizerRoyalty = calculateFee(grossAmount, config.organizerRoyaltyBps);
-          const sellerAmount = grossAmount - platformFee - organizerRoyalty;
-
-          if (sellerAmount <= 0) {
-            return sendJson(res, 400, {
-              success: false,
-              error: { code: "INVALID_SPLIT", message: "Invalid settlement split" }
-            });
-          }
-
-          const settledAt = Math.floor(Date.now() / 1000);
-          const settlementId = randomUUID();
-          const nonce = randomUUID().replace(/-/g, "");
-          const gatewayReferenceHash = sha256Hex(gatewayReference);
-          const escrowPayload = {
-            version: 1,
-            settlementId,
-            listingId: listing.id,
-            paymentId,
-            tokenId: listing.tokenId,
-            seller: listing.sellerWalletAddress,
-            buyer: buyHash.buyerWalletAddress,
-            grossAmount,
-            sellerAmount,
-            platformFee,
-            organizerRoyalty,
-            currency: "VND",
-            gateway: gatewayCode,
-            gatewayReferenceHash,
-            settledAt,
-            nonce
-          };
-          const escrowDataHash = sha256Hex(JSON.stringify(escrowPayload));
-          const completeSaleRequestId = `cs_${randomUUID().replace(/-/g, "")}`;
-          const completedAt = new Date().toISOString();
-
-          await pool.query(
-            `
-              UPDATE marketplace_listings
-              SET status = 'completed', updated_at = $2::timestamptz, buyer_user_id = $3,
-                  payment_id = $4, settlement_id = $5
-              WHERE id = $1 AND status = 'active'
-            `,
-            [listing.id, completedAt, userId, paymentId, settlementId]
-          );
-
-          await pool.query(
-            `
-              INSERT INTO marketplace_completed_sales (
-                listing_id, payment_id, settlement_id, escrow_data_hash, complete_sale_request_id,
-                completed_at
-              )
-              VALUES ($1, $2, $3, $4, $5, $6::timestamptz)
-              ON CONFLICT (listing_id) DO NOTHING
-            `,
-            [
-              listing.id,
-              paymentId,
-              settlementId,
-              escrowDataHash,
-              completeSaleRequestId,
-              completedAt
-            ]
-          );
-
-          finalizedListing = (await loadListing(pool, listing.id)) as Listing;
-        }
-
-        const syncEvents: ContractEventInput[] = [
-          {
-            chainId: buyHash.chainId,
-            blockNumber: Number(Date.now()),
-            transactionHash: txHash,
-            logIndex: 0,
-            eventName: "ListingStatusChanged",
-            contractAddress: buyHash.verifyingContract,
-            occurredAt: new Date().toISOString(),
-            payload: {
-              tokenId: finalizedListing.tokenId,
-              eventId: finalizedListing.eventId,
-              listingId: finalizedListing.id,
-              status: "completed",
-              seller: finalizedListing.sellerWalletAddress,
-              buyer: buyHash.buyerWalletAddress,
-              buyerUserId: userId,
-              price: String(finalizedListing.askPrice)
-            }
-          },
-          {
-            chainId: buyHash.chainId,
-            blockNumber: Number(Date.now()),
-            transactionHash: txHash,
-            logIndex: 1,
-            eventName: "Transfer",
-            contractAddress: buyHash.verifyingContract,
-            occurredAt: new Date().toISOString(),
-            payload: {
-              tokenId: finalizedListing.tokenId,
-              eventId: finalizedListing.eventId,
-              listingId: finalizedListing.id,
-              from: finalizedListing.sellerWalletAddress,
-              to: buyHash.buyerWalletAddress,
-              toUserId: userId
-            }
-          }
-        ];
-
-        let syncResult: ContractSyncEventResponse | null = null;
-        let syncToken: ContractSyncTokenState | null = null;
-        let syncStatus: ContractSyncStatus | null = null;
-        let syncError: string | null = null;
-
-        try {
-          syncResult = await postContractSyncEvents(config, syncEvents);
-          syncToken = await loadContractSyncToken(config, finalizedListing.tokenId);
-          syncStatus = await loadContractSyncStatus(config);
-        } catch (error) {
-          syncError = error instanceof Error ? error.message : String(error);
-          log(config.serviceName, "warn", "Broadcast buy completed without sync confirmation", {
-            listingId: finalizedListing.id,
-            txHash,
-            error: syncError
-          });
-        }
+        await pool.query(`UPDATE marketplace_buy_hashes SET status = 'used' WHERE order_id = $1`, [
+          buyHash.orderId
+        ]);
 
         const response = {
           success: true,
           data: {
-            listing: finalizedListing,
-            buyHash: buildBuyHashResponse(buyHash),
-            tx: {
-              hash: txHash,
-              authorizationHash: body.authorizationHash ?? null,
-              signedAuthorization: body.signedAuthorization ?? null,
-              request: body.tx ?? null,
-              broadcastAt: new Date().toISOString(),
-              mode: "simulated"
-            },
-            sync: {
-              status: syncError ? "degraded" : "confirmed",
-              error: syncError ?? undefined,
-              ingestion: syncResult ?? undefined,
-              token: syncToken ?? undefined,
-              service: syncStatus ?? undefined
-            }
+            listingId: listing.id,
+            buyHashOrderId: buyHash.orderId,
+            txHash: body.tx ? sha256Hex(JSON.stringify(body.tx)) : null
           }
         };
 
         await setCachedIdempotency(pool, idempotencyScope, response);
+
+        log(config.serviceName, "info", "Broadcast buy recorded", {
+          listingId: listing.id,
+          orderId: buyHash.orderId,
+          buyerUserId: userId
+        });
+
         return sendJson(res, 200, response);
       }
 
@@ -1682,7 +897,6 @@ export async function createMarketplaceServer(config: MarketplaceConfig) {
       log(config.serviceName, "error", "Unhandled request error", {
         error: error instanceof Error ? error.message : String(error)
       });
-
       return sendJson(res, 500, {
         success: false,
         error: { code: "INTERNAL_ERROR", message: "Internal server error" }
