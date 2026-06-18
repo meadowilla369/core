@@ -260,12 +260,16 @@ export interface MarketplaceListing {
   originalPrice: number;
   askPrice: number;
   currency: "VND";
-  status: "active" | "cancelled" | "completed";
   createdAt: string;
-  updatedAt: string;
-  buyerUserId?: string;
-  paymentId?: string;
-  settlementId?: string;
+  // Được ghép từ contract-sync khi marketplace-service serve listing
+  listingStatus?: "none" | "active" | "cancelled" | "completed";
+  onChainListingId?: number | null;
+}
+
+export interface MarketplaceListBroadcastData {
+  listingId: string;
+  tokenId: string;
+  txHash: `0x${string}`;
 }
 
 export interface MarketplaceBuyHashData {
@@ -342,20 +346,9 @@ export interface ContractSyncServiceStatusData {
 }
 
 export interface MarketplaceBroadcastData {
-  listing: MarketplaceListing;
-  buyHash: MarketplaceBuyHashData;
-  tx: MarketplaceBroadcastTxData;
-  sync: {
-    status: "confirmed" | "degraded";
-    error?: string;
-    ingestion?: {
-      accepted: number;
-      duplicates: number;
-      rejected: number;
-    };
-    token?: ContractSyncedTokenData;
-    service?: ContractSyncServiceStatusData;
-  };
+  listingId: string;
+  buyHashOrderId: string;
+  txHash: `0x${string}` | null;
 }
 
 interface RequestOptions {
@@ -725,8 +718,6 @@ export class ApiClient {
         chainId: number;
       };
       paymentId?: string;
-      gateway?: string;
-      gatewayReference?: string;
     },
     ctx: { userId: string; idempotencyKey?: string }
   ): Promise<ApiSuccessResponse<MarketplaceBroadcastData>> {
