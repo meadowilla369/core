@@ -1,0 +1,102 @@
+@startuml
+title Resale End-to-End: Listing (Flow 2a) → Purchase (Flow 2b)
+skinparam shadowing false
+skinparam responseMessageBelowArrow true
+skinparam sequenceMessageAlign center
+
+actor Seller
+actor Buyer
+participant "ResaleSalePage" as SellPage
+participant "ResalePurchasePage" as BuyPage
+participant "API Gateway" as ApiGw
+participant "Marketplace Service" as MktSvc
+database "marketplace_listings\n(metadata only)" as MktDb
+database "marketplace_buy_hashes" as HashDb
+participant "Contract Sync\nRPC Listener" as CSync
+database "token_ownerships" as CSyncDb
+participant "Handler" as Handler
+participant "TicketLedger" as Ledger
+participant "MarketplaceV2" as MktV2
+
+== FLOW 2a: Seller đăng bán ==
+
+Seller -> SellPage : Chọn vé + đặt giá
+SellPage -> ApiGw : POST /v1/marketplace/listings\n{ tokenId, eventId, askPrice }\nx-kyc-status: approved
+ApiGw -> MktSvc : validate KYC + markup
+MktSvc -> MktDb : INSERT\n{ token_id, seller_user_id,\n  ask_price, original_price,\n  currency, event_id }
+MktSvc --> SellPage : { listingId: "lst_..." }
+
+SellPage -> SellPage : buildMarketplaceListTx()\nsignAuthorization()\nassembleTx4()
+
+SellPage -> Handler : broadcast EIP-7702 type-4 tx
+Handler -> Ledger : transferTicket(tokenId, marketplace)
+Handler -> MktV2 : listTicket(tokenId, askPrice)
+MktV2 --> Handler : emit TicketListed(listingId=N)
+Handler --> SellPage : txHash ✓
+SellPage --> Seller : "Đăng bán thành công ✓"
+
+MktV2 ->> CSync : TicketListed (RPC, async)
+CSync -> CSyncDb : listing_status='active'\nsource_listing_id='N'
+
+|||
+
+== FLOW 2b: Buyer mua vé resale ==
+
+Buyer -> BuyPage : Mở listing
+BuyPage -> ApiGw : GET /v1/marketplace/listings/{id}
+ApiGw -> MktSvc : proxy
+
+MktSvc -> MktDb : SELECT ask_price, seller_user_id,\n  token_id, event_id
+MktSvc -> CSync : GET /tokens/{tokenId}
+CSync -> CSyncDb : SELECT listing_status,\n  source_listing_id
+CSyncDb --> MktSvc : listing_status='active'\nsource_listing_id='N'
+
+MktSvc --> BuyPage : listing {\n  askPrice, sellerUserId,\n  listingStatus: 'active',\n  onChainListingId: N\n}
+
+note right of BuyPage
+  onChainListingId = N
+  marketplace-service ghép từ
+  token_ownerships.source_listing_id.
+  Frontend không cần nhập tay.
+end note
+
+Buyer -> BuyPage : Bấm "Chuẩn Bị Lệnh Mua"
+BuyPage -> ApiGw : POST /v1/marketplace/listings/{id}/initiate-buy\n{ amount, buyerWalletAddress,\n  onChainListingId: N }
+ApiGw -> MktSvc : ký EIP-712 paymentHash
+MktSvc -> HashDb : INSERT buy_hash\n{ orderId, paymentHash,\n  signature, expires_at }
+MktSvc --> BuyPage : { paymentHash, signature, domain }
+
+BuyPage -> BuyPage : buildMarketplaceBuyTx(\n  listingId=N, paymentHash, sig\n)\nsignAuthorization()\nassembleTx4()
+
+Buyer -> BuyPage : Bấm "Ký & Broadcast"
+BuyPage -> Handler : broadcast EIP-7702 type-4 tx
+Handler -> MktV2 : buyWithSignature(N, paymentHash, sig)
+MktV2 -> MktV2 : verify sig\nmark paymentHash used
+MktV2 -> Ledger : transferTicket(tokenId, buyer)
+MktV2 -> MktV2 : pendingPayouts[seller] += price
+MktV2 --> Handler : emit TicketSold + TicketTransferred
+Handler --> BuyPage : txHash ✓
+
+MktV2 ->> CSync : TicketSold + TicketTransferred (RPC, async)
+CSync -> CSyncDb : listing_status='completed'\nowner_wallet=buyer\nowner_user_id=buyer
+
+BuyPage -> ApiGw : POST /v1/marketplace/listings/{id}/broadcast-buy\n{ txHash, paymentId }
+ApiGw -> MktSvc : đánh dấu buy_hash đã dùng
+MktSvc -> HashDb : UPDATE buy_hash SET status='used'
+MktSvc --> BuyPage : { status: 'ok' }
+BuyPage --> Buyer : "Mua thành công ✓\nVé đã về ví của bạn"
+
+note right of CSync
+  Contract-sync là nguồn sự thật.
+  Mọi thay đổi trạng thái on-chain
+  đều được RPC Listener xử lý
+  tự động và độc lập.
+end note
+
+note right of MktV2
+  pendingPayouts[seller] tích lũy on-chain.
+  Seller gọi claimPayout() để rút tiền
+  (flow riêng, ngoài scope này).
+end note
+
+@enduml

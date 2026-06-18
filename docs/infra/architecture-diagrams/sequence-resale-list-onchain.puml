@@ -1,0 +1,77 @@
+@startuml
+title Resale Listing Sequence - Flow 2a
+skinparam shadowing false
+skinparam responseMessageBelowArrow true
+skinparam sequenceMessageAlign center
+
+actor Seller
+participant "ResaleSalePage" as WebApp
+participant "API Gateway" as ApiGw
+participant "Marketplace Service" as MktSvc
+database "marketplace_listings\n(metadata only)" as MktDb
+participant "Contract Sync\nRPC Listener" as CSync
+database "token_ownerships" as CSyncDb
+participant "SDK Client\nbuildMarketplaceListTx()" as SdkClient
+participant "Handler" as Handler
+participant "TicketLedger" as Ledger
+participant "MarketplaceV2" as MktV2
+
+== Load vé có thể bán lại ==
+
+Seller -> WebApp : Mở trang Đăng Bán
+WebApp -> ApiGw : GET /v1/tokens?ownerWalletAddress=...
+ApiGw -> CSync : proxy
+CSync -> CSyncDb : WHERE owner=seller\nAND listing_status='none'\nAND is_used=false
+CSyncDb --> WebApp : danh sách vé
+
+== Tạo listing metadata record ==
+
+Seller -> WebApp : Chọn vé + đặt giá → bấm "Đăng Bán"
+
+WebApp -> ApiGw : POST /v1/marketplace/listings\n{ tokenId, eventId, askPrice,\n  sellerWalletAddress }\nheader: x-kyc-status: approved
+
+ApiGw -> MktSvc : validate KYC\nvalidate markup ≤ maxMarkupBps\ncheck không trùng token_id
+
+MktSvc -> MktDb : INSERT marketplace_listings\n{ id, token_id, event_id,\n  seller_user_id, ask_price,\n  original_price, currency }
+
+note right of MktDb
+  Không có cột status.
+  Không có on_chain_listing_id.
+  Chỉ là metadata off-chain.
+end note
+
+MktSvc --> WebApp : { listingId: "lst_..." }
+
+== Build & ký EIP-7702 batch tx ==
+
+WebApp -> SdkClient : buildMarketplaceListTx(\n  ticketLedgerAddress,\n  marketplaceAddress,\n  tokenId, askPrice,\n  chainId, nonce\n)
+SdkClient --> WebApp : authorizationTuple\n+ executeBatchCalldata
+
+WebApp -> WebApp : signAuthorization() → signedAuth\nassembleTx4()
+
+== Broadcast lên chain ==
+
+WebApp -> Handler : broadcast EIP-7702 type-4 tx
+Handler -> Ledger : transferTicket(tokenId, marketplace)
+Ledger --> Handler : owner = marketplace ✓
+Handler -> MktV2 : listTicket(tokenId, askPrice)
+MktV2 -> MktV2 : listingId = ++listingCounter [= N]
+MktV2 --> Handler : emit TicketListed(listingId=N,\n  seller, tokenId, price)
+Handler --> WebApp : txHash ✓
+
+WebApp --> Seller : "Đăng bán thành công ✓"
+
+== Contract-sync tự cập nhật (độc lập, async) ==
+
+MktV2 ->> CSync : TicketListed event\n(RPC WebSocket subscription)
+CSync -> CSync : mapTicketListed()\n→ ListingStatusChanged\n  { tokenId, listingId=N,\n    status=active }
+CSync -> CSyncDb : UPSERT token_ownerships\nlisting_status = 'active'\nsource_listing_id = 'N'
+
+note right of CSync
+  Hoàn toàn độc lập.
+  Marketplace-service không cần
+  biết, không cần gọi,
+  không cần push gì cả.
+end note
+
+@enduml
