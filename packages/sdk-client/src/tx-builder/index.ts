@@ -12,6 +12,11 @@ export {
   type MarketplaceBuyTxUnsigned
 } from "./marketplace-buy.js";
 export {
+  buildMarketplaceListTx,
+  type MarketplaceListTxParams,
+  type MarketplaceListTxUnsigned
+} from "./marketplace-list.js";
+export {
   encodeExecuteBatch,
   hashAuthorizationTuple,
   buildAuthorizationTuple,
