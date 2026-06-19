@@ -90,8 +90,65 @@ function computeRetryDelayMs(attempt: number): number {
   return 500 * multiplier;
 }
 
-export function createCheckinServer(config: CheckinConfig) {
+async function ensureSchema(pool: Pool): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS gates (
+      id         TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      event_id   TEXT NOT NULL,
+      name       TEXT NOT NULL,
+      location   TEXT,
+      status     TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS check_ins (
+      id         TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      token_id   TEXT NOT NULL,
+      event_id   TEXT NOT NULL,
+      gate_id    TEXT REFERENCES gates(id),
+      qr_nonce   TEXT NOT NULL,
+      scanned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (event_id, token_id),
+      UNIQUE (event_id, qr_nonce)
+    );
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_check_ins_event_scan
+    ON check_ins(event_id, scanned_at DESC);
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_check_ins_gate_scan
+    ON check_ins(gate_id, scanned_at DESC);
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS scan_rejections (
+      id          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      event_id    TEXT NOT NULL,
+      gate_id     TEXT,
+      reason      TEXT NOT NULL,
+      rejected_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_scan_rejections_event
+    ON scan_rejections(event_id, rejected_at DESC);
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_scan_rejections_gate
+    ON scan_rejections(gate_id, rejected_at DESC);
+  `);
+}
+
+export async function createCheckinServer(config: CheckinConfig) {
   const pool: Pool = createPostgresPool(process.env);
+  await ensureSchema(pool);
 
   const markAsUsedQueue = new Map<string, MarkAsUsedJob>();
 
