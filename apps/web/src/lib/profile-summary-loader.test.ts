@@ -20,9 +20,6 @@ test("loadProfileSummary keeps real profile identity when ticketing and event lo
           updatedAt: "2026-04-29T00:00:00.000Z"
         }
       }),
-      getMyTickets: async () => {
-        throw new Error("ticketing unavailable");
-      },
       listSyncedTokens: async () => ({
         success: true,
         data: [
@@ -89,10 +86,6 @@ test("loadProfileSummary counts multiple tickets for the same upcoming event as 
           createdAt: "2026-04-29T00:00:00.000Z",
           updatedAt: "2026-04-29T00:00:00.000Z"
         }
-      }),
-      getMyTickets: async () => ({
-        success: true,
-        data: []
       }),
       listSyncedTokens: async () => ({
         success: true,

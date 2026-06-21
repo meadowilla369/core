@@ -21,42 +21,23 @@ interface ReserveBody {
   quantity?: number;
 }
 
-interface PurchaseBody {
-  reservationId?: string;
-}
-
 interface PurchaseConfirmBody {
   gatewayTransactionId?: string;
   status?: string;
 }
 
-type ReservationStatus = "pending" | "payment_pending" | "paid" | "expired";
+type ReservationStatus = "pending" | "paid" | "expired";
 
 interface ReservationRow {
   id: string;
   user_id: string;
-  event_id: string;
+  event_id: string; // from JOIN ticket_types
   ticket_type_id: string;
   quantity: number | string;
-  unit_price: number | string;
-  total_amount: number | string;
+  unit_price: number | string; // from JOIN ticket_types
+  total_amount: number | string; // computed: unit_price * quantity
   status: ReservationStatus;
   expires_at: string | Date;
-  created_at: string | Date;
-  payment_intent_id: string | null;
-  paid_at: string | Date | null;
-  gateway_transaction_id: string | null;
-  inventory_locked: boolean;
-}
-
-interface TicketRow {
-  token_id: string;
-  event_id: string;
-  ticket_type_id: string;
-  owner_user_id: string;
-  seat_info: string;
-  reservation_id: string;
-  created_at: string | Date;
 }
 
 interface InventoryRow {
@@ -79,21 +60,6 @@ interface ReservationRecord {
   totalAmount: number;
   status: ReservationStatus;
   expiresAtMs: number;
-  createdAt: string;
-  paymentIntentId?: string;
-  paidAt?: string;
-  gatewayTransactionId?: string;
-  inventoryLocked: boolean;
-}
-
-interface TicketRecord {
-  tokenId: string;
-  eventId: string;
-  ticketTypeId: string;
-  ownerUserId: string;
-  seatInfo: string;
-  reservationId: string;
-  createdAt: string;
 }
 
 interface SyncedTokenRecord {
@@ -214,24 +180,7 @@ function mapReservation(row: ReservationRow): ReservationRecord {
     unitPrice: Number(row.unit_price),
     totalAmount: Number(row.total_amount),
     status: row.status,
-    expiresAtMs: new Date(row.expires_at).getTime(),
-    createdAt: toIso(row.created_at),
-    paymentIntentId: row.payment_intent_id ?? undefined,
-    paidAt: row.paid_at ? toIso(row.paid_at) : undefined,
-    gatewayTransactionId: row.gateway_transaction_id ?? undefined,
-    inventoryLocked: row.inventory_locked
-  };
-}
-
-function mapTicket(row: TicketRow): TicketRecord {
-  return {
-    tokenId: row.token_id,
-    eventId: row.event_id,
-    ticketTypeId: row.ticket_type_id,
-    ownerUserId: row.owner_user_id,
-    seatInfo: row.seat_info,
-    reservationId: row.reservation_id,
-    createdAt: toIso(row.created_at)
+    expiresAtMs: new Date(row.expires_at).getTime()
   };
 }
 
@@ -261,11 +210,7 @@ function reservationResponse(reservation: ReservationRecord): Record<string, unk
     unitPrice: reservation.unitPrice,
     totalAmount: reservation.totalAmount,
     status: reservation.status,
-    paymentIntentId: reservation.paymentIntentId,
-    gatewayTransactionId: reservation.gatewayTransactionId,
-    expiresAt: new Date(reservation.expiresAtMs).toISOString(),
-    createdAt: reservation.createdAt,
-    paidAt: reservation.paidAt
+    expiresAt: new Date(reservation.expiresAtMs).toISOString()
   };
 }
 
@@ -309,32 +254,15 @@ async function ensureSchema(pool: Pool): Promise<void> {
     CREATE TABLE IF NOT EXISTS reservations (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
-      event_id TEXT NOT NULL,
       ticket_type_id TEXT NOT NULL,
       quantity INTEGER NOT NULL,
-      unit_price INTEGER NOT NULL,
-      total_amount INTEGER NOT NULL,
-      status TEXT NOT NULL CHECK (status IN ('pending', 'payment_pending', 'paid', 'expired')),
-      expires_at TIMESTAMPTZ NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL,
-      payment_intent_id TEXT,
-      paid_at TIMESTAMPTZ,
-      gateway_transaction_id TEXT,
-      inventory_locked BOOLEAN NOT NULL DEFAULT TRUE,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      status TEXT NOT NULL CHECK (status IN ('pending', 'paid', 'expired')),
+      expires_at TIMESTAMPTZ NOT NULL
     );
   `);
 
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS tickets (
-      token_id TEXT PRIMARY KEY,
-      event_id TEXT NOT NULL,
-      ticket_type_id TEXT NOT NULL,
-      owner_user_id TEXT NOT NULL,
-      seat_info TEXT NOT NULL,
-      reservation_id TEXT NOT NULL REFERENCES reservations(id) ON DELETE CASCADE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
+    SELECT 1;
   `);
 }
 
@@ -352,68 +280,54 @@ const INVENTORY_SELECT = `
   INNER JOIN events e ON e.id = tt.event_id
 `;
 
+const RESERVATION_SELECT = `
+  SELECT r.id, r.user_id, r.ticket_type_id, r.quantity, r.status, r.expires_at,
+         tt.event_id, tt.unit_price, tt.unit_price * r.quantity AS total_amount
+  FROM reservations r
+  JOIN ticket_types tt ON tt.id = r.ticket_type_id
+`;
+
 async function loadReservation(
   client: Pool | PoolClient,
   reservationId: string
 ): Promise<ReservationRecord | null> {
-  const row = await queryOne<ReservationRow>(
-    client,
-    `
-      SELECT id, user_id, event_id, ticket_type_id, quantity, unit_price, total_amount, status, expires_at, created_at,
-             payment_intent_id, paid_at, gateway_transaction_id, inventory_locked
-      FROM reservations
-      WHERE id = $1
-    `,
-    [reservationId]
-  );
+  const row = await queryOne<ReservationRow>(client, `${RESERVATION_SELECT} WHERE r.id = $1`, [
+    reservationId
+  ]);
 
   return row ? mapReservation(row) : null;
 }
 
 async function expireReservationById(pool: Pool, reservationId: string): Promise<void> {
   await withPostgresTransaction(pool, async (client) => {
-    const reservation = await queryOne<ReservationRow>(
+    const row = await queryOne<{
+      id: string;
+      ticket_type_id: string;
+      quantity: number | string;
+      status: string;
+    }>(
       client,
-      `
-        SELECT id, user_id, event_id, ticket_type_id, quantity, unit_price, total_amount, status, expires_at, created_at,
-               payment_intent_id, paid_at, gateway_transaction_id, inventory_locked
-        FROM reservations
-        WHERE id = $1
-        FOR UPDATE
-      `,
+      `SELECT id, ticket_type_id, quantity, status FROM reservations WHERE id = $1 FOR UPDATE`,
       [reservationId]
     );
 
-    if (!reservation || reservation.status === "expired" || reservation.status === "paid") {
+    if (!row || row.status === "expired" || row.status === "paid") {
       return;
     }
 
-    if (reservation.inventory_locked) {
-      await client.query(
-        `
-          UPDATE ticket_inventory
-          SET locked_count = GREATEST(locked_count - $2, 0), updated_at = NOW()
-          WHERE ticket_type_id = $1
-        `,
-        [reservation.ticket_type_id, Number(reservation.quantity)]
-      );
-    }
-
     await client.query(
-      `
-        UPDATE reservations
-        SET status = 'expired', inventory_locked = FALSE, updated_at = NOW()
-        WHERE id = $1
-      `,
-      [reservationId]
+      `UPDATE ticket_inventory SET locked_count = GREATEST(locked_count - $2, 0), updated_at = NOW() WHERE ticket_type_id = $1`,
+      [row.ticket_type_id, Number(row.quantity)]
     );
+
+    await client.query(`UPDATE reservations SET status = 'expired' WHERE id = $1`, [reservationId]);
   });
 }
 
 async function expireDueReservations(pool: Pool): Promise<void> {
   const rows = await queryMany<{ id: string }>(
     pool,
-    `SELECT id FROM reservations WHERE status IN ('pending', 'payment_pending') AND expires_at <= NOW() ORDER BY expires_at ASC LIMIT 50`
+    `SELECT id FROM reservations WHERE status = 'pending' AND expires_at <= NOW() ORDER BY expires_at ASC LIMIT 50`
   );
 
   for (const row of rows) {
@@ -580,24 +494,9 @@ export async function createTicketingServer(config: TicketingConfig) {
 
           const expiresAt = new Date(nowMs + config.reservationTtlSec * 1000).toISOString();
           await client.query(
-            `
-              INSERT INTO reservations (
-                id, user_id, event_id, ticket_type_id, quantity, unit_price, total_amount, status,
-                expires_at, created_at, inventory_locked
-              )
-              VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8::timestamptz, $9::timestamptz, TRUE)
-            `,
-            [
-              reservationId,
-              userId,
-              eventId,
-              ticketTypeId,
-              quantity,
-              Number(inventory.unit_price),
-              Number(inventory.unit_price) * quantity,
-              expiresAt,
-              new Date(nowMs).toISOString()
-            ]
+            `INSERT INTO reservations (id, user_id, ticket_type_id, quantity, status, expires_at)
+             VALUES ($1, $2, $3, $4, 'pending', $5::timestamptz)`,
+            [reservationId, userId, ticketTypeId, quantity, expiresAt]
           );
 
           const created = await loadReservation(client, reservationId);
@@ -635,110 +534,6 @@ export async function createTicketingServer(config: TicketingConfig) {
         const response = {
           success: true,
           data: reservationResponse(reservation)
-        };
-
-        await setCachedResponse(redis, idempotencyScope, response);
-        return sendJson(res, 200, response);
-      }
-
-      if (method === "POST" && url.pathname === "/tickets/purchase") {
-        if (!userId) {
-          return sendJson(res, 401, {
-            success: false,
-            error: {
-              code: "UNAUTHORIZED",
-              message: "Missing x-user-id header"
-            }
-          });
-        }
-
-        const idempotencyScope = createIdempotencyScope(
-          method,
-          url.pathname,
-          extractIdempotencyKey(req)
-        );
-        const cached = await getCachedResponse(redis, idempotencyScope);
-        if (cached) {
-          return sendJson(res, 200, cached);
-        }
-
-        const body = await readJson<PurchaseBody>(req);
-        if (!body.reservationId) {
-          return sendJson(res, 400, {
-            success: false,
-            error: {
-              code: "INVALID_PURCHASE_PAYLOAD",
-              message: "reservationId is required"
-            }
-          });
-        }
-
-        const reservationId = body.reservationId;
-
-        const result = await withPostgresTransaction(pool, async (client) => {
-          const reservationRow = await queryOne<ReservationRow>(
-            client,
-            `
-              SELECT id, user_id, event_id, ticket_type_id, quantity, unit_price, total_amount, status, expires_at, created_at,
-                     payment_intent_id, paid_at, gateway_transaction_id, inventory_locked
-              FROM reservations
-              WHERE id = $1
-              FOR UPDATE
-            `,
-            [reservationId]
-          );
-
-          if (!reservationRow || reservationRow.user_id !== userId) {
-            throw Object.assign(new Error("RESERVATION_NOT_FOUND"), { statusCode: 404 });
-          }
-
-          if (
-            Date.now() > new Date(reservationRow.expires_at).getTime() &&
-            reservationRow.status !== "paid"
-          ) {
-            if (reservationRow.inventory_locked) {
-              await client.query(
-                `UPDATE ticket_inventory SET locked_count = GREATEST(locked_count - $2, 0), updated_at = NOW() WHERE ticket_type_id = $1`,
-                [reservationRow.ticket_type_id, Number(reservationRow.quantity)]
-              );
-            }
-            await client.query(
-              `UPDATE reservations SET status = 'expired', inventory_locked = FALSE, updated_at = NOW() WHERE id = $1`,
-              [reservationId]
-            );
-            throw Object.assign(new Error("RESERVATION_EXPIRED"), { statusCode: 400 });
-          }
-
-          if (reservationRow.status !== "pending") {
-            throw Object.assign(new Error("RESERVATION_NOT_PENDING"), { statusCode: 400 });
-          }
-
-          const paymentIntentId =
-            reservationRow.payment_intent_id ?? `pay_${randomUUID().replace(/-/g, "")}`;
-
-          await client.query(
-            `
-              UPDATE reservations
-              SET status = 'payment_pending', payment_intent_id = $2, updated_at = NOW()
-              WHERE id = $1
-            `,
-            [reservationId, paymentIntentId]
-          );
-
-          const updated = await loadReservation(client, reservationId);
-          if (!updated) {
-            throw new Error("RESERVATION_NOT_FOUND");
-          }
-
-          return updated;
-        });
-
-        const response = {
-          success: true,
-          data: {
-            ...reservationResponse(result),
-            paymentGatewayStatus: "pending"
-          }
         };
 
         await setCachedResponse(redis, idempotencyScope, response);
@@ -783,13 +578,7 @@ export async function createTicketingServer(config: TicketingConfig) {
         const response = await withPostgresTransaction(pool, async (client) => {
           const reservationRow = await queryOne<ReservationRow>(
             client,
-            `
-              SELECT id, user_id, event_id, ticket_type_id, quantity, unit_price, total_amount, status, expires_at, created_at,
-                     payment_intent_id, paid_at, gateway_transaction_id, inventory_locked
-              FROM reservations
-              WHERE id = $1
-              FOR UPDATE
-            `,
+            `${RESERVATION_SELECT} WHERE r.id = $1 FOR UPDATE`,
             [reservationId]
           );
 
@@ -797,94 +586,50 @@ export async function createTicketingServer(config: TicketingConfig) {
             throw Object.assign(new Error("RESERVATION_NOT_FOUND"), { statusCode: 404 });
           }
 
-          if (
-            Date.now() > new Date(reservationRow.expires_at).getTime() &&
-            reservationRow.status !== "paid"
-          ) {
-            if (reservationRow.inventory_locked) {
-              await client.query(
-                `UPDATE ticket_inventory SET locked_count = GREATEST(locked_count - $2, 0), updated_at = NOW() WHERE ticket_type_id = $1`,
-                [reservationRow.ticket_type_id, Number(reservationRow.quantity)]
-              );
-            }
-            await client.query(
-              `UPDATE reservations SET status = 'expired', inventory_locked = FALSE, updated_at = NOW() WHERE id = $1`,
-              [reservationId]
-            );
+          if (reservationRow.status === "expired") {
             throw Object.assign(new Error("RESERVATION_EXPIRED"), { statusCode: 400 });
           }
 
-          if (reservationRow.status !== "payment_pending" && reservationRow.status !== "paid") {
-            throw Object.assign(new Error("RESERVATION_NOT_PENDING_PAYMENT"), { statusCode: 400 });
+          if (reservationRow.status === "paid") {
+            const updated = await loadReservation(client, reservationId);
+            return {
+              success: true,
+              confirmedTicketTypeId: reservationRow.ticket_type_id as string,
+              confirmedQuantity: Number(reservationRow.quantity),
+              data: {
+                ...reservationResponse(updated as ReservationRecord),
+                paymentGatewayStatus: "confirmed"
+              }
+            };
           }
 
-          if (reservationRow.status === "payment_pending") {
+          if (Date.now() > new Date(reservationRow.expires_at).getTime()) {
             await client.query(
-              `
-                UPDATE ticket_inventory
-                SET sold_count = sold_count + $2,
-                    locked_count = GREATEST(locked_count - $2, 0),
-                    updated_at = NOW()
-                WHERE ticket_type_id = $1
-              `,
+              `UPDATE ticket_inventory SET locked_count = GREATEST(locked_count - $2, 0), updated_at = NOW() WHERE ticket_type_id = $1`,
               [reservationRow.ticket_type_id, Number(reservationRow.quantity)]
             );
-
-            await client.query(
-              `
-                UPDATE reservations
-                SET status = 'paid',
-                    paid_at = NOW(),
-                    gateway_transaction_id = $2,
-                    inventory_locked = FALSE,
-                    updated_at = NOW()
-                WHERE id = $1
-              `,
-              [
-                reservationId,
-                body.gatewayTransactionId?.trim() || `gw_${randomUUID().replace(/-/g, "")}`
-              ]
-            );
+            await client.query(`UPDATE reservations SET status = 'expired' WHERE id = $1`, [
+              reservationId
+            ]);
+            throw Object.assign(new Error("RESERVATION_EXPIRED"), { statusCode: 400 });
           }
 
-          const ticketCount = await queryOne<{ count: string }>(
-            client,
-            `SELECT COUNT(*)::text AS count FROM tickets WHERE reservation_id = $1`,
-            [reservationId]
+          if (reservationRow.status !== "pending") {
+            throw Object.assign(new Error("RESERVATION_NOT_PENDING"), { statusCode: 400 });
+          }
+
+          await client.query(
+            `UPDATE ticket_inventory
+             SET sold_count = sold_count + $2, locked_count = GREATEST(locked_count - $2, 0), updated_at = NOW()
+             WHERE ticket_type_id = $1`,
+            [reservationRow.ticket_type_id, Number(reservationRow.quantity)]
           );
 
-          if (Number(ticketCount?.count ?? 0) === 0) {
-            const existingUserTickets = await queryOne<{ count: string }>(
-              client,
-              `SELECT COUNT(*)::text AS count FROM tickets WHERE owner_user_id = $1`,
-              [reservationRow.user_id]
-            );
-            const startIndex = Number(existingUserTickets?.count ?? 0);
-
-            for (let i = 0; i < Number(reservationRow.quantity); i += 1) {
-              await client.query(
-                `
-                  INSERT INTO tickets (token_id, event_id, ticket_type_id, owner_user_id, seat_info, reservation_id, created_at)
-                  VALUES ($1, $2, $3, $4, $5, $6, NOW())
-                `,
-                [
-                  `mock_${randomUUID().replace(/-/g, "")}`,
-                  reservationRow.event_id,
-                  reservationRow.ticket_type_id,
-                  reservationRow.user_id,
-                  `GA-${String(startIndex + i + 1).padStart(4, "0")}`,
-                  reservationId
-                ]
-              );
-            }
-          }
+          await client.query(`UPDATE reservations SET status = 'paid' WHERE id = $1`, [
+            reservationId
+          ]);
 
           const updated = await loadReservation(client, reservationId);
-          const issued = await queryOne<{ count: string }>(
-            client,
-            `SELECT COUNT(*)::text AS count FROM tickets WHERE reservation_id = $1`,
-            [reservationId]
-          );
 
           return {
             success: true,
@@ -892,7 +637,7 @@ export async function createTicketingServer(config: TicketingConfig) {
             confirmedQuantity: Number(reservationRow.quantity),
             data: {
               ...reservationResponse(updated as ReservationRecord),
-              ticketsIssued: Number(issued?.count ?? 0),
+              ticketsIssued: Number(reservationRow.quantity),
               paymentGatewayStatus: "confirmed"
             }
           };
@@ -926,10 +671,7 @@ export async function createTicketingServer(config: TicketingConfig) {
           });
         }
 
-        if (
-          (reservation.status === "pending" || reservation.status === "payment_pending") &&
-          Date.now() > reservation.expiresAtMs
-        ) {
+        if (reservation.status === "pending" && Date.now() > reservation.expiresAtMs) {
           await expireReservationById(pool, reservation.id);
           const refreshed = await loadReservation(pool, reservation.id);
           return sendJson(res, 200, {
@@ -941,71 +683,6 @@ export async function createTicketingServer(config: TicketingConfig) {
         return sendJson(res, 200, {
           success: true,
           data: reservationResponse(reservation)
-        });
-      }
-
-      if (method === "GET" && url.pathname === "/tickets/me") {
-        if (!userId) {
-          return sendJson(res, 401, {
-            success: false,
-            error: {
-              code: "UNAUTHORIZED",
-              message: "Missing x-user-id header"
-            }
-          });
-        }
-
-        const tickets = await queryMany<TicketRow>(
-          pool,
-          `
-            SELECT token_id, event_id, ticket_type_id, owner_user_id, seat_info, reservation_id, created_at
-            FROM tickets
-            WHERE owner_user_id = $1
-            ORDER BY created_at ASC
-          `,
-          [userId]
-        );
-        return sendJson(res, 200, {
-          success: true,
-          data: tickets.map(mapTicket)
-        });
-      }
-
-      const ticketDetailMatch = url.pathname.match(/^\/tickets\/([^/]+)$/);
-      if (method === "GET" && ticketDetailMatch) {
-        if (!userId) {
-          return sendJson(res, 401, {
-            success: false,
-            error: {
-              code: "UNAUTHORIZED",
-              message: "Missing x-user-id header"
-            }
-          });
-        }
-
-        const ticket = await queryOne<TicketRow>(
-          pool,
-          `
-            SELECT token_id, event_id, ticket_type_id, owner_user_id, seat_info, reservation_id, created_at
-            FROM tickets
-            WHERE token_id = $1 AND owner_user_id = $2
-          `,
-          [ticketDetailMatch[1], userId]
-        );
-
-        if (!ticket) {
-          return sendJson(res, 404, {
-            success: false,
-            error: {
-              code: "TICKET_NOT_FOUND",
-              message: "Ticket not found"
-            }
-          });
-        }
-
-        return sendJson(res, 200, {
-          success: true,
-          data: mapTicket(ticket)
         });
       }
 
@@ -1031,29 +708,13 @@ export async function createTicketingServer(config: TicketingConfig) {
           return sendJson(res, 200, cached);
         }
 
-        const ticket = await queryOne<TicketRow>(
-          pool,
-          `
-            SELECT token_id, event_id, ticket_type_id, owner_user_id, seat_info, reservation_id, created_at
-            FROM tickets
-            WHERE token_id = $1 AND owner_user_id = $2
-          `,
-          [qrMatch[1], userId]
-        );
-
         const ownerWalletAddress = extractOwnerWalletAddress(req);
         const syncedToken = await getSyncedToken(config, qrMatch[1]);
         const qrTicket = resolveQrTicket({
           tokenId: qrMatch[1],
           ownerWalletAddress,
           syncedToken,
-          ticketingTicket: ticket
-            ? {
-                tokenId: ticket.token_id,
-                eventId: ticket.event_id,
-                ownerUserId: ticket.owner_user_id
-              }
-            : null
+          ticketingTicket: null
         });
 
         if (!qrTicket) {
@@ -1159,16 +820,6 @@ export async function createTicketingServer(config: TicketingConfig) {
           error: {
             code,
             message: "Reservation is not pending"
-          }
-        });
-      }
-
-      if (code === "RESERVATION_NOT_PENDING_PAYMENT") {
-        return sendJson(res, 400, {
-          success: false,
-          error: {
-            code,
-            message: "Reservation is not awaiting payment confirmation"
           }
         });
       }

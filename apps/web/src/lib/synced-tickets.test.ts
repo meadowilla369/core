@@ -53,7 +53,6 @@ test("savePurchasedTicketMetadata stores the app event and tier for a purchased 
 
 test("mergeTicketRecords uses local purchase metadata to map synced on-chain tokens to app event ids", () => {
   const tickets = mergeTicketRecords({
-    ticketingTickets: [],
     syncedTokens: [
       {
         tokenId: "42",
@@ -100,14 +99,16 @@ test("mergeTicketRecords uses local purchase metadata to map synced on-chain tok
       reservationId: "sync_42",
       source: "contract-sync",
       transactionHash: "0xabc",
-      createdAt: "2026-04-29T00:00:00.000Z"
+      createdAt: "2026-04-29T00:00:00.000Z",
+      listingStatus: "none",
+      isUsed: false,
+      originalPrice: undefined
     }
   ]);
 });
 
 test("mergeTicketRecords does not treat local cache as ticket ownership", () => {
   const tickets = mergeTicketRecords({
-    ticketingTickets: [],
     syncedTokens: [],
     cachedTickets: [
       {
@@ -128,24 +129,3 @@ test("mergeTicketRecords does not treat local cache as ticket ownership", () => 
   assert.deepEqual(tickets, []);
 });
 
-test("mergeTicketRecords treats ticketing rows as metadata, not ownership", () => {
-  const tickets = mergeTicketRecords({
-    ticketingTickets: [
-      {
-        tokenId: "db_only",
-        eventId: "evt_rockfest_2026",
-        ticketTypeId: "tt_vip",
-        ownerUserId: "buyer_1",
-        seatInfo: "GA",
-        reservationId: "res_1",
-        createdAt: "2026-04-29T00:00:00.000Z"
-      }
-    ],
-    syncedTokens: [],
-    cachedTickets: [],
-    userId: "buyer_1",
-    walletAddress: "0xBuyer"
-  });
-
-  assert.deepEqual(tickets, []);
-});

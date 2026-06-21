@@ -431,11 +431,6 @@ export async function createCheckinServer(config: CheckinConfig) {
             });
           }
 
-          await client.query(
-            `UPDATE tickets SET is_used = TRUE, used_at = NOW() WHERE token_id = $1`,
-            [tokenId]
-          );
-
           await client.query("COMMIT");
         } catch (err) {
           await client.query("ROLLBACK");

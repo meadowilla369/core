@@ -2,10 +2,10 @@ import type {
   ApiSuccessResponse,
   ContractSyncedTokenData,
   EventDetail,
-  TicketRecord
+  MarketplaceListing
 } from "@ticket-platform/sdk-client";
 import { toTicketCardView } from "./adapters.ts";
-import { isFutureIso } from "./format.ts";
+import { formatMediumEventDate, formatTime, isFutureIso } from "./format.ts";
 import {
   loadPurchasedTicketMetadata,
   mergeTicketRecords,
@@ -14,11 +14,13 @@ import {
 } from "./synced-tickets.ts";
 
 interface TicketClient {
-  getMyTickets(userId: string): Promise<ApiSuccessResponse<TicketRecord[]>>;
   listSyncedTokens(query: {
     ownerWalletAddress?: string;
   }): Promise<ApiSuccessResponse<ContractSyncedTokenData[]>>;
   getEvent(id: string): Promise<ApiSuccessResponse<EventDetail>>;
+  listMarketplaceListings(query: {
+    sellerUserId?: string;
+  }): Promise<ApiSuccessResponse<MarketplaceListing[]>>;
 }
 
 export interface LoadedTicketCards {
@@ -52,6 +54,10 @@ export interface TicketOwnershipView {
   listingStatus: "none" | "active" | "cancelled" | "completed";
   isUsed: boolean;
   originalPrice?: number;
+  /** Populated only when listingStatus === "active" */
+  askPrice?: number;
+  onChainListingId?: number | null;
+  listingId?: string;
 }
 
 export function findTicketByTokenId(
@@ -87,6 +93,35 @@ function toTicketOwnershipView(
   };
 }
 
+function toListedTicketView(
+  listing: MarketplaceListing,
+  event: EventDetail | undefined
+): TicketOwnershipView {
+  return {
+    id: listing.tokenId,
+    tokenId: listing.tokenId,
+    eventId: listing.eventId,
+    eventName: event?.title ?? listing.eventId,
+    date: event ? formatMediumEventDate(event.startAt) : "Đang cập nhật",
+    time: event ? formatTime(event.startAt) : "--:--",
+    location: event ? `${event.venue}, ${event.city}` : "—",
+    ticketType: event?.ticketTypes[0]?.name ?? "Resale",
+    ownerUserId: listing.sellerUserId,
+    ownerWalletAddress: listing.sellerWalletAddress,
+    seatInfo: "Đang bán lại",
+    reservationId: listing.id,
+    createdAt: listing.createdAt,
+    source: "contract-sync",
+    syncStatus: "ready",
+    listingStatus: "active",
+    isUsed: false,
+    originalPrice: listing.originalPrice,
+    askPrice: listing.askPrice,
+    onChainListingId: listing.onChainListingId ?? null,
+    listingId: listing.id
+  };
+}
+
 function splitOwnershipTicketsByEventTime(
   tickets: TicketOwnershipView[],
   eventMap: Map<string, EventDetail>
@@ -111,52 +146,69 @@ export async function loadMyTicketCards(input: {
   walletAddress: string;
   cachedTickets?: PurchasedTicketMetadata[];
 }): Promise<LoadedTicketCards> {
-  const [ticketsResponse, syncedTokensResponse] = await Promise.allSettled([
-    input.client.getMyTickets(input.userId),
-    input.client.listSyncedTokens({ ownerWalletAddress: input.walletAddress })
+  const [syncedTokensResponse, listingsResponse] = await Promise.allSettled([
+    input.client.listSyncedTokens({ ownerWalletAddress: input.walletAddress }),
+    input.client.listMarketplaceListings({ sellerUserId: input.userId })
   ]);
 
-  const ticketingTickets =
-    ticketsResponse.status === "fulfilled" ? ticketsResponse.value.data : [];
   const syncedTokens =
     syncedTokensResponse.status === "fulfilled" ? syncedTokensResponse.value.data : [];
+  const activeListings =
+    listingsResponse.status === "fulfilled"
+      ? listingsResponse.value.data.filter(
+          (l) => l.listingStatus !== "cancelled" && l.listingStatus !== "completed"
+        )
+      : [];
   const cachedTickets = input.cachedTickets ?? loadPurchasedTicketMetadata();
 
-  if (
-    ticketsResponse.status === "rejected" &&
-    syncedTokensResponse.status === "rejected" &&
-    cachedTickets.length === 0
-  ) {
-    throw ticketsResponse.reason;
+  if (syncedTokensResponse.status === "rejected" && cachedTickets.length === 0) {
+    throw syncedTokensResponse.reason;
   }
 
   const mergedTickets = mergeTicketRecords({
-    ticketingTickets,
     syncedTokens,
     cachedTickets,
     userId: input.userId,
     walletAddress: input.walletAddress
   });
-  const eventIds = Array.from(new Set(mergedTickets.map((item) => item.eventId)));
-  const eventDetails = await Promise.allSettled(eventIds.map((id) => input.client.getEvent(id)));
+
+  // Collect all eventIds from both owned and listed tickets
+  const listedTokenIds = new Set(activeListings.map((l) => l.tokenId));
+  const ownedTickets = mergedTickets.filter((t) => !listedTokenIds.has(t.tokenId));
+  const allEventIds = Array.from(
+    new Set([
+      ...ownedTickets.map((t) => t.eventId),
+      ...activeListings.map((l) => l.eventId)
+    ])
+  );
+
+  const eventDetails = await Promise.allSettled(
+    allEventIds.map((id) => input.client.getEvent(id))
+  );
   const eventMap = new Map(
     eventDetails.flatMap((item) =>
       item.status === "fulfilled" ? [[item.value.data.id, item.value.data]] : []
     )
   );
+
   const hasPartialSource =
-    ticketsResponse.status === "rejected" ||
     syncedTokensResponse.status === "rejected" ||
     eventDetails.some((item) => item.status === "rejected");
   const syncStatus = hasPartialSource ? "partial" : "ready";
-  const tickets = mergedTickets.map((ticket) =>
+
+  const ownedViews = ownedTickets.map((ticket) =>
     toTicketOwnershipView(ticket, eventMap.get(ticket.eventId), syncStatus)
   );
-  const split = splitOwnershipTicketsByEventTime(tickets, eventMap);
+  const listedViews = activeListings.map((listing) =>
+    toListedTicketView(listing, eventMap.get(listing.eventId))
+  );
+
+  const allTickets = [...ownedViews, ...listedViews];
+  const split = splitOwnershipTicketsByEventTime(allTickets, eventMap);
 
   return {
     ...split,
-    tickets,
+    tickets: allTickets,
     status: hasPartialSource ? "partial" : "ready"
   };
 }

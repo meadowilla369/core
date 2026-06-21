@@ -1,4 +1,4 @@
-import type { ContractSyncedTokenData, TicketRecord } from "@ticket-platform/sdk-client";
+import type { ContractSyncedTokenData } from "@ticket-platform/sdk-client";
 
 const PURCHASED_TICKET_METADATA_KEY = "entr:purchased-ticket-metadata:v1";
 
@@ -19,7 +19,14 @@ export interface PurchasedTicketMetadata {
   createdAt: string;
 }
 
-export interface MergedTicketRecord extends TicketRecord {
+export interface MergedTicketRecord {
+  tokenId: string;
+  eventId: string;
+  ticketTypeId: string;
+  ownerUserId: string;
+  seatInfo: string;
+  reservationId: string;
+  createdAt: string;
   ownerWalletAddress: string | null;
   source: "contract-sync";
   transactionHash?: string;
@@ -107,10 +114,11 @@ export function savePurchasedTicketMetadata(
 export function toSyncedTicketRecord(
   token: ContractSyncedTokenData,
   fallbackUserId: string,
-  metadata?: PurchasedTicketMetadata,
-  ticketingTicket?: TicketRecord
+  metadata?: PurchasedTicketMetadata
 ): MergedTicketRecord | null {
-  const eventId = metadata?.eventId ?? ticketingTicket?.eventId ?? token.eventId;
+  // Prefer contract-sync data (source of truth); fall back to cached metadata
+  // only when contract-sync doesn't know the value (e.g. before event/ticketType is resolved).
+  const eventId = token.eventId ?? metadata?.eventId;
   if (!eventId) {
     return null;
   }
@@ -118,21 +126,19 @@ export function toSyncedTicketRecord(
   return {
     tokenId: token.tokenId,
     eventId,
-    ticketTypeId: metadata?.ticketTypeId ?? ticketingTicket?.ticketTypeId ?? token.tokenId,
-    ownerUserId:
-      metadata?.ownerUserId ?? ticketingTicket?.ownerUserId ?? token.ownerUserId ?? fallbackUserId,
+    ticketTypeId: token.ticketTypeId ?? metadata?.ticketTypeId ?? token.tokenId,
+    ownerUserId: token.ownerUserId ?? metadata?.ownerUserId ?? fallbackUserId,
     seatInfo:
-      ticketingTicket?.seatInfo ??
-      (token.sourceListingId != null
+      token.sourceListingId != null
         ? `Marketplace resale · ${token.sourceListingId}`
-        : "Primary purchase"),
-    reservationId: ticketingTicket?.reservationId ?? token.sourceListingId ?? `sync_${token.tokenId}`,
+        : "Primary purchase",
+    reservationId: token.sourceListingId ?? `sync_${token.tokenId}`,
     ownerWalletAddress: normalizeWalletAddress(
-      metadata?.ownerWalletAddress ?? token.ownerWalletAddress ?? ""
+      token.ownerWalletAddress ?? metadata?.ownerWalletAddress ?? ""
     ) || null,
     source: "contract-sync",
-    transactionHash: metadata?.transactionHash ?? token.lastTransactionHash ?? undefined,
-    createdAt: metadata?.createdAt ?? ticketingTicket?.createdAt ?? token.updatedAt,
+    transactionHash: token.lastTransactionHash ?? metadata?.transactionHash ?? undefined,
+    createdAt: token.updatedAt ?? metadata?.createdAt,
     listingStatus: token.listingStatus ?? "none",
     isUsed: token.isUsed ?? false,
     originalPrice: token.lastSalePrice ?? undefined
@@ -140,14 +146,12 @@ export function toSyncedTicketRecord(
 }
 
 export function mergeTicketRecords(input: {
-  ticketingTickets: TicketRecord[];
   syncedTokens: ContractSyncedTokenData[];
   cachedTickets: PurchasedTicketMetadata[];
   userId: string;
   walletAddress: string;
 }): MergedTicketRecord[] {
   const metadataByTokenId = new Map(input.cachedTickets.map((ticket) => [ticket.tokenId, ticket]));
-  const ticketingByTokenId = new Map(input.ticketingTickets.map((ticket) => [ticket.tokenId, ticket]));
   const knownTokenIds = new Set<string>();
   const normalizedWallet = normalizeWalletAddress(input.walletAddress);
   const merged: MergedTicketRecord[] = [];
@@ -162,8 +166,7 @@ export function mergeTicketRecords(input: {
     }
 
     const metadata = metadataByTokenId.get(token.tokenId);
-    const ticketingTicket = ticketingByTokenId.get(token.tokenId);
-    const record = toSyncedTicketRecord(token, input.userId, metadata, ticketingTicket);
+    const record = toSyncedTicketRecord(token, input.userId, metadata);
     if (record) {
       merged.push(record);
       knownTokenIds.add(record.tokenId);

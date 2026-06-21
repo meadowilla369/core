@@ -197,10 +197,6 @@ export interface PaymentIntentData {
   gateway: "momo" | "vnpay";
   status: "pending" | "confirmed" | "failed" | "cancelled";
   gatewayTransactionId?: string;
-  eventId?: number;
-  ticketTypeId?: number;
-  quantity?: number;
-  ticketIds: string[];
   buyerWalletAddress?: string;
   createdAt: string;
   updatedAt: string;
@@ -221,7 +217,6 @@ export interface PaymentHashData {
   ticketTypeId: number | null;
   quantity: number | null;
   amount: number;
-  ticketIds: string[];
   issuedAt?: string | null;
   expiresAt?: string | null;
   domain: {
@@ -230,16 +225,6 @@ export interface PaymentHashData {
     chainId: number;
     verifyingContract: `0x${string}`;
   } | null;
-}
-
-export interface TicketRecord {
-  tokenId: string;
-  eventId: string;
-  ticketTypeId: string;
-  ownerUserId: string;
-  seatInfo: string;
-  reservationId: string;
-  createdAt: string;
 }
 
 export interface TicketQrData {
@@ -318,6 +303,7 @@ export interface MarketplaceBroadcastTxData {
 
 export interface ContractSyncedTokenData {
   tokenId: string;
+  ticketTypeId?: string | null;
   eventId?: string | null;
   sourceListingId?: string | null;
   ownerWalletAddress: string | null;
@@ -352,7 +338,7 @@ export interface MarketplaceBroadcastData {
 }
 
 interface RequestOptions {
-  method?: "GET" | "POST" | "PUT" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
   body?: unknown;
   headers?: Record<string, string>;
 }
@@ -602,15 +588,6 @@ export class ApiClient {
     });
   }
 
-  async getMyTickets(userId: string): Promise<ApiSuccessResponse<TicketRecord[]>> {
-    return this.request("/v1/tickets/me", {
-      method: "GET",
-      headers: {
-        "x-user-id": userId
-      }
-    });
-  }
-
   async createTicketQr(
     tokenId: string,
     ctx: { userId: string; ownerWalletAddress?: string | null; idempotencyKey?: string }
@@ -626,7 +603,7 @@ export class ApiClient {
   }
 
   async listMarketplaceListings(
-    query: { eventId?: string; status?: string } = {}
+    query: { eventId?: string; status?: string; sellerUserId?: string } = {}
   ): Promise<ApiSuccessResponse<MarketplaceListing[]>> {
     const search = new URLSearchParams();
     if (query.eventId) {
@@ -635,9 +612,22 @@ export class ApiClient {
     if (query.status) {
       search.set("status", query.status);
     }
+    if (query.sellerUserId) {
+      search.set("sellerUserId", query.sellerUserId);
+    }
 
     const suffix = search.toString();
     return this.request(`/v1/marketplace/listings${suffix ? `?${suffix}` : ""}`, { method: "GET" });
+  }
+
+  async deleteMarketplaceListing(
+    listingId: string,
+    ctx: { userId: string }
+  ): Promise<ApiSuccessResponse<{ listingId: string }>> {
+    return this.request(`/v1/marketplace/listings/${encodeURIComponent(listingId)}`, {
+      method: "DELETE",
+      headers: { "x-user-id": ctx.userId }
+    });
   }
 
   async createMarketplaceListing(
@@ -765,6 +755,16 @@ export class ApiClient {
     });
   }
 
+  async setTokenOwnerUser(
+    tokenId: string,
+    ownerUserId: string
+  ): Promise<ApiSuccessResponse<ContractSyncedTokenData>> {
+    return this.request(`/v1/internal/contracts/tokens/${encodeURIComponent(tokenId)}/owner`, {
+      method: "PATCH",
+      body: { ownerUserId }
+    });
+  }
+
   private async request<T>(path: string, options: RequestOptions): Promise<ApiSuccessResponse<T>> {
     const target = new URL(path, this.config.baseUrl).toString();
 
@@ -787,7 +787,11 @@ export class ApiClient {
     const response = await fetchImpl(target, {
       method: options.method ?? "GET",
       headers,
-      body: hasBody ? JSON.stringify(options.body) : undefined
+      body: hasBody
+        ? JSON.stringify(options.body, (_, value) =>
+            typeof value === "bigint" ? value.toString() : value
+          )
+        : undefined
     });
 
     const text = await response.text();

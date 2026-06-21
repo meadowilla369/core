@@ -6,9 +6,6 @@ import { findTicketByTokenId, loadMyTicketCards } from "./ticket-loader.ts";
 test("loadMyTicketCards returns synced tickets when ticketing DB and event lookup are unavailable", async () => {
   const result = await loadMyTicketCards({
     client: {
-      getMyTickets: async () => {
-        throw new Error("ticketing unavailable");
-      },
       listSyncedTokens: async () => ({
         success: true,
         data: [
@@ -73,7 +70,10 @@ test("loadMyTicketCards returns synced tickets when ticketing DB and event looku
       createdAt: "2026-04-29T00:00:00.000Z",
       source: "contract-sync",
       syncStatus: "partial",
-      transactionHash: "0xabc"
+      transactionHash: "0xabc",
+      listingStatus: "none",
+      isUsed: false,
+      originalPrice: undefined
     }
   ]);
   assert.deepEqual(result.past, []);

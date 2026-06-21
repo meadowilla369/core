@@ -11,9 +11,9 @@ import type {
   EventDetail,
   EventSummary,
   MarketplaceListing,
-  TicketRecord,
   UserProfileData
 } from "@ticket-platform/sdk-client";
+import type { MergedMergedTicketRecord } from "./synced-tickets.ts";
 import {
   formatMediumEventDate,
   formatShortEventDate,
@@ -111,7 +111,7 @@ export function toTicketTierViews(event: EventDetail): TicketTierView[] {
   }));
 }
 
-export function toTicketCardView(ticket: TicketRecord, event?: EventDetail): TicketCardView {
+export function toTicketCardView(ticket: MergedTicketRecord, event?: EventDetail): TicketCardView {
   const tier = event?.ticketTypes.find((item) => item.id === ticket.ticketTypeId);
   return {
     id: ticket.tokenId,
@@ -127,7 +127,7 @@ export function toTicketCardView(ticket: TicketRecord, event?: EventDetail): Tic
 export function splitTicketsByEventTime(
   tickets: TicketCardView[],
   eventMap: Map<string, EventDetail>,
-  rawTickets: TicketRecord[]
+  rawTickets: MergedTicketRecord[]
 ): { upcoming: TicketCardView[]; past: TicketCardView[] } {
   return tickets.reduce(
     (acc, ticket, index) => {
@@ -194,7 +194,7 @@ export function toMarketplaceEventViews(
 
 export function toProfileSummaryView(
   profile: UserProfileData,
-  tickets: TicketRecord[],
+  tickets: MergedTicketRecord[],
   events: EventDetail[]
 ): ProfileSummaryView {
   const eventIds = new Set(tickets.map((ticket) => ticket.eventId));

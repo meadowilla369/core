@@ -69,18 +69,3 @@ CREATE TABLE reservations (
   UNIQUE (idempotency_key)
 );
 
-CREATE TABLE tickets (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  token_id BIGINT UNIQUE,
-  event_id UUID NOT NULL REFERENCES events(id),
-  ticket_type_id UUID NOT NULL REFERENCES ticket_types(id),
-  owner_user_id UUID NOT NULL REFERENCES users(id),
-  reservation_id UUID REFERENCES reservations(id),
-  seat_info TEXT,
-  original_purchase_price BIGINT NOT NULL CHECK (original_purchase_price > 0),
-  status ticket_status NOT NULL DEFAULT 'minted',
-  used_at TIMESTAMPTZ,
-  refunded_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
