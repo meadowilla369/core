@@ -480,16 +480,24 @@ export async function createMarketplaceServer(config: MarketplaceConfig) {
       // ── GET /marketplace/listings ─────────────────────────────────────────
       if (method === "GET" && url.pathname === "/marketplace/listings") {
         const eventFilter = url.searchParams.get("eventId")?.trim();
+        const sellerFilter = url.searchParams.get("sellerUserId")?.trim();
+        const params: string[] = [];
+        const conditions: string[] = [];
+        if (eventFilter) {
+          params.push(eventFilter);
+          conditions.push(`event_id = $${params.length}`);
+        }
+        if (sellerFilter) {
+          params.push(sellerFilter);
+          conditions.push(`seller_user_id = $${params.length}`);
+        }
+        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
         const rows = await queryMany<ListingRow>(
           pool,
-          eventFilter
-            ? `SELECT id, token_id, event_id, seller_user_id, seller_wallet_address,
-                      original_price, ask_price, currency, created_at
-               FROM marketplace_listings WHERE event_id = $1 ORDER BY created_at DESC`
-            : `SELECT id, token_id, event_id, seller_user_id, seller_wallet_address,
-                      original_price, ask_price, currency, created_at
-               FROM marketplace_listings ORDER BY created_at DESC`,
-          eventFilter ? [eventFilter] : []
+          `SELECT id, token_id, event_id, seller_user_id, seller_wallet_address,
+                  original_price, ask_price, currency, created_at
+           FROM marketplace_listings ${whereClause} ORDER BY created_at DESC`,
+          params
         );
 
         const listings = rows.map(mapListing);
@@ -531,7 +539,13 @@ export async function createMarketplaceServer(config: MarketplaceConfig) {
         const originalPrice = body.originalPrice;
         const askPrice = body.askPrice;
 
-        if (!tokenId || !eventId || !sellerWalletAddress || !originalPrice || !askPrice) {
+        if (
+          !tokenId ||
+          !eventId ||
+          !sellerWalletAddress ||
+          originalPrice == null ||
+          askPrice == null
+        ) {
           return sendJson(res, 400, {
             success: false,
             error: {
