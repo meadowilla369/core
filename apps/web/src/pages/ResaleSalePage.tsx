@@ -99,6 +99,7 @@ const ResaleSalePage = () => {
         transport: http(webAppConfig.rpcUrl)
       });
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const txHash = await walletClient.sendTransaction({
         account,
         to: tx.to ?? account.address,
@@ -106,7 +107,7 @@ const ResaleSalePage = () => {
         value: tx.value,
         authorizationList: tx.authorizationList,
         chain
-      });
+      } as any);
 
       return {
         listingId: listingResponse.data.id,

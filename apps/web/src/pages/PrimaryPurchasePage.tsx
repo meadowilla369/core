@@ -152,10 +152,6 @@ const PrimaryPurchasePage = () => {
       ]);
 
       const reservationId = reservation.data.reservationId;
-      await client.initiateTicketPurchase(
-        { reservationId, paymentMethod: "momo" },
-        { userId: getSessionUserId(), idempotencyKey: `primary:purchase:${orderId}` }
-      );
 
       const ticketIds = Array.from(
         { length: quantityValue },
@@ -256,6 +252,7 @@ const PrimaryPurchasePage = () => {
         eventId: BigInt(paymentHash.data.eventId),
         ticketTypeId: BigInt(paymentHash.data.ticketTypeId),
         quantity: BigInt(paymentHash.data.quantity),
+        price: BigInt(selectedTier.price),
         paymentHash: paymentHash.data.paymentHash,
         signature: paymentHash.data.signature,
         chainId: BigInt(paymentHash.data.domain.chainId),
@@ -304,6 +301,7 @@ const PrimaryPurchasePage = () => {
         eventId: BigInt(prepared.paymentHash.eventId),
         ticketTypeId: BigInt(prepared.paymentHash.ticketTypeId),
         quantity: BigInt(prepared.paymentHash.quantity),
+        price: BigInt(selectedTier.price),
         paymentHash: prepared.paymentHash.paymentHash,
         signature: prepared.paymentHash.signature,
         chainId: BigInt(prepared.paymentHash.domain.chainId),
@@ -471,18 +469,20 @@ const PrimaryPurchasePage = () => {
     onSuccess: (result) => {
       if (id) {
         const now = new Date().toISOString();
+        const userId = getSessionUserId();
         result.tokenIds.forEach((tokenId) => {
           const syncedToken = result.syncedTokens.find((token) => token.tokenId === tokenId);
           savePurchasedTicketMetadata({
             tokenId,
             eventId: id,
             ticketTypeId: selectedTier.id,
-            ownerUserId: getSessionUserId(),
+            ownerUserId: userId,
             ownerWalletAddress: getSessionWalletAddress(),
             transactionHash: result.transactionHash,
             source: "primary-purchase",
             createdAt: syncedToken?.updatedAt ?? now
           });
+          void client.setTokenOwnerUser(tokenId, userId).catch(() => undefined);
         });
         queryClient.invalidateQueries({ queryKey: ["tickets", "me"] });
         queryClient.invalidateQueries({ queryKey: ["profile", "summary"] });

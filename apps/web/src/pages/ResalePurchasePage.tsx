@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { ArrowLeft, CheckCircle2, Clock, Copy, Shield, Sparkles, User } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { createWalletClient, defineChain, http } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import {
   assembleTx4,
   buildMarketplaceBuyTx,
@@ -14,7 +16,12 @@ import { useMarketplaceListing } from "@/hooks/use-marketplace-listing";
 import { eventDetailFallback } from "@/lib/fallback-data";
 import { formatMediumEventDate, formatTime, formatVnd } from "@/lib/format";
 import { webAppConfig } from "@/lib/config";
-import { getSessionUserId, getSessionWalletAddress, signSessionAuthorization } from "@/lib/session";
+import {
+  getSessionUserId,
+  getSessionWallet,
+  getSessionWalletAddress,
+  signSessionAuthorization
+} from "@/lib/session";
 import { useApiClient } from "@/providers/AppProviders";
 import { toast } from "@ticket-platform/shared-ui";
 
@@ -28,6 +35,7 @@ interface BroadcastedBuyState {
   signedAuthorization: SignedAuthorization;
   tx: ReturnType<typeof assembleTx4>;
   backend: MarketplaceBroadcastData;
+  onChainTxHash: `0x${string}`;
 }
 
 const fallbackListing = {
@@ -94,6 +102,12 @@ const ResalePurchasePage = () => {
         );
       }
 
+      // Đảm bảo buyer wallet được prefund trước khi broadcast on-chain
+      await client.registerPaymentWallet(
+        { walletAddress: getSessionWalletAddress() },
+        { userId: getSessionUserId() }
+      );
+
       const response = await client.initiateMarketplaceBuy(
         ticketId,
         {
@@ -155,6 +169,32 @@ const ResalePurchasePage = () => {
       });
       const payload = txDraft.assemble(signedAuthorization);
       const tx = assembleTx4(payload, getSessionWalletAddress() as `0x${string}`);
+
+      // Broadcast on-chain
+      const wallet = getSessionWallet();
+      if (!wallet.privateKey) throw new Error("Private key không có trong session.");
+      const account = privateKeyToAccount(wallet.privateKey as `0x${string}`);
+      const chain = defineChain({
+        id: webAppConfig.chainId,
+        name: "localchain",
+        nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+        rpcUrls: { default: { http: [webAppConfig.rpcUrl] } }
+      });
+      const walletClient = createWalletClient({
+        account,
+        chain,
+        transport: http(webAppConfig.rpcUrl)
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const onChainTxHash = await walletClient.sendTransaction({
+        account,
+        to: tx.to ?? account.address,
+        data: tx.data,
+        value: tx.value,
+        authorizationList: tx.authorizationList,
+        chain
+      } as any);
+
       const response = await client.broadcastMarketplaceBuy(
         ticketId,
         {
@@ -173,18 +213,20 @@ const ResalePurchasePage = () => {
         }
       );
 
-      return { txDraft, signedAuthorization, tx, backend: response.data };
+      return { txDraft, signedAuthorization, tx, backend: response.data, onChainTxHash };
     },
     onSuccess: async (result) => {
       setBroadcasted(result);
+      // Map wallet address → user ID trong contract-sync (giống primary purchase flow)
+      void client.setTokenOwnerUser(listing.tokenId, getSessionUserId()).catch(() => undefined);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["marketplace"] }),
         queryClient.invalidateQueries({ queryKey: ["tickets", "me"] }),
         queryClient.invalidateQueries({ queryKey: ["profile", "summary"] })
       ]);
       toast({
-        title: "Broadcast thành công",
-        description: `Buy hash ${result.backend.buyHashOrderId} đã được ghi nhận. Contract-sync sẽ cập nhật owner mới.`
+        title: "Mua vé thành công",
+        description: `Tx ${result.onChainTxHash.slice(0, 10)}... đã lên chain. Contract-sync sẽ cập nhật owner mới.`
       });
     },
     onError: (error) => {
