@@ -14,7 +14,9 @@ export {
 export {
   buildMarketplaceListTx,
   type MarketplaceListTxParams,
-  type MarketplaceListTxUnsigned
+  type MarketplaceListTxUnsigned,
+  buildMarketplaceCancelTx,
+  type MarketplaceCancelTxParams
 } from "./marketplace-list.js";
 export {
   encodeExecuteBatch,

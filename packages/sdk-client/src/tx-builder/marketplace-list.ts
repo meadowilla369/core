@@ -36,6 +36,13 @@ const MARKETPLACE_V2_ABI = [
       { name: "price", type: "uint256" }
     ],
     outputs: [{ name: "listingId", type: "uint256" }]
+  },
+  {
+    name: "cancelListing",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "listingId", type: "uint256" }],
+    outputs: []
   }
 ] as const;
 
@@ -55,6 +62,55 @@ export interface MarketplaceListTxUnsigned {
   executeBatchCalldata: `0x${string}`;
   calls: HandlerCall[];
   assemble(signedAuth: SignedAuthorization): Eip7702BatchPayload;
+}
+
+export interface MarketplaceCancelTxParams {
+  marketplaceAddress: `0x${string}`;
+  handlerAddress: `0x${string}`;
+  listingId: bigint;
+  chainId: bigint;
+  nonce: bigint;
+}
+
+export function buildMarketplaceCancelTx(
+  params: MarketplaceCancelTxParams
+): MarketplaceListTxUnsigned {
+  if (params.listingId <= 0n) {
+    throw new Error("buildMarketplaceCancelTx: listingId must be > 0");
+  }
+
+  const cancelCalldata = encodeFunctionData({
+    abi: MARKETPLACE_V2_ABI,
+    functionName: "cancelListing",
+    args: [params.listingId]
+  });
+
+  const calls: HandlerCall[] = [
+    { target: params.marketplaceAddress, value: 0n, data: cancelCalldata }
+  ];
+
+  const errors = validateCalls(calls);
+  if (errors.length > 0) {
+    throw new Error(`buildMarketplaceCancelTx: invalid calls - ${errors.join("; ")}`);
+  }
+
+  const authorizationTuple = buildAuthorizationTuple({
+    chainId: params.chainId,
+    handlerAddress: params.handlerAddress,
+    nonce: params.nonce
+  });
+  const authorizationHash = hashAuthorizationTuple(authorizationTuple);
+  const executeBatchCalldata = encodeExecuteBatch(calls);
+
+  return {
+    authorizationTuple,
+    authorizationHash,
+    executeBatchCalldata,
+    calls,
+    assemble(signedAuth: SignedAuthorization): Eip7702BatchPayload {
+      return buildEip7702BatchPayload(calls, signedAuth);
+    }
+  };
 }
 
 export function buildMarketplaceListTx(params: MarketplaceListTxParams): MarketplaceListTxUnsigned {
