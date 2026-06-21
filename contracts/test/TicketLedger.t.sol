@@ -40,15 +40,16 @@ contract TicketLedgerTest is Test {
         bytes memory signature = _signPurchaseAuthorization(ADMIN_PK, buyer, 1, 2, 2, paymentHash);
 
         vm.prank(buyer);
-        uint256[] memory ticketIds = ledger.purchaseWithSignature(1, 2, 2, paymentHash, signature);
+        uint256[] memory ticketIds = ledger.purchaseWithSignature(1, 2, 2, 900000, paymentHash, signature);
 
         assertEq(ticketIds.length, 2);
         assertEq(ledger.ticketCounter(), 2);
         assertTrue(ledger.usedPaymentHashes(paymentHash));
 
-        (uint256 ticketId,,, address owner,, bool used, uint256 purchasedAt,) = ledger.tickets(ticketIds[0]);
+        (uint256 ticketId,,, address owner, uint256 storedPrice, bool used, uint256 purchasedAt,) = ledger.tickets(ticketIds[0]);
         assertEq(ticketId, ticketIds[0]);
         assertEq(owner, buyer);
+        assertEq(storedPrice, 900000);
         assertFalse(used);
         assertGt(purchasedAt, 0);
     }
@@ -59,7 +60,7 @@ contract TicketLedgerTest is Test {
 
         vm.prank(otherUser);
         vm.expectRevert("TicketLedger: invalid signature");
-        ledger.purchaseWithSignature(1, 2, 1, paymentHash, signature);
+        ledger.purchaseWithSignature(1, 2, 1, 900000, paymentHash, signature);
     }
 
     function testPurchaseWithSignature_RevertIfHashUsed() public {
@@ -67,11 +68,11 @@ contract TicketLedgerTest is Test {
         bytes memory signature = _signPurchaseAuthorization(ADMIN_PK, buyer, 1, 2, 1, paymentHash);
 
         vm.prank(buyer);
-        ledger.purchaseWithSignature(1, 2, 1, paymentHash, signature);
+        ledger.purchaseWithSignature(1, 2, 1, 900000, paymentHash, signature);
 
         vm.prank(buyer);
         vm.expectRevert("TicketLedger: payment hash used");
-        ledger.purchaseWithSignature(1, 2, 1, paymentHash, signature);
+        ledger.purchaseWithSignature(1, 2, 1, 900000, paymentHash, signature);
     }
 
     function testPurchaseWithSignature_RevertIfSignerUnauthorized() public {
@@ -80,7 +81,7 @@ contract TicketLedgerTest is Test {
 
         vm.prank(buyer);
         vm.expectRevert("TicketLedger: invalid signature");
-        ledger.purchaseWithSignature(1, 2, 1, paymentHash, signature);
+        ledger.purchaseWithSignature(1, 2, 1, 900000, paymentHash, signature);
     }
 
     function testTransferTicket() public {
@@ -169,7 +170,7 @@ contract TicketLedgerTest is Test {
         bytes memory signature = _signPurchaseAuthorization(ADMIN_PK, recipient, 1, 2, 1, paymentHash);
 
         vm.prank(recipient);
-        uint256[] memory ticketIds = ledger.purchaseWithSignature(1, 2, 1, paymentHash, signature);
+        uint256[] memory ticketIds = ledger.purchaseWithSignature(1, 2, 1, 900000, paymentHash, signature);
         return ticketIds[0];
     }
 
@@ -177,7 +178,7 @@ contract TicketLedgerTest is Test {
         bytes memory signature = _signPurchaseAuthorization(ADMIN_PK, recipient, 1, 2, 2, paymentHash);
 
         vm.prank(recipient);
-        return ledger.purchaseWithSignature(1, 2, 2, paymentHash, signature);
+        return ledger.purchaseWithSignature(1, 2, 2, 900000, paymentHash, signature);
     }
 
     function _signPurchaseAuthorization(

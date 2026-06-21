@@ -36,6 +36,7 @@ contract Flow5RefundHarness is Script {
         uint256 ticketTypeId = vm.envUint("FLOW5_TICKET_TYPE_ID");
         bytes32 paymentHash = vm.envBytes32("FLOW5_PAYMENT_HASH");
         bytes memory signature = vm.parseBytes(vm.envString("FLOW5_SIGNATURE"));
+        uint256 price = vm.envOr("FLOW5_PRICE", uint256(900000));
 
         address admin = vm.addr(adminPrivateKey);
         address payable buyer = payable(vm.addr(buyerPrivateKey));
@@ -68,7 +69,7 @@ contract Flow5RefundHarness is Script {
             target: address(ledger),
             value: 0,
             data: abi.encodeCall(
-                TicketLedger.purchaseWithSignature, (eventId, ticketTypeId, 1, paymentHash, signature)
+                TicketLedger.purchaseWithSignature, (eventId, ticketTypeId, 1, price, paymentHash, signature)
             )
         });
 

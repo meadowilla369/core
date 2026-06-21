@@ -71,7 +71,7 @@ contract MarketplaceV2Test is Test {
         bytes memory sig = abi.encodePacked(r, s, v);
 
         vm.prank(seller);
-        uint256[] memory ids = ledger.purchaseWithSignature(EVENT_ID, TICKET_TYPE_ID, quantity, paymentHash, sig);
+        uint256[] memory ids = ledger.purchaseWithSignature(EVENT_ID, TICKET_TYPE_ID, quantity, 900000, paymentHash, sig);
         ticketId = ids[0];
     }
 

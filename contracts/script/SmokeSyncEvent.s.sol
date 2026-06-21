@@ -19,6 +19,7 @@ contract SmokeSyncEvent is Script {
         uint256 eventId = vm.envOr("LOCALCHAIN_SMOKE_EVENT_ID", uint256(900001));
         uint256 ticketTypeId = vm.envOr("LOCALCHAIN_SMOKE_TICKET_TYPE_ID", uint256(1));
         uint256 quantity = vm.envOr("LOCALCHAIN_SMOKE_QUANTITY", uint256(1));
+        uint256 price = vm.envOr("LOCALCHAIN_SMOKE_PRICE", uint256(900000));
         address ledgerAddress = vm.envAddress("TICKET_LEDGER_ADDRESS");
         string memory outputPath = vm.envOr(
             "LOCALCHAIN_SMOKE_OUTPUT_PATH",
@@ -52,7 +53,7 @@ contract SmokeSyncEvent is Script {
 
         vm.startBroadcast(buyerPrivateKey);
         uint256[] memory tokenIds =
-            ledger.purchaseWithSignature(eventId, ticketTypeId, quantity, paymentHash, signature);
+            ledger.purchaseWithSignature(eventId, ticketTypeId, quantity, price, paymentHash, signature);
         vm.stopBroadcast();
 
         string memory root = "smoke";

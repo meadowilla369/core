@@ -50,7 +50,12 @@ contract TicketLedger is AccessControlEnumerable {
 
     /// @notice Emitted when a ticket is purchased.
     event TicketPurchased(
-        uint256 indexed ticketId, address indexed buyer, uint256 eventId, uint256 price, uint256 timestamp
+        uint256 indexed ticketId,
+        address indexed buyer,
+        uint256 eventId,
+        uint256 ticketTypeId,
+        uint256 price,
+        uint256 timestamp
     );
     /// @notice Emitted when ownership changes by user transfer.
     event TicketTransferred(uint256 indexed ticketId, address indexed from, address indexed to);
@@ -75,6 +80,7 @@ contract TicketLedger is AccessControlEnumerable {
     /// @param eventId Event id the tickets belong to.
     /// @param ticketTypeId Ticket type id selected by buyer.
     /// @param quantity Number of tickets to mint.
+    /// @param price Off-chain purchase price in VND (trusted caller input, not verified on-chain).
     /// @param paymentHash One-time payment hash from backend.
     /// @param signature Backend signature over the purchase authorization payload.
     /// @return ticketIds List of newly minted ticket ids.
@@ -82,6 +88,7 @@ contract TicketLedger is AccessControlEnumerable {
         uint256 eventId,
         uint256 ticketTypeId,
         uint256 quantity,
+        uint256 price,
         bytes32 paymentHash,
         bytes calldata signature
     ) external returns (uint256[] memory ticketIds) {
@@ -111,7 +118,7 @@ contract TicketLedger is AccessControlEnumerable {
                 eventId: eventId,
                 ticketTypeId: ticketTypeId,
                 owner: msg.sender,
-                price: 0,
+                price: price,
                 used: false,
                 purchasedAt: block.timestamp,
                 usedAt: 0
@@ -121,7 +128,7 @@ contract TicketLedger is AccessControlEnumerable {
             _eventTickets[eventId].push(nextTicketId);
             ticketIds[i] = nextTicketId;
 
-            emit TicketPurchased(nextTicketId, msg.sender, eventId, 0, block.timestamp);
+            emit TicketPurchased(nextTicketId, msg.sender, eventId, ticketTypeId, price, block.timestamp);
         }
     }
 

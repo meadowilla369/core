@@ -42,6 +42,7 @@ contract Flow2ResaleHarness is Script {
         uint256 ticketTypeId = vm.envUint("FLOW2_TICKET_TYPE_ID");
         bytes32 purchasePaymentHash = vm.envBytes32("FLOW2_PURCHASE_PAYMENT_HASH");
         bytes memory purchaseSignature = vm.parseBytes(vm.envString("FLOW2_PURCHASE_SIGNATURE"));
+        uint256 purchasePrice = vm.envOr("FLOW2_PURCHASE_PRICE", uint256(900000));
         uint256 resalePrice = vm.envUint("FLOW2_RESALE_PRICE");
         bytes32 buyPaymentHash = vm.envBytes32("FLOW2_BUY_PAYMENT_HASH");
         bytes memory buySignature = vm.parseBytes(vm.envString("FLOW2_BUY_SIGNATURE"));
@@ -84,7 +85,7 @@ contract Flow2ResaleHarness is Script {
             target: address(ledger),
             value: 0,
             data: abi.encodeCall(
-                TicketLedger.purchaseWithSignature, (eventId, ticketTypeId, 1, purchasePaymentHash, purchaseSignature)
+                TicketLedger.purchaseWithSignature, (eventId, ticketTypeId, 1, purchasePrice, purchasePaymentHash, purchaseSignature)
             )
         });
 

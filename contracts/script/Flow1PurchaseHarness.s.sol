@@ -18,6 +18,7 @@ contract Flow1PurchaseHarness is Script {
         uint256 eventId = vm.envUint("FLOW1_EVENT_ID");
         uint256 ticketTypeId = vm.envUint("FLOW1_TICKET_TYPE_ID");
         uint256 quantity = vm.envUint("FLOW1_QUANTITY");
+        uint256 price = vm.envOr("FLOW1_PRICE", uint256(900000));
 
         address admin = vm.addr(adminPrivateKey);
         address payable buyer = payable(vm.addr(buyerPrivateKey));
@@ -51,7 +52,7 @@ contract Flow1PurchaseHarness is Script {
             target: address(ledger),
             value: 0,
             data: abi.encodeCall(
-                TicketLedger.purchaseWithSignature, (eventId, ticketTypeId, quantity, paymentHash, signature)
+                TicketLedger.purchaseWithSignature, (eventId, ticketTypeId, quantity, price, paymentHash, signature)
             )
         });
 

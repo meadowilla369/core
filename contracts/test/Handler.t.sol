@@ -82,7 +82,7 @@ contract HandlerTest is Test {
         calls[0] = IHandler.Call({
             target: address(ledger),
             value: 0,
-            data: abi.encodeCall(TicketLedger.purchaseWithSignature, (1, 2, 1, paymentHash, signature))
+            data: abi.encodeCall(TicketLedger.purchaseWithSignature, (1, 2, 1, 900000, paymentHash, signature))
         });
 
         uint256 beforeBalance = user.balance;

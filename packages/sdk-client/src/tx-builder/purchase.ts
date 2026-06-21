@@ -17,6 +17,7 @@ const TICKET_LEDGER_ABI = [
       { name: "eventId", type: "uint256" },
       { name: "ticketTypeId", type: "uint256" },
       { name: "quantity", type: "uint256" },
+      { name: "price", type: "uint256" },
       { name: "paymentHash", type: "bytes32" },
       { name: "signature", type: "bytes" }
     ],
@@ -30,6 +31,8 @@ export interface PurchaseTxParams {
   eventId: bigint;
   ticketTypeId: bigint;
   quantity: bigint;
+  /** Off-chain purchase price in VND, stored in the Ticket struct for on-chain markup cap checks. */
+  price: bigint;
   paymentHash: `0x${string}`;
   signature: `0x${string}`;
   chainId: bigint;
@@ -56,6 +59,7 @@ export function buildPurchaseTx(params: PurchaseTxParams): PurchaseTxUnsigned {
       params.eventId,
       params.ticketTypeId,
       params.quantity,
+      params.price,
       params.paymentHash,
       params.signature
     ]

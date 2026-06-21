@@ -6,7 +6,7 @@
  *
  * Call graph on-chain:
  *   EOA (delegated to Handler) → Handler.executeBatch([call])
- *     └─ TicketLedger.purchaseWithSignature(eventId, ticketTypeId, quantity, paymentHash, signature)
+ *     └─ TicketLedger.purchaseWithSignature(eventId, ticketTypeId, quantity, price, paymentHash, signature)
  *
  * The returned Eip7702BatchPayload contains:
  *   - encodedCalldata  → attach as tx.data
@@ -48,6 +48,7 @@ const TICKET_LEDGER_ABI = [
       { name: "eventId", type: "uint256" },
       { name: "ticketTypeId", type: "uint256" },
       { name: "quantity", type: "uint256" },
+      { name: "price", type: "uint256" },
       { name: "paymentHash", type: "bytes32" },
       { name: "signature", type: "bytes" }
     ],
@@ -70,6 +71,8 @@ export interface PurchaseTxParams {
   ticketTypeId: bigint;
   /** Number of tickets to purchase. */
   quantity: bigint;
+  /** Off-chain purchase price in VND, stored in the Ticket struct for on-chain markup cap checks. */
+  price: bigint;
   /** One-time payment hash issued by the backend (bytes32). */
   paymentHash: `0x${string}`;
   /** Backend EIP-712 signature authorizing this purchase. */
@@ -138,6 +141,7 @@ export function buildPurchaseTx(params: PurchaseTxParams): PurchaseTxUnsigned {
       params.eventId,
       params.ticketTypeId,
       params.quantity,
+      params.price,
       params.paymentHash,
       params.signature
     ]
