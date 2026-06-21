@@ -47,7 +47,6 @@ interface ComputePaymentHashInput {
   castBinaryPath?: string;
   orderId: string;
   userId: string;
-  ticketIds: string[];
   amount: bigint;
   nonce: string;
 }
@@ -192,10 +191,9 @@ export function computePaymentHash(input: ComputePaymentHashInput): string {
     action: "ABI encoding payment hash payload",
     args: [
       "abi-encode",
-      "f(string,string,string[],uint256,bytes32)",
+      "f(string,string,uint256,bytes32)",
       input.orderId,
       input.userId,
-      JSON.stringify(input.ticketIds),
       input.amount.toString(),
       normalizeBytes32(input.nonce)
     ]
