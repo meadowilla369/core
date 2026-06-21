@@ -88,6 +88,7 @@ stop_existing_stack() {
     pids="$(
       {
         lsof -tiTCP:3000-3014 -sTCP:LISTEN 2>/dev/null || true
+        lsof -tiTCP:4310 -sTCP:LISTEN 2>/dev/null || true
         lsof -tiTCP:${ANVIL_PORT:-8545} -sTCP:LISTEN 2>/dev/null || true
       } | sort -u
     )"

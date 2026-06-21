@@ -1,7 +1,18 @@
 # Database Assets
 
+## Local Canonical Schema
+
+- `schema.sql` is the local development source of truth for PostgreSQL schema.
+- Reset only PostgreSQL with `pnpm db:reset` or `./scripts/reset-db.sh`.
+- The reset script drops and recreates the `public` schema, then applies `schema.sql`.
+- Redis and MinIO are not touched by the reset script.
+- Keep `ticket_types` aligned with the product schema here first: `id`, `event_id`, `onchain_ticket_type_id`, `name`, `unit_price`, `quantity`, `perks`.
+- Verify the schema contract with `pnpm db:test:schema`.
+
 ## Migrations
 
+- The migration files are retained as historical/release assets.
+- For current local development, prefer editing `schema.sql` and resetting PostgreSQL.
 - `migrations/0001_extensions.sql`: PostgreSQL extensions required by the platform.
 - `migrations/0002_user_identity.sql`: User, device, KYC, and recovery tables.
 - `migrations/0003_event_ticketing.sql`: Organizer, event, ticket, and reservation tables.

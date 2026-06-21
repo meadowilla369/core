@@ -23,6 +23,8 @@
     "stack:infra:up": "./scripts/dev-stack.sh infra-up",
     "stack:infra:down": "./scripts/dev-stack.sh infra-down",
     "stack:infra:status": "./scripts/dev-stack.sh infra-status",
+    "db:reset": "./scripts/reset-db.sh",
+    "db:test:schema": "node --test scripts/tests/schema-contract.test.mjs",
     "stack:down": "./scripts/dev-stack.sh down",
     "stack:status": "./scripts/dev-stack.sh status",
     "stack:logs": "./scripts/dev-stack.sh logs",

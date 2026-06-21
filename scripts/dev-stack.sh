@@ -13,20 +13,22 @@ mkdir -p "$LOG_DIR" "$PID_DIR"
 SERVICES=(
   "auth-service|http://127.0.0.1:3001/healthz|PORT=3001 node --env-file=\"$ENV_FILE\" services/auth-service/dist/index.js"
   "user-service|http://127.0.0.1:3002/healthz|PORT=3002 node --env-file=\"$ENV_FILE\" services/user-service/dist/index.js"
-  "kyc-service|http://127.0.0.1:3003/healthz|PORT=3003 node --env-file=\"$ENV_FILE\" services/kyc-service/dist/index.js"
   "event-service|http://127.0.0.1:3004/healthz|PORT=3004 node --env-file=\"$ENV_FILE\" services/event-service/dist/index.js"
   "ticketing-service|http://127.0.0.1:3005/healthz|PORT=3005 node --env-file=\"$ENV_FILE\" services/ticketing-service/dist/index.js"
   "payment-orchestrator|http://127.0.0.1:3006/healthz|PORT=3006 node --env-file=\"$ENV_FILE\" services/payment-orchestrator/dist/index.js"
   "marketplace-service|http://127.0.0.1:3007/healthz|PORT=3007 node --env-file=\"$ENV_FILE\" services/marketplace-service/dist/index.js"
   "checkin-service|http://127.0.0.1:3008/healthz|PORT=3008 node --env-file=\"$ENV_FILE\" services/checkin-service/dist/index.js"
-  "refund-service|http://127.0.0.1:3009/healthz|PORT=3009 node --env-file=\"$ENV_FILE\" services/refund-service/dist/index.js"
-  "worker-mint|http://127.0.0.1:3010/healthz|PORT=3010 node --env-file=\"$ENV_FILE\" services/worker-mint/dist/index.js"
-  "recovery-service|http://127.0.0.1:3011/healthz|PORT=3011 node --env-file=\"$ENV_FILE\" services/recovery-service/dist/index.js"
-  "dispute-service|http://127.0.0.1:3012/healthz|PORT=3012 node --env-file=\"$ENV_FILE\" services/dispute-service/dist/index.js"
-  "notification-service|http://127.0.0.1:3013/healthz|PORT=3013 node --env-file=\"$ENV_FILE\" services/notification-service/dist/index.js"
   "contract-sync-service|http://127.0.0.1:3014/healthz|PORT=3014 node --env-file=\"$ENV_FILE\" services/contract-sync-service/dist/index.js"
   "api-gateway|http://127.0.0.1:3000/healthz|PORT=3000 node --env-file=\"$ENV_FILE\" services/api-gateway/dist/index.js"
-  "ui-simulator|http://127.0.0.1:4310|UI_PORT=4310 node --env-file=\"$ENV_FILE\" apps/ui-simulator/server.mjs"
+  # Temporarily skipped in localchain/localchain-ios startup because these are not
+  # active in the primary sale, listing, resale, organizer portal, or check-in flows.
+  # "kyc-service|http://127.0.0.1:3003/healthz|PORT=3003 node --env-file=\"$ENV_FILE\" services/kyc-service/dist/index.js"
+  # "refund-service|http://127.0.0.1:3009/healthz|PORT=3009 node --env-file=\"$ENV_FILE\" services/refund-service/dist/index.js"
+  # "worker-mint|http://127.0.0.1:3010/healthz|PORT=3010 node --env-file=\"$ENV_FILE\" services/worker-mint/dist/index.js"
+  # "recovery-service|http://127.0.0.1:3011/healthz|PORT=3011 node --env-file=\"$ENV_FILE\" services/recovery-service/dist/index.js"
+  # "dispute-service|http://127.0.0.1:3012/healthz|PORT=3012 node --env-file=\"$ENV_FILE\" services/dispute-service/dist/index.js"
+  # "notification-service|http://127.0.0.1:3013/healthz|PORT=3013 node --env-file=\"$ENV_FILE\" services/notification-service/dist/index.js"
+  # "ui-simulator|http://127.0.0.1:4310|UI_PORT=4310 node --env-file=\"$ENV_FILE\" apps/ui-simulator/server.mjs"
 )
 
 ensure_env() {
@@ -253,7 +255,6 @@ cmd_up() {
   echo
   echo "Local stack is up."
   echo "- API gateway:   http://127.0.0.1:3000/healthz"
-  echo "- UI simulator:  http://127.0.0.1:4310"
   echo "- Logs:          ./scripts/dev-stack.sh logs [service]"
 }
 
@@ -313,7 +314,6 @@ cmd_smoke() {
     "http://127.0.0.1:3000/healthz"
     "http://127.0.0.1:3001/healthz"
     "http://127.0.0.1:3006/healthz"
-    "http://127.0.0.1:4310"
   )
 
   for url in "${checks[@]}"; do

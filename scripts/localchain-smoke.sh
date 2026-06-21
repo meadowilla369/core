@@ -205,7 +205,13 @@ check_rpc_chain_id
 check_contract_code "TicketLedger" "$TICKET_LEDGER_ADDRESS"
 check_contract_code "MarketplaceV2" "$MARKETPLACE_ADDRESS"
 check_http "API gateway health" "http://127.0.0.1:3000/healthz" >/dev/null
-check_http "API gateway readiness" "http://127.0.0.1:3000/readyz" >/dev/null
+check_http "Auth service health" "http://127.0.0.1:3001/healthz" >/dev/null
+check_http "User service health" "http://127.0.0.1:3002/healthz" >/dev/null
+check_http "Event service health" "http://127.0.0.1:3004/healthz" >/dev/null
+check_http "Ticketing service health" "http://127.0.0.1:3005/healthz" >/dev/null
+check_http "Payment orchestrator health" "http://127.0.0.1:3006/healthz" >/dev/null
+check_http "Marketplace service health" "http://127.0.0.1:3007/healthz" >/dev/null
+check_http "Check-in service health" "http://127.0.0.1:3008/healthz" >/dev/null
 check_http "Contract sync health" "http://127.0.0.1:3014/healthz" >/dev/null
 check_http "Contract sync status" "http://127.0.0.1:3014/sync/status" >/dev/null
 run_onchain_sync_probe
