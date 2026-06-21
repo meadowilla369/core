@@ -348,19 +348,38 @@ async function upsertProjection(
     };
   }
 
-  const existing = await queryOne<TokenSyncRow>(
+  const TOKEN_OWNERSHIP_COLS = `
+    chain_id, contract_address, token_id, event_id, ticket_type_id, onchain_event_id,
+    onchain_ticket_type_id, owner_wallet_address, owner_user_id, listing_status,
+    source_listing_id, last_sale_price, is_used, used_at, is_refunded, refunded_at,
+    last_event_name, last_tx_hash, last_log_index, last_synced_block, occurred_at, updated_at
+  `;
+
+  const primaryExisting = await queryOne<TokenSyncRow>(
     client,
-    `
-      SELECT chain_id, contract_address, token_id, event_id, ticket_type_id, onchain_event_id,
-             onchain_ticket_type_id, owner_wallet_address, owner_user_id, listing_status,
-             source_listing_id, last_sale_price, is_used, used_at, is_refunded, refunded_at,
-             last_event_name, last_tx_hash, last_log_index, last_synced_block, occurred_at, updated_at
-      FROM token_ownerships
-      WHERE chain_id = $1 AND contract_address = $2 AND token_id = $3::numeric
-      FOR UPDATE
-    `,
+    `SELECT ${TOKEN_OWNERSHIP_COLS} FROM token_ownerships
+     WHERE chain_id = $1 AND contract_address = $2 AND token_id = $3::numeric FOR UPDATE`,
     [chainId, contractAddress, tokenId]
   );
+
+  // Listing events are emitted by MarketplaceV2 but the token row lives under the
+  // TicketLedger's contract_address. If no row found by (chainId, marketplaceAddr, tokenId),
+  // fall back to a token_id-only lookup so we update the canonical TicketLedger row
+  // instead of creating a duplicate row under the marketplace address.
+  let canonicalContractAddress = contractAddress;
+  let existing = primaryExisting;
+  if (!primaryExisting && normalized === "listingstatuschanged") {
+    const fallback = await queryOne<TokenSyncRow>(
+      client,
+      `SELECT ${TOKEN_OWNERSHIP_COLS} FROM token_ownerships
+       WHERE chain_id = $1 AND token_id = $2::numeric ORDER BY updated_at DESC LIMIT 1 FOR UPDATE`,
+      [chainId, tokenId]
+    );
+    if (fallback) {
+      existing = fallback;
+      canonicalContractAddress = fallback.contract_address;
+    }
+  }
 
   let ownerWalletAddress = existing?.owner_wallet_address ?? null;
   let ownerUserId = existing?.owner_user_id ?? null;
@@ -451,10 +470,10 @@ async function upsertProjection(
         $17, $18, $19, $20, $21::timestamptz, NOW()
       )
       ON CONFLICT (chain_id, contract_address, token_id) DO UPDATE SET
-        event_id = EXCLUDED.event_id,
-        ticket_type_id = EXCLUDED.ticket_type_id,
-        onchain_event_id = EXCLUDED.onchain_event_id,
-        onchain_ticket_type_id = EXCLUDED.onchain_ticket_type_id,
+        event_id = COALESCE(EXCLUDED.event_id, token_ownerships.event_id),
+        ticket_type_id = COALESCE(EXCLUDED.ticket_type_id, token_ownerships.ticket_type_id),
+        onchain_event_id = COALESCE(EXCLUDED.onchain_event_id, token_ownerships.onchain_event_id),
+        onchain_ticket_type_id = COALESCE(EXCLUDED.onchain_ticket_type_id, token_ownerships.onchain_ticket_type_id),
         owner_wallet_address = EXCLUDED.owner_wallet_address,
         owner_user_id = EXCLUDED.owner_user_id,
         listing_status = EXCLUDED.listing_status,
@@ -468,12 +487,12 @@ async function upsertProjection(
         last_tx_hash = EXCLUDED.last_tx_hash,
         last_log_index = EXCLUDED.last_log_index,
         last_synced_block = EXCLUDED.last_synced_block,
-        occurred_at = EXCLUDED.occurred_at,
+        occurred_at = COALESCE(EXCLUDED.occurred_at, token_ownerships.occurred_at),
         updated_at = NOW()
     `,
     [
       chainId,
-      contractAddress,
+      canonicalContractAddress,
       tokenId,
       resolvedEventId,
       resolvedTicketType.ticketTypeId,
@@ -580,6 +599,43 @@ export async function createContractSyncApp(config: ContractSyncConfig): Promise
         });
       }
 
+      const tokenOwnerMatch = url.pathname.match(
+        /^\/(?:internal\/contracts\/)?tokens\/([^/]+)\/owner$/
+      );
+      if (method === "PATCH" && tokenOwnerMatch) {
+        const body = await readJson<{ ownerUserId?: unknown }>(req);
+        const ownerUserId = typeof body.ownerUserId === "string" ? body.ownerUserId.trim() : "";
+        if (!ownerUserId) {
+          return sendJson(res, 400, {
+            success: false,
+            error: { code: "INVALID_PAYLOAD", message: "ownerUserId is required" }
+          });
+        }
+
+        const updated = await queryOne<TokenSyncRow>(
+          pool,
+          `
+            UPDATE token_ownerships SET owner_user_id = $1, updated_at = NOW()
+            WHERE token_id = $2::numeric AND owner_user_id IS NULL
+            RETURNING chain_id, contract_address, token_id, event_id, ticket_type_id,
+                      onchain_event_id, onchain_ticket_type_id, owner_wallet_address,
+                      owner_user_id, listing_status, source_listing_id, last_sale_price,
+                      is_used, used_at, is_refunded, refunded_at, last_event_name,
+                      last_tx_hash, last_log_index, last_synced_block, occurred_at, updated_at
+          `,
+          [ownerUserId, tokenOwnerMatch[1]]
+        );
+
+        if (!updated) {
+          return sendJson(res, 404, {
+            success: false,
+            error: { code: "TOKEN_NOT_FOUND", message: "Token not found or owner already set" }
+          });
+        }
+
+        return sendJson(res, 200, { success: true, data: mapTokenRow(updated) });
+      }
+
       const tokenMatch = url.pathname.match(/^\/(?:internal\/contracts\/)?tokens\/([^/]+)$/);
       if (method === "GET" && tokenMatch) {
         const token = await queryOne<TokenSyncRow>(
@@ -591,7 +647,14 @@ export async function createContractSyncApp(config: ContractSyncConfig): Promise
                    last_event_name, last_tx_hash, last_log_index, last_synced_block, occurred_at, updated_at
             FROM token_ownerships
             WHERE token_id = $1::numeric
-            ORDER BY updated_at DESC
+            ORDER BY
+              CASE listing_status
+                WHEN 'active'    THEN 0
+                WHEN 'completed' THEN 1
+                WHEN 'cancelled' THEN 2
+                ELSE                  3
+              END ASC,
+              updated_at DESC
             LIMIT 1
           `,
           [tokenMatch[1]]

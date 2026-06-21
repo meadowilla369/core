@@ -55,6 +55,7 @@ const CURRENT_TICKET_LEDGER_EVENTS = [
       { name: "ticketId", type: "uint256", indexed: true },
       { name: "buyer", type: "address", indexed: true },
       { name: "eventId", type: "uint256", indexed: false },
+      { name: "ticketTypeId", type: "uint256", indexed: false },
       { name: "price", type: "uint256", indexed: false },
       { name: "timestamp", type: "uint256", indexed: false }
     ]
@@ -335,6 +336,7 @@ export class RpcListener {
             ticketId: bigint;
             buyer: `0x${string}`;
             eventId: bigint;
+            ticketTypeId: bigint;
             price: bigint;
             timestamp: bigint;
           };

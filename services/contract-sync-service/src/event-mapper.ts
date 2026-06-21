@@ -123,6 +123,7 @@ export function mapTicketPurchased(
     ticketId: bigint;
     buyer: `0x${string}`;
     eventId: bigint;
+    ticketTypeId: bigint;
     price: bigint;
     timestamp: bigint;
   },
@@ -139,6 +140,7 @@ export function mapTicketPurchased(
     payload: {
       tokenId: String(args.ticketId),
       eventId: String(args.eventId),
+      ticketTypeId: String(args.ticketTypeId),
       from: "0x0000000000000000000000000000000000000000",
       to: args.buyer,
       price: String(args.price)
