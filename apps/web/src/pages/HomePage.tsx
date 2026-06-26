@@ -84,7 +84,7 @@ const HomePage = () => {
       {isError && (
         <div className="mx-4 mt-4 border border-yellow-500/20 bg-yellow-500/10 px-4 py-3">
           <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-yellow-100/80">
-            event-service chua san sang, dang hien thi poster fallback.
+            event-service chưa sẵn sàng, đang hiển thị poster fallback.
           </p>
         </div>
       )}
@@ -109,9 +109,9 @@ const HomePage = () => {
 
           <EditorialSectionBlock
             label="[ HOT NOW ]"
-            title="Poster dang duoc mo nhieu nhat"
-            description="Cac event co nhiet browse cao va trust metadata ro rang."
-            actionLabel="Mo discover"
+            title="Poster đang được mở nhiều nhất"
+            description="Các event có nhiệt browse cao và trust metadata rõ ràng."
+            actionLabel="Mở discover"
             actionHref="/discover"
           >
             <div className="grid grid-cols-2 gap-3">
@@ -129,8 +129,8 @@ const HomePage = () => {
 
           <EditorialSectionBlock
             label="[ NEAR YOU ]"
-            title="Nhip su kien de quyet nhanh"
-            description="Gan voi cach nguoi dung browse theo khu vuc va nhung dem de di."
+            title="Nhịp sự kiện để quyết nhanh"
+            description="Gần với cách người dùng browse theo khu vực và những đêm dễ đi."
           >
             <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide">
               {sections.nearYou.map((event) => (
@@ -143,8 +143,8 @@ const HomePage = () => {
 
           <EditorialSectionBlock
             label="[ EDITOR PICKS ]"
-            title="Duoc sap dat de giu chat ticket platform"
-            description="Van image-led, nhung uu tien event co trust story dep va de ra quyet dinh."
+            title="Được sắp đặt để giữ chất ticket platform"
+            description="Vẫn image-led, nhưng ưu tiên event có trust story đẹp và dễ ra quyết định."
           >
             <div className="space-y-3">
               {sections.editorPicks.map((event) => (
@@ -155,8 +155,8 @@ const HomePage = () => {
 
           <EditorialSectionBlock
             label="[ BY MOOD ]"
-            title="Browse theo vibe thay vi chi theo category"
-            description="Giup Home co nhieu nhip hon ma van khong bi xa roi logic ban ve."
+            title="Browse theo vibe thay vì chỉ theo category"
+            description="Giúp Home có nhiều nhịp hơn mà vẫn không bị xa rời logic bán vé."
           >
             <div className="grid grid-cols-2 gap-3">
               {sections.byMood.map((event) => (

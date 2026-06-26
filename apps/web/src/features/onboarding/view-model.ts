@@ -43,27 +43,27 @@ export function buildOnboardingViewModel(state: OnboardingState): OnboardingView
     case "phone_entry":
       return {
         screen: "phone_entry",
-        eyebrow: "Flow 0",
-        title: "Dang nhap bang so dien thoai",
+        eyebrow: "Xin chào",
+        title: "Đăng nhập bằng số điện thoại",
         description:
-          "So dien thoai la diem khoi tao cho dang nhap, khoi phuc va chong tao tai khoan lap.",
-        stageLabel: "Buoc 1/5",
+          "Số điện thoại là điểm khởi tạo cho đăng nhập, khôi phục và chống tạo tài khoản lập.",
+        stageLabel: "Bước 1/5",
         progressValue: 18,
         trustBadges: ["Phone OTP", "Real session"],
         timeline: [],
         availableHelp: ["why-phone"],
         availableErrors: [],
-        primaryActionLabel: "Nhan ma OTP"
+        primaryActionLabel: "Nhận mã OTP"
       };
     case "otp_requested":
     case "otp_verifying":
       return {
         screen: "otp_verify",
         eyebrow: "Verify",
-        title: "Nhap ma OTP dev",
+        title: "Nhập mã OTP",
         description:
-          "Trong local dev, ma OTP duoc backend tra ve de team test luong xac minh ma khong can SMS vendor.",
-        stageLabel: "Buoc 2/5",
+          "Trong local dev, mã OTP được backend trả về để team test lượng xác minh mà không cần SMS vendor.",
+        stageLabel: "Bước 2/5",
         progressValue: 38,
         trustBadges: ["Dev OTP", "Phone verified"],
         timeline: [
@@ -80,17 +80,17 @@ export function buildOnboardingViewModel(state: OnboardingState): OnboardingView
         ],
         availableHelp: ["otp-help"],
         availableErrors: state.error?.code === "OTP_RATE_LIMITED" ? ["rate-limit"] : [],
-        primaryActionLabel: state.stage === "otp_verifying" ? "Dang xac minh" : "Xac minh OTP",
-        secondaryActionLabel: "Gui lai ma"
+        primaryActionLabel: state.stage === "otp_verifying" ? "Đang xác minh" : "Xác minh OTP",
+        secondaryActionLabel: "Gửi lại mã"
       };
     case "otp_verified":
       return {
         screen: "wallet_bootstrap",
-        eyebrow: "Secure Handoff",
-        title: "Mo app Entr de tao vi an toan",
+        eyebrow: "Handoff an toàn ",
+        title: "Mở app Entr để tạo ví an toàn",
         description:
-          "So dien thoai da xac minh. App se nhan handoff token dung mot lan, tu tao vi local va dang ky prefund ma khong dua private key qua Safari.",
-        stageLabel: "Buoc 3/5",
+          "Số điện thoại đã xác minh. App sẽ nhận handoff token dùng một lần, tự tạo ví local và đăng ký prefund mà không đưa private key qua Safari.",
+        stageLabel: "Bước 3/5",
         progressValue: 62,
         trustBadges: ["One-time token", "No private key in URL"],
         timeline: [
@@ -100,17 +100,17 @@ export function buildOnboardingViewModel(state: OnboardingState): OnboardingView
         ],
         availableHelp: ["what-is-wallet"],
         availableErrors: state.error ? ["bootstrap-failed"] : [],
-        primaryActionLabel: "Vao app"
+        primaryActionLabel: "Vào app"
       };
     case "wallet_generating":
     case "wallet_registering":
       return {
         screen: "wallet_bootstrap",
         eyebrow: "Invisible Wallet",
-        title: "Khoi tao vi cho giao dich dau tien",
+        title: "Khởi tạo ví cho giao dịch đầu tiên",
         description:
-          "Nguoi dung khong can tu cau hinh wallet. Ung dung tao vi local, dang ky backend va chuan bi cho giao dich ticket.",
-        stageLabel: "Buoc 3/5",
+          "Người dùng không cần tự cấu hình wallet. Ứng dụng tạo ví local, đăng ký backend và chuẩn bị cho giao dịch ticket.",
+        stageLabel: "Bước 3/5",
         progressValue: 62,
         trustBadges: ["Wallet hidden", "Backend registration"],
         timeline: [
@@ -127,17 +127,17 @@ export function buildOnboardingViewModel(state: OnboardingState): OnboardingView
         ],
         availableHelp: ["what-is-wallet"],
         availableErrors: state.error ? ["bootstrap-failed"] : [],
-        primaryActionLabel: "Tiep tuc khoi tao"
+        primaryActionLabel: "Tiếp tục khởi tạo"
       };
     case "prefund_pending":
     case "prefund_confirmed":
       return {
         screen: "prefund_pending",
         eyebrow: "Bootstrap Gas",
-        title: "Dang cap gas khoi tao",
+        title: "Đang cấp gas khởi tạo",
         description:
-          "He thong xu ly prefund mot lan tren localchain de giao dich ticket dau tien co the chay tru tru.",
-        stageLabel: "Buoc 4/5",
+          "Hệ thống xử lý prefund một lần trên localchain để giao dịch ticket đầu tiên có thể chạy trơn tru.",
+        stageLabel: "Bước 4/5",
         progressValue: state.prefund?.funded ? 88 : 80,
         trustBadges: ["One-time prefund", "Localchain confirmation"],
         timeline: [
@@ -154,17 +154,17 @@ export function buildOnboardingViewModel(state: OnboardingState): OnboardingView
         ],
         availableHelp: ["why-initial-gas"],
         availableErrors: state.error ? ["prefund-retry"] : [],
-        primaryActionLabel: state.prefund?.funded ? "Hoan tat prefund" : "Dang cho xac nhan",
-        secondaryActionLabel: state.error ? "Mo retry" : undefined
+        primaryActionLabel: state.prefund?.funded ? "Hoàn tất prefund" : "Đang chờ xác nhận",
+        secondaryActionLabel: state.error ? "Mở retry" : undefined
       };
     case "ready":
       return {
         screen: "ready",
         eyebrow: "Wallet Ready",
-        title: "Tai khoan da san sang cho giao dich dau tien",
+        title: "Tài khoản đã sẵn sàng cho giao dịch đầu tiên",
         description:
-          "Session, wallet va gas khoi tao da co. Nguoi dung co the vao app ma khong can thao tac crypto thu cong.",
-        stageLabel: "Buoc 5/5",
+          "Session, wallet và gas khởi tạo đã có. Người dùng có thể vào app mà không cần thao tác crypto thủ công.",
+        stageLabel: "Bước 5/5",
         progressValue: 100,
         trustBadges: ["Session active", "Wallet funded", "Ready to explore"],
         timeline: [
@@ -174,21 +174,21 @@ export function buildOnboardingViewModel(state: OnboardingState): OnboardingView
         ],
         availableHelp: [],
         availableErrors: [],
-        primaryActionLabel: "Vao app"
+        primaryActionLabel: "Vào app"
       };
     default:
       return {
         screen: "phone_entry",
         eyebrow: "Flow 0",
-        title: "Dang nhap bang so dien thoai",
-        description: "Bat dau lai onboarding.",
-        stageLabel: "Buoc 1/5",
+        title: "Đăng nhập bằng số điện thoại",
+        description: "Bắt đầu lại onboarding.",
+        stageLabel: "Bước 1/5",
         progressValue: 18,
         trustBadges: ["Phone OTP"],
         timeline: [],
         availableHelp: ["why-phone"],
         availableErrors: [],
-        primaryActionLabel: "Nhan ma OTP"
+        primaryActionLabel: "Nhận mã OTP"
       };
   }
 }

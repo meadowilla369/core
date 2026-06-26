@@ -30,7 +30,7 @@ const PrefundPendingScreen = ({
       progressValue={view.progressValue}
       trustBadges={view.trustBadges}
       timeline={view.timeline}
-      helpActionLabel="Vi sao can gas"
+      helpActionLabel="Vì sao cần gas"
       onHelpAction={onExplainGas}
     >
       <div className="space-y-4">
@@ -40,9 +40,9 @@ const PrefundPendingScreen = ({
               <ShieldEllipsis className="h-5 w-5 text-sky-200" />
             </div>
             <div className="space-y-1">
-              <p className="text-base font-medium text-white">Trang thai localchain</p>
+              <p className="text-base font-medium text-white">Trạng thái localchain</p>
               <p className="text-sm leading-6 text-white/62">
-                {statusLabel ?? "Dang doi backend xac nhan giao dich prefund mot lan."}
+                {statusLabel ?? "Đang đợi backend xác nhận giao dịch prefund một lần."}
               </p>
             </div>
           </div>
@@ -52,7 +52,7 @@ const PrefundPendingScreen = ({
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-amber-100/70">
             Wallet cho prefund
           </p>
-          <p className="mt-2 break-all text-sm text-white">{walletAddress ?? "Dang dong bo..."}</p>
+          <p className="mt-2 break-all text-sm text-white">{walletAddress ?? "Đang đồng bộ..."}</p>
         </div>
 
         {errorMessage && (
@@ -77,7 +77,7 @@ const PrefundPendingScreen = ({
             className="h-11 flex-1 rounded-full bg-white text-black hover:bg-white/85"
           >
             <ArrowUpRight className="h-4 w-4" />
-            Giai thich gas
+            Giải thích gas
           </Button>
         </div>
       </div>

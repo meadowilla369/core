@@ -27,15 +27,15 @@ const BootstrapFailedModal = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="border-white/10 bg-[#08121b] text-white sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Wallet bootstrap gap loi</DialogTitle>
+          <DialogTitle>Wallet bootstrap gặp lỗi</DialogTitle>
           <DialogDescription className="text-white/60">
-            Phone verification da xong, nhung qua trinh tao hoac dang ky wallet chua hoan tat.
+            Phone verification đã xong, nhưng quá trình tạo hoặc đăng ký wallet chưa hoàn tất.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 text-sm text-white/72">
           <div className="flex gap-3 border border-rose-400/20 bg-rose-400/10 p-3">
             <AlertTriangle className="mt-0.5 h-4 w-4 text-rose-300" />
-            {errorMessage ?? "Khong the hoan tat wallet bootstrap. Can thu lai."}
+            {errorMessage ?? "Không thể hoàn tất wallet bootstrap. Cần thử lại."}
           </div>
         </div>
         <DialogFooter>
@@ -45,7 +45,7 @@ const BootstrapFailedModal = ({
             onClick={() => onOpenChange(false)}
             className="rounded-full border-white/12 bg-white/[0.04] text-white hover:bg-white/[0.08]"
           >
-            Dong
+            Đóng
           </Button>
           <Button
             type="button"
@@ -53,7 +53,7 @@ const BootstrapFailedModal = ({
             className="rounded-full bg-white text-black hover:bg-white/85"
           >
             <RefreshCcw className="h-4 w-4" />
-            Thu lai
+            Thử lại
           </Button>
         </DialogFooter>
       </DialogContent>

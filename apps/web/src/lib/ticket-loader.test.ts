@@ -58,7 +58,7 @@ test("loadMyTicketCards returns synced tickets when ticketing DB and event looku
       tokenId: "42",
       eventId: "evt_rockfest_2026",
       eventName: "evt_rockfest_2026",
-      date: "Dang cap nhat",
+      date: "Đang cập nhật",
       time: "--:--",
       location: "Primary purchase",
       ticketType: "tt_vip",

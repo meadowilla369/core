@@ -47,18 +47,18 @@ const TicketDetailPage = () => {
             className="flex min-h-[44px] items-center gap-2 text-sm text-foreground/70"
           >
             <ArrowLeft className="h-4 w-4" />
-            Ve Cua Toi
+            Vé Của Tôi
           </Link>
         </header>
         <section className="p-4 py-16 text-center">
           <p className="font-mono text-sm text-foreground/50">
-            {isError ? "Khong tai duoc du lieu ve" : "Khong tim thay ve nay"}
+            {isError ? "Không tải được dữ liệu vé" : "Không tìm thấy vé này"}
           </p>
           <Link
             to="/tickets"
             className="mt-4 inline-flex min-h-[44px] items-center border border-foreground px-5 font-mono text-xs uppercase"
           >
-            Quay lai danh sach
+            Quay lại danh sách
           </Link>
         </section>
       </MobileLayout>

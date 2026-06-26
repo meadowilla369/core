@@ -75,7 +75,7 @@ function toTicketOwnershipView(
   const card = toTicketCardView(ticket, event);
   return {
     ...card,
-    date: event ? card.date : "Dang cap nhat",
+    date: event ? card.date : "Đang cập nhật",
     id: ticket.tokenId,
     tokenId: ticket.tokenId,
     eventId: ticket.eventId,

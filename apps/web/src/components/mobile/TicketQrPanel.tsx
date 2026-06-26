@@ -20,7 +20,7 @@ const TicketQrPanel = ({
 }: TicketQrPanelProps) => {
   const isLocal = source === "local";
   const label =
-    source === "backend" ? "Backend QR" : source === "local" ? "Local QR" : "QR chua san sang";
+    source === "backend" ? "Backend QR" : source === "local" ? "Local QR" : "QR chưa sẵn sàng";
 
   return (
     <section className="px-4 py-5">
@@ -39,7 +39,7 @@ const TicketQrPanel = ({
             onClick={onRefresh}
             className="flex min-h-[44px] min-w-[44px] items-center justify-center border border-foreground/20 transition-colors hover:bg-foreground/10 disabled:opacity-50"
             disabled={isLoading || isFetching}
-            aria-label="Lam moi QR"
+            aria-label="Làm mới QR"
           >
             <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
           </button>
@@ -49,13 +49,13 @@ const TicketQrPanel = ({
           {value ? (
             <QRCode value={value} size={240} bgColor="#ffffff" fgColor="#000000" />
           ) : (
-            <span className="font-mono text-xs text-black/50">Dang tao QR</span>
+            <span className="font-mono text-xs text-black/50">Đang tạo QR</span>
           )}
         </div>
 
         <div className="mt-3 flex items-center justify-between gap-3 font-mono text-[10px] text-foreground/50">
-          <span>{isLocal ? "Dung tam khi backend QR loi" : "QR ngan han"}</span>
-          <span>{secondsRemaining > 0 ? `Lam moi sau ${secondsRemaining}s` : "Dang lam moi"}</span>
+          <span>{isLocal ? "Dùng tạm khi backend QR lỗi" : "QR ngắn hạn"}</span>
+          <span>{secondsRemaining > 0 ? `Làm mới sau ${secondsRemaining}s` : "Đang làm mới"}</span>
         </div>
       </div>
     </section>

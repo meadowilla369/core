@@ -168,8 +168,8 @@ export function useOnboardingController() {
       setDevOtpCode(result.data.otpCode ?? null);
       setCountdownSeconds(result.data.retryAfter ?? 0);
       toast({
-        title: "OTP request da tao",
-        description: "Ban co the dung ma dev tu backend de xac minh."
+        title: "OTP request đã tạo",
+        description: "Bạn có thể dùng mã dev từ backend để xác minh."
       });
     },
     onError: (error) => {
@@ -179,7 +179,7 @@ export function useOnboardingController() {
           payload: normalizeOnboardingError(
             error,
             "OTP_REQUEST_FAILED",
-            "Khong the ket noi backend OTP"
+            "Không thể kết nối backend OTP"
           )
         })
       );
@@ -267,8 +267,8 @@ export function useOnboardingController() {
     },
     onSuccess: () => {
       toast({
-        title: "Onboarding san sang",
-        description: "Wallet da duoc bootstrap va prefund hoan tat."
+        title: "Onboarding sẵn sàng",
+        description: "Wallet đã được bootstrap và prefund hoàn tất."
       });
     },
     onError: (error) => {
@@ -279,8 +279,8 @@ export function useOnboardingController() {
             : "OTP_EXPIRED";
         const fallbackMessage =
           fallbackCode === "BOOTSTRAP_FAILED"
-            ? "Wallet bootstrap that bai"
-            : "OTP khong hop le hoac da het han";
+            ? "Wallet bootstrap thất bại"
+            : "OTP không hợp lệ hoặc đã hết hạn";
         return reduceOnboardingState(current, {
           type: "FAILED",
           payload: normalizeOnboardingError(error, fallbackCode, fallbackMessage)
@@ -292,7 +292,7 @@ export function useOnboardingController() {
   const retryMutation = useMutation({
     mutationFn: async () => {
       if (!state.auth || !state.wallet) {
-        throw new Error("Khong co bootstrap state de tiep tuc");
+        throw new Error("Không có bootstrap state để tiếp tục");
       }
 
       await continueWalletBootstrap(state.auth, state.wallet);

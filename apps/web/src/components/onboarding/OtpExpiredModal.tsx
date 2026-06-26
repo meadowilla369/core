@@ -21,14 +21,14 @@ const OtpExpiredModal = ({ open, onOpenChange, onResend }: OtpExpiredModalProps)
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="border-white/10 bg-[#08121b] text-white sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>OTP da het han</DialogTitle>
+          <DialogTitle>OTP đã hết hạn</DialogTitle>
           <DialogDescription className="text-white/60">
-            Ma xac minh nay khong con hop le. Hay yeu cau backend cap request moi.
+            Mã xác minh này không còn hợp lệ. Hãy yêu cầu backend cấp request mới.
           </DialogDescription>
         </DialogHeader>
         <div className="flex gap-3 border border-amber-300/18 bg-amber-300/10 p-3 text-sm text-white/72">
           <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-300" />
-          Day la tinh huong binh thuong khi request OTP het thoi gian song.
+          Đây là tình huống bình thường khi request OTP hết thời gian sống.
         </div>
         <DialogFooter>
           <Button
@@ -37,14 +37,14 @@ const OtpExpiredModal = ({ open, onOpenChange, onResend }: OtpExpiredModalProps)
             onClick={() => onOpenChange(false)}
             className="rounded-full border-white/12 bg-white/[0.04] text-white hover:bg-white/[0.08]"
           >
-            Dong
+            Đóng
           </Button>
           <Button
             type="button"
             onClick={onResend}
             className="rounded-full bg-white text-black hover:bg-white/85"
           >
-            Gui lai OTP
+            Gửi lại OTP
           </Button>
         </DialogFooter>
       </DialogContent>

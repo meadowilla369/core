@@ -28,7 +28,7 @@ const WalletBootstrapScreen = ({
       progressValue={view.progressValue}
       trustBadges={view.trustBadges}
       timeline={view.timeline}
-      helpActionLabel="Wallet la gi"
+      helpActionLabel="Wallet là gì"
       onHelpAction={onExplainWallet}
     >
       <div className="space-y-4">
@@ -38,10 +38,10 @@ const WalletBootstrapScreen = ({
               <KeyRound className="h-5 w-5 text-amber-200" />
             </div>
             <div>
-              <p className="text-base font-medium text-white">Wallet duoc tao tu dong</p>
+              <p className="text-base font-medium text-white">Wallet được tạo tự động</p>
               <p className="mt-1 text-sm leading-6 text-white/62">
-                He thong tao local EOA, dang ky voi backend va chuan bi cho giao dich ticket ma
-                khong bat nguoi dung cau hinh thu cong.
+                Hệ thống tạo local EOA, đăng ký với backend và chuẩn bị cho giao dịch ticket mà
+                không bắt người dùng cấu hình thủ công.
               </p>
             </div>
           </div>
@@ -52,13 +52,13 @@ const WalletBootstrapScreen = ({
             Wallet draft
           </p>
           <p className="mt-2 break-all text-sm text-white">
-            {walletAddress ?? "Private key se duoc tao ben trong app Entr sau handoff."}
+            {walletAddress ?? "Private key sẽ được tạo bên trong app Entr sau handoff."}
           </p>
         </div>
 
         <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white/68">
           <ShieldCheck className="h-4 w-4 text-emerald-300" />
-          Wallet nay dung cho ticket ownership va cac thao tac on-chain sau nay.
+          Wallet này dùng cho ticket ownership và các thao tác on-chain sau này.
         </div>
 
         <Button
@@ -67,7 +67,7 @@ const WalletBootstrapScreen = ({
           onClick={onContinue}
           className="h-11 w-full rounded-full bg-white text-black hover:bg-white/85"
         >
-          {isWorking ? "Dang bootstrap wallet..." : view.primaryActionLabel}
+          {isWorking ? "Đang bootstrap wallet..." : view.primaryActionLabel}
         </Button>
       </div>
     </OnboardingShell>

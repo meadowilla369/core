@@ -20,23 +20,23 @@ const WhyInitialGasModal = ({ open, onOpenChange }: WhyInitialGasModalProps) => 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="border-white/10 bg-[#08121b] text-white sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Vi sao can gas khoi tao?</DialogTitle>
+          <DialogTitle>Vì sao cần gas khởi tạo?</DialogTitle>
           <DialogDescription className="text-white/60">
-            Prefund mot lan giup wallet moi co the chay giao dich ticket dau tien tren localchain.
+            Prefund một lần giúp wallet mới có thể chạy giao dịch ticket đầu tiên trên localchain.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 text-sm text-white/72">
           <div className="flex gap-3 border border-white/10 bg-white/[0.03] p-3">
             <Gauge className="mt-0.5 h-4 w-4 text-amber-300" />
-            Blockchain can native gas cho transaction dau tien.
+            Blockchain cần native gas cho transaction đầu tiên.
           </div>
           <div className="flex gap-3 border border-white/10 bg-white/[0.03] p-3">
             <ArrowUpCircle className="mt-0.5 h-4 w-4 text-sky-300" />
-            Backend xu ly prefund thay vi frontend tu gui transaction.
+            Backend xử lý prefund thay vì frontend tự gửi transaction.
           </div>
           <div className="flex gap-3 border border-white/10 bg-white/[0.03] p-3">
             <ShieldCheck className="mt-0.5 h-4 w-4 text-emerald-300" />
-            Chi cap bootstrap mot lan de tranh abuse va giu flow co kiem soat.
+            Chỉ cấp bootstrap một lần để tránh abuse và giữ flow có kiểm soát.
           </div>
         </div>
         <DialogFooter>
@@ -45,7 +45,7 @@ const WhyInitialGasModal = ({ open, onOpenChange }: WhyInitialGasModalProps) => 
             onClick={() => onOpenChange(false)}
             className="rounded-full bg-white text-black hover:bg-white/85"
           >
-            Da hieu
+            Đã hiểu
           </Button>
         </DialogFooter>
       </DialogContent>

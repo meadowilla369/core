@@ -44,12 +44,12 @@ export function signSessionAuthorization(input: {
 }): Promise<SignedAuthorization> {
   const { walletAddress, privateKey } = getSessionWallet();
   if (!privateKey) {
-    throw new Error("Session wallet khong co private key. Hay chay lai onboarding de tao signer hop le.");
+    throw new Error("Session wallet không có private key. Hãy chạy lại onboarding để tạo signer hợp lệ.");
   }
 
   const account = privateKeyToAccount(privateKey as `0x${string}`);
   if (account.address.toLowerCase() !== walletAddress.toLowerCase()) {
-    throw new Error("Session wallet private key khong khop voi wallet address hien tai");
+    throw new Error("Session wallet private key không khớp với wallet address hiện tại");
   }
 
   const chain = defineChain({
@@ -86,12 +86,12 @@ export function getSignedSessionTransactionInput(tx: Tx4Request): {
 } {
   const { walletAddress, privateKey } = getSessionWallet();
   if (!privateKey) {
-    throw new Error("Session wallet khong co private key. Hay chay lai onboarding de broadcast purchase.");
+    throw new Error("Session wallet không có private key. Hãy chạy lại onboarding để broadcast purchase.");
   }
 
   const account = privateKeyToAccount(privateKey as `0x${string}`);
   if (account.address.toLowerCase() !== walletAddress.toLowerCase()) {
-    throw new Error("Session wallet private key khong khop voi wallet address hien tai");
+    throw new Error("Session wallet private key không khớp với wallet address hiện tại");
   }
 
   return {

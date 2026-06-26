@@ -117,7 +117,7 @@ const TicketsPage = () => {
               onClick={() => void refetch()}
               disabled={isFetching}
               className="flex min-h-[44px] min-w-[44px] items-center justify-center border border-foreground/20 transition-colors hover:bg-foreground/10 disabled:opacity-50"
-              aria-label="Lam moi danh sach ve"
+              aria-label="Làm mới danh sách vé"
             >
               <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
             </button>

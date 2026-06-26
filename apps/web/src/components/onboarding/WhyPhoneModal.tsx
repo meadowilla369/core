@@ -20,23 +20,23 @@ const WhyPhoneModal = ({ open, onOpenChange }: WhyPhoneModalProps) => {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="border-white/10 bg-[#08121b] text-white sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Vi sao can so dien thoai?</DialogTitle>
+          <DialogTitle>Vì sao cần số điện thoại?</DialogTitle>
           <DialogDescription className="text-white/60">
-            So dien thoai la anchor dau tien cho login, recovery va chong abuse trong Flow 0.
+            Số điện thoại là anchor đầu tiên cho login, recovery và chống abuse trong Flow 0.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 text-sm text-white/72">
           <div className="flex gap-3 border border-white/10 bg-white/[0.03] p-3">
             <Smartphone className="mt-0.5 h-4 w-4 text-emerald-300" />
-            Dang nhap nhanh bang OTP ma khong can password throwaway.
+            Đăng nhập nhanh bằng OTP mà không cần password throwaway.
           </div>
           <div className="flex gap-3 border border-white/10 bg-white/[0.03] p-3">
             <Fingerprint className="mt-0.5 h-4 w-4 text-amber-300" />
-            Giu lai recovery anchor truoc khi co wallet recovery day du.
+            Giữ lại recovery anchor trước khi có wallet recovery đầy đủ.
           </div>
           <div className="flex gap-3 border border-white/10 bg-white/[0.03] p-3">
             <ShieldCheck className="mt-0.5 h-4 w-4 text-sky-300" />
-            Giam duplicate registration va han che abuse trong local demo.
+            Giảm duplicate registration và hạn chế abuse trong local demo.
           </div>
         </div>
         <DialogFooter>
@@ -45,7 +45,7 @@ const WhyPhoneModal = ({ open, onOpenChange }: WhyPhoneModalProps) => {
             onClick={() => onOpenChange(false)}
             className="rounded-full bg-white text-black hover:bg-white/85"
           >
-            Da hieu
+            Đã hiểu
           </Button>
         </DialogFooter>
       </DialogContent>

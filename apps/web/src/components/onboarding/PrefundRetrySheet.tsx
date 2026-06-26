@@ -29,16 +29,16 @@ const PrefundRetrySheet = ({
         <DrawerHeader className="text-left">
           <DrawerTitle>Retry prefund</DrawerTitle>
           <DrawerDescription className="text-white/60">
-            Dung surface nay khi localchain cham, rpc loi hoac backend can goi lai prefund job.
+            Dùng surface này khi localchain chậm, RPC lỗi hoặc backend cần gọi lại prefund job.
           </DrawerDescription>
         </DrawerHeader>
         <div className="px-4 pb-2 text-sm text-white/72">
           <div className="border border-white/10 bg-white/[0.03] p-3">
-            {statusMessage ?? "Chua nhan duoc prefund confirmation. Ban co the goi lai retry."}
+            {statusMessage ?? "Chưa nhận được prefund confirmation. Bạn có thể gọi lại retry."}
           </div>
           <div className="mt-3 flex gap-3 border border-emerald-400/16 bg-emerald-400/8 p-3">
             <ShieldCheck className="mt-0.5 h-4 w-4 text-emerald-300" />
-            Retry van giu logic one-time prefund o backend, frontend khong gui giao dich truc tiep.
+            Retry vẫn giữ logic one-time prefund ở backend, frontend không gửi giao dịch trực tiếp.
           </div>
         </div>
         <DrawerFooter>
@@ -56,7 +56,7 @@ const PrefundRetrySheet = ({
             onClick={() => onOpenChange(false)}
             className="rounded-full border-white/12 bg-white/[0.04] text-white hover:bg-white/[0.08]"
           >
-            Dong
+            Đóng
           </Button>
         </DrawerFooter>
       </DrawerContent>

@@ -63,7 +63,7 @@ const OtpVerifyScreen = ({
 
         <div className="space-y-3">
           <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-white/52">
-            Nhap 6 chu so
+            Nhập 6 chữ số
           </p>
           <InputOTP
             maxLength={6}
@@ -87,7 +87,7 @@ const OtpVerifyScreen = ({
         <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white/68">
           <div className="flex items-center gap-2">
             <TimerReset className="h-4 w-4 text-amber-300" />
-            <span>Con lai {countdownSeconds}s truoc khi resend</span>
+            <span>Còn lại {countdownSeconds}s trước khi resend</span>
           </div>
           <Button
             type="button"
@@ -96,7 +96,7 @@ const OtpVerifyScreen = ({
             onClick={onResend}
             className="rounded-full px-3 text-[11px] uppercase tracking-[0.16em] text-white/78 hover:bg-white/8 hover:text-white"
           >
-            Gui lai
+            Gửi lại
           </Button>
         </div>
 
@@ -114,14 +114,14 @@ const OtpVerifyScreen = ({
             className="rounded-full px-0 text-sm text-white/58 hover:bg-transparent hover:text-white"
           >
             <LifeBuoy className="h-4 w-4" />
-            OTP den tu dau?
+            OTP đến từ đâu?
           </Button>
           <Button
             type="submit"
             disabled={isSubmitting || otp.length !== 6}
             className="h-11 rounded-full bg-white px-6 text-black hover:bg-white/85"
           >
-            {isSubmitting ? "Dang xac minh..." : view.primaryActionLabel}
+            {isSubmitting ? "Đang xác minh..." : view.primaryActionLabel}
           </Button>
         </div>
       </form>

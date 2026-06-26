@@ -20,23 +20,23 @@ const OtpHelpModal = ({ open, onOpenChange }: OtpHelpModalProps) => {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="border-white/10 bg-[#08121b] text-white sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>OTP trong local dev den tu dau?</DialogTitle>
+          <DialogTitle>OTP trong local dev đến từ đâu?</DialogTitle>
           <DialogDescription className="text-white/60">
-            OTP duoc backend tra ve trong response dev de test full auth flow ma khong can SMS.
+            OTP được backend trả về trong response dev để test full auth flow mà không cần SMS.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 text-sm text-white/72">
           <div className="flex gap-3 border border-white/10 bg-white/[0.03] p-3">
             <TestTube2 className="mt-0.5 h-4 w-4 text-amber-300" />
-            Day la che do dev, khong phai luong production.
+            Đây là chế độ dev, không phải luồng production.
           </div>
           <div className="flex gap-3 border border-white/10 bg-white/[0.03] p-3">
             <MessageSquareText className="mt-0.5 h-4 w-4 text-sky-300" />
-            Neu backend co tra ve `otpCode`, hay dung ma do de verify.
+            Nếu backend có trả về `otpCode`, hãy dùng mã đó để verify.
           </div>
           <div className="flex gap-3 border border-white/10 bg-white/[0.03] p-3">
             <ShieldCheck className="mt-0.5 h-4 w-4 text-emerald-300" />
-            Muc tieu la test contract auth thuc te, khong fake bo qua verification.
+            Mục tiêu là test contract auth thực tế, không fake bỏ qua verification.
           </div>
         </div>
         <DialogFooter>
@@ -45,7 +45,7 @@ const OtpHelpModal = ({ open, onOpenChange }: OtpHelpModalProps) => {
             onClick={() => onOpenChange(false)}
             className="rounded-full bg-white text-black hover:bg-white/85"
           >
-            Dong
+            Đóng
           </Button>
         </DialogFooter>
       </DialogContent>

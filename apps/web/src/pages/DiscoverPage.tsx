@@ -58,7 +58,7 @@ const DiscoverPage = () => {
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground/38" />
               <input
                 type="text"
-                placeholder="Tim event, nghe si, dia diem..."
+                placeholder="Tìm event, nghệ sĩ, địa điểm..."
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 className="h-12 w-full border border-white/10 bg-white/[0.03] pl-10 pr-10 font-mono text-sm text-foreground outline-none transition-colors placeholder:text-foreground/28 focus:border-white/20"
@@ -132,7 +132,7 @@ const DiscoverPage = () => {
       {isError && (
         <div className="mx-4 mt-4 border border-yellow-500/20 bg-yellow-500/10 px-4 py-3">
           <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-yellow-100/80">
-            discover dang dung fallback data nhung van giu poster feed day du.
+            discover đang dùng fallback data nhưng vẫn giữ poster feed đầy đủ.
           </p>
         </div>
       )}
@@ -140,7 +140,7 @@ const DiscoverPage = () => {
       <div className="border-b border-white/10 px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-foreground/45">
-            {filteredEvents.length} ket qua
+            {filteredEvents.length} kết quả
           </span>
           <div className="flex flex-wrap justify-end gap-2">
             {verifiedOnly && (
@@ -150,7 +150,7 @@ const DiscoverPage = () => {
             )}
             {budgetOnly && (
               <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-foreground/60">
-                Duoi 1M
+                Dưới 1M
               </span>
             )}
           </div>
@@ -170,8 +170,8 @@ const DiscoverPage = () => {
           {featuredEvent && (
             <EditorialSectionBlock
               label="[ DISCOVER ]"
-              title="Poster mosaic, nhung van giu trust layer ro rang"
-              description="Feed duoc sap xep de nhin nhu mot mat bang kham pha event thuc su."
+              title="Poster mosaic, nhưng vẫn giữ trust layer rõ ràng"
+              description="Feed được sắp xếp để nhìn như một mặt bằng khám phá event thực sự."
             >
               <div className="grid grid-cols-2 gap-3">
                 <EventPosterCard
@@ -199,10 +199,10 @@ const DiscoverPage = () => {
               Empty discover
             </p>
             <h2 className="mt-3 text-2xl font-semibold tracking-tight">
-              Khong co event nao khop bo loc hien tai
+              Không có event nào khớp bộ lọc hiện tại
             </h2>
             <p className="mx-auto mt-3 max-w-[20rem] text-sm text-foreground/58">
-              Thu bo verified-only, doi mood, hoac xoa query de quay lai feed chinh.
+              Thử bỏ verified-only, đổi mood, hoặc xóa query để quay lại feed chính.
             </p>
             <button
               type="button"
@@ -215,7 +215,7 @@ const DiscoverPage = () => {
               }}
               className="mt-5 inline-flex border border-white/10 bg-white px-4 py-3 font-mono text-[10px] uppercase tracking-[0.18em] text-black transition-colors hover:bg-white/88"
             >
-              Xoa bo loc
+              Xóa bộ lọc
             </button>
           </div>
         </section>

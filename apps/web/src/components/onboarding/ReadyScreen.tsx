@@ -29,9 +29,9 @@ const ReadyScreen = ({ view, userId, walletAddress, onContinue }: ReadyScreenPro
               <WalletCards className="h-5 w-5 text-emerald-200" />
             </div>
             <div>
-              <p className="text-base font-medium text-white">Session va wallet da san sang</p>
+              <p className="text-base font-medium text-white">Session và wallet đã sẵn sàng</p>
               <p className="mt-1 text-sm leading-6 text-white/62">
-                Day la diem ban co the di vao Home, Discover va transaction flow.
+                Đây là điểm bạn có thể đi vào Home, Discover và transaction flow.
               </p>
             </div>
           </div>
