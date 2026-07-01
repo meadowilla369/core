@@ -237,6 +237,39 @@ However, the verifier must persist enough data to reject:
 
 Existing `check_ins` uniqueness constraints already support this pattern.
 
+### `mark_as_used_jobs` Ownership
+
+The asynchronous on-chain reconciliation job should be persisted in a database
+table owned by `checkin-service`.
+
+This table belongs to `checkin-service` because:
+
+- the job is created only after `checkin-service` accepts a scan
+- the service owns retry policy and failure handling for admission follow-up
+- the service is the boundary that translates accepted off-chain admission into
+  asynchronous on-chain used-state reconciliation
+
+The MVP should introduce a persisted `mark_as_used_jobs` table rather than
+keeping this queue only in memory.
+
+Recommended fields:
+
+- `id`
+- `check_in_id`
+- `token_id`
+- `event_id`
+- `status`
+- `attempt_count`
+- `next_attempt_at`
+- `last_error`
+- `tx_hash`
+- `created_at`
+- `updated_at`
+- `completed_at`
+
+Other services should treat this data as owned by `checkin-service` and must use
+`checkin-service` APIs if they need job status or operational visibility.
+
 ### Nonce Requirements
 
 The nonce must be:
