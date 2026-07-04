@@ -11,6 +11,7 @@ test("resolveQrTicket uses synced token ownership as QR source", () => {
     syncedToken: {
       tokenId: "2",
       eventId: "1",
+      onchainEventId: "44",
       ownerWalletAddress: "0xC7B33C679277fb538205e13e832c1Fa354c7F462",
       ownerUserId: null,
       isRefunded: false
@@ -19,7 +20,7 @@ test("resolveQrTicket uses synced token ownership as QR source", () => {
 
   assert.deepEqual(result, {
     tokenId: "2",
-    eventId: "1",
+    onchainEventId: "44",
     walletAddress: "0xC7B33C679277fb538205e13e832c1Fa354c7F462"
   });
 });
@@ -47,6 +48,7 @@ test("resolveQrTicket rejects wallet mismatches", () => {
     syncedToken: {
       tokenId: "2",
       eventId: "1",
+      onchainEventId: "44",
       ownerWalletAddress: "0xC7B33C679277fb538205e13e832c1Fa354c7F462",
       ownerUserId: null,
       isRefunded: false

@@ -1,4 +1,8 @@
-import type { SignedAuthorization, Tx4Request } from "@ticket-platform/sdk-client";
+import type {
+  CheckInChallengePayload,
+  SignedAuthorization,
+  Tx4Request
+} from "@ticket-platform/sdk-client";
 import { createWalletClient, defineChain, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
@@ -77,6 +81,25 @@ export function signSessionAuthorization(input: {
     contractAddress: input.authorization.address,
     chainId: Number(input.authorization.chainId),
     executor: "self"
+  });
+}
+
+export function signSessionTypedData(input: CheckInChallengePayload): Promise<`0x${string}`> {
+  const { walletAddress, privateKey } = getSessionWallet();
+  if (!privateKey) {
+    throw new Error("Session wallet không có private key. Hãy chạy lại onboarding để tạo signer hợp lệ.");
+  }
+
+  const account = privateKeyToAccount(privateKey as `0x${string}`);
+  if (account.address.toLowerCase() !== walletAddress.toLowerCase()) {
+    throw new Error("Session wallet private key không khớp với wallet address hiện tại");
+  }
+
+  return account.signTypedData({
+    domain: input.domain,
+    types: input.types,
+    primaryType: input.primaryType,
+    message: input.message as unknown as Record<string, unknown>
   });
 }
 

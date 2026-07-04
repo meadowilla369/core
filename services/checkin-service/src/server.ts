@@ -1,39 +1,24 @@
-import { createHmac, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 
 import { createPostgresPool, queryOne, queryMany } from "@ticket-platform/local-infra";
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 
+import { verifySignedCheckInPayload, type SignedCheckInPayload } from "./checkin-typed-data.js";
 import type { CheckinConfig } from "./config.js";
+import { normalizeOnchainEventId } from "./event-id-resolution.js";
 import { log } from "./logger.js";
-
-interface QrPayload {
-  tokenId?: string;
-  eventId?: string;
-  timestamp?: number;
-  nonce?: string;
-  walletAddress?: string;
-  signature?: string;
-}
+import {
+  formatMarkAsUsedJobRow,
+  isRecoverableMarkAsUsedJob,
+  type MarkAsUsedJobRow,
+  type MarkAsUsedJobStatus
+} from "./mark-as-used-jobs.js";
 
 interface VerifyRequestBody {
-  qrData?: QrPayload;
+  qrData?: Partial<SignedCheckInPayload>;
   gateId?: string;
-}
-
-type MarkAsUsedJobStatus = "pending" | "retrying" | "processed" | "failed";
-
-interface MarkAsUsedJob {
-  id: string;
-  tokenId: string;
-  eventId: string;
-  requestedAt: string;
-  status: MarkAsUsedJobStatus;
-  attempt: number;
-  nextAttemptAtMs: number;
-  lastError?: string;
-  completedAt?: string;
 }
 
 // TicketLedger uses markUsedBatch(uint256[]) with CHECKIN_ROLE
@@ -62,27 +47,6 @@ async function readJson<T>(req: IncomingMessage): Promise<T> {
 
 function toIso(ms: number): string {
   return new Date(ms).toISOString();
-}
-
-function normalizeTimestampMs(value: number): number {
-  if (value > 1_000_000_000_000) {
-    return Math.floor(value);
-  }
-
-  return Math.floor(value * 1000);
-}
-
-function computeSignature(
-  config: CheckinConfig,
-  qrData: Required<Omit<QrPayload, "signature">>
-): string {
-  const payload = `${qrData.tokenId}.${qrData.eventId}.${qrData.timestamp}.${qrData.nonce}.${qrData.walletAddress}`;
-  return createHmac("sha256", config.qrSignatureSecret).update(payload, "utf8").digest("hex");
-}
-
-function normalizeSignature(signature: string): string {
-  const normalized = signature.trim().toLowerCase();
-  return normalized.startsWith("0x") ? normalized.slice(2) : normalized;
 }
 
 function computeRetryDelayMs(attempt: number): number {
@@ -144,33 +108,41 @@ async function ensureSchema(pool: Pool): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_scan_rejections_gate
     ON scan_rejections(gate_id, rejected_at DESC);
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS mark_as_used_jobs (
+      id TEXT PRIMARY KEY,
+      check_in_id TEXT NOT NULL REFERENCES check_ins(id) ON DELETE CASCADE,
+      token_id TEXT NOT NULL,
+      event_id TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('pending', 'retrying', 'processed', 'failed')),
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at TIMESTAMPTZ NOT NULL,
+      last_error TEXT,
+      tx_hash TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      completed_at TIMESTAMPTZ
+    );
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_mark_as_used_jobs_status_next_attempt
+    ON mark_as_used_jobs(status, next_attempt_at ASC);
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_mark_as_used_jobs_check_in_id
+    ON mark_as_used_jobs(check_in_id);
+  `);
 }
 
 export async function createCheckinServer(config: CheckinConfig) {
   const pool: Pool = createPostgresPool(process.env);
   await ensureSchema(pool);
 
-  const markAsUsedQueue = new Map<string, MarkAsUsedJob>();
-
-  const enqueueMarkAsUsed = (tokenId: string, eventId: string): string => {
-    const jobId = `mku_${randomUUID().replace(/-/g, "")}`;
-    const now = Date.now();
-
-    markAsUsedQueue.set(jobId, {
-      id: jobId,
-      tokenId,
-      eventId,
-      requestedAt: toIso(now),
-      status: "pending",
-      attempt: 0,
-      nextAttemptAtMs: now
-    });
-
-    return jobId;
-  };
-
   const callMarkAsUsedOnChain = (tokenId: string): { txHash: string } => {
-    if (!config.rpcUrl || !config.ticketNftAddress || !config.operatorPrivateKey) {
+    if (!config.rpcUrl || !config.ticketLedgerOperatorAddress || !config.operatorPrivateKey) {
       throw new Error("CHAIN_NOT_CONFIGURED");
     }
 
@@ -183,7 +155,7 @@ export async function createCheckinServer(config: CheckinConfig) {
         config.rpcUrl,
         "--private-key",
         config.operatorPrivateKey,
-        config.ticketNftAddress,
+        config.ticketLedgerOperatorAddress,
         MARK_AS_USED_SIG,
         `[${tokenId}]`
       ],
@@ -206,34 +178,114 @@ export async function createCheckinServer(config: CheckinConfig) {
     return { txHash: match[0].toLowerCase() };
   };
 
+  const enqueueMarkAsUsed = async (
+    client: Pool | PoolClient,
+    checkInId: string,
+    tokenId: string,
+    eventId: string
+  ): Promise<string> => {
+    const jobId = `mku_${randomUUID().replace(/-/g, "")}`;
+    await client.query(
+      `
+        INSERT INTO mark_as_used_jobs (
+          id,
+          check_in_id,
+          token_id,
+          event_id,
+          status,
+          attempt_count,
+          next_attempt_at
+        )
+        VALUES ($1, $2, $3, $4, 'pending', 0, NOW())
+      `,
+      [jobId, checkInId, tokenId, eventId]
+    );
+    return jobId;
+  };
+
   const queueTimer = setInterval(() => {
-    const now = Date.now();
+    void (async () => {
+      const jobs = await queryMany<MarkAsUsedJobRow>(
+        pool,
+        `
+          SELECT
+            id,
+            check_in_id,
+            token_id,
+            event_id,
+            status,
+            attempt_count,
+            next_attempt_at::text,
+            created_at::text,
+            updated_at::text,
+            completed_at::text,
+            last_error,
+            tx_hash
+          FROM mark_as_used_jobs
+          WHERE next_attempt_at <= NOW()
+          ORDER BY next_attempt_at ASC
+          LIMIT 25
+        `
+      );
 
-    for (const job of markAsUsedQueue.values()) {
-      if ((job.status !== "pending" && job.status !== "retrying") || job.nextAttemptAtMs > now) {
-        continue;
-      }
+      for (const job of jobs.filter(isRecoverableMarkAsUsedJob)) {
+        const nextAttempt = job.attempt_count + 1;
+        const now = Date.now();
 
-      job.attempt += 1;
-
-      try {
-        callMarkAsUsedOnChain(job.tokenId);
-        job.status = "processed";
-        job.completedAt = toIso(now);
-        job.lastError = undefined;
-      } catch (err) {
-        const reason = err instanceof Error ? err.message : "CHAIN_MARK_AS_USED_FAILED";
-        if (job.attempt >= config.markAsUsedMaxRetries) {
-          job.status = "failed";
-          job.completedAt = toIso(now);
-          job.lastError = reason;
-        } else {
-          job.status = "retrying";
-          job.nextAttemptAtMs = now + computeRetryDelayMs(job.attempt);
-          job.lastError = reason;
+        try {
+          const result = callMarkAsUsedOnChain(job.token_id);
+          await pool.query(
+            `
+              UPDATE mark_as_used_jobs
+              SET
+                status = 'processed',
+                attempt_count = $2,
+                tx_hash = $3,
+                last_error = NULL,
+                completed_at = NOW(),
+                updated_at = NOW()
+              WHERE id = $1
+            `,
+            [job.id, nextAttempt, result.txHash]
+          );
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : "CHAIN_MARK_AS_USED_FAILED";
+          if (nextAttempt >= config.markAsUsedMaxRetries) {
+            await pool.query(
+              `
+                UPDATE mark_as_used_jobs
+                SET
+                  status = 'failed',
+                  attempt_count = $2,
+                  last_error = $3,
+                  completed_at = NOW(),
+                  updated_at = NOW()
+                WHERE id = $1
+              `,
+              [job.id, nextAttempt, reason]
+            );
+          } else {
+            await pool.query(
+              `
+                UPDATE mark_as_used_jobs
+                SET
+                  status = 'retrying',
+                  attempt_count = $2,
+                  next_attempt_at = $3::timestamptz,
+                  last_error = $4,
+                  updated_at = NOW()
+                WHERE id = $1
+              `,
+              [job.id, nextAttempt, toIso(now + computeRetryDelayMs(nextAttempt)), reason]
+            );
+          }
         }
       }
-    }
+    })().catch((error) => {
+      log(config.serviceName, "error", "Failed to process mark_as_used_jobs", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    });
   }, config.markAsUsedPollMs);
 
   const server = createServer(async (req, res) => {
@@ -242,17 +294,17 @@ export async function createCheckinServer(config: CheckinConfig) {
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
       if (method === "GET" && url.pathname === "/healthz") {
-        let pendingJobs = 0;
-        let failedJobs = 0;
-
-        for (const job of markAsUsedQueue.values()) {
-          if (job.status === "pending" || job.status === "retrying") pendingJobs += 1;
-          if (job.status === "failed") failedJobs += 1;
-        }
-
         const countRow = await queryOne<{ total: string }>(
           pool,
           `SELECT COUNT(*)::text AS total FROM check_ins`
+        );
+        const pendingJobsRow = await queryOne<{ total: string }>(
+          pool,
+          `SELECT COUNT(*)::text AS total FROM mark_as_used_jobs WHERE status IN ('pending', 'retrying')`
+        );
+        const failedJobsRow = await queryOne<{ total: string }>(
+          pool,
+          `SELECT COUNT(*)::text AS total FROM mark_as_used_jobs WHERE status = 'failed'`
         );
 
         return sendJson(res, 200, {
@@ -262,8 +314,8 @@ export async function createCheckinServer(config: CheckinConfig) {
             status: "ok",
             timestamp: new Date().toISOString(),
             checkedInCount: Number(countRow?.total ?? 0),
-            pendingMarkAsUsedJobs: pendingJobs,
-            failedMarkAsUsedJobs: failedJobs
+            pendingMarkAsUsedJobs: Number(pendingJobsRow?.total ?? 0),
+            failedMarkAsUsedJobs: Number(failedJobsRow?.total ?? 0)
           }
         });
       }
@@ -280,20 +332,18 @@ export async function createCheckinServer(config: CheckinConfig) {
           });
         }
 
-        const tokenId = qrData.tokenId?.trim() ?? "";
-        const eventId = qrData.eventId?.trim() ?? "";
-        const nonce = qrData.nonce?.trim() ?? "";
-        const walletAddress = qrData.walletAddress?.trim() ?? "";
+        const tokenId = qrData.message?.tokenId?.trim() ?? "";
+        const onchainEventIdRaw = qrData.message?.eventId?.trim() ?? "";
+        const nonce = qrData.message?.nonce?.trim() ?? "";
         const signature = qrData.signature?.trim() ?? "";
-        const timestamp = qrData.timestamp;
 
         if (
           !tokenId ||
-          !eventId ||
+          !onchainEventIdRaw ||
           !nonce ||
-          !walletAddress ||
           !signature ||
-          typeof timestamp !== "number"
+          !qrData.domain ||
+          !qrData.message
         ) {
           return sendJson(res, 400, {
             success: false,
@@ -301,11 +351,37 @@ export async function createCheckinServer(config: CheckinConfig) {
           });
         }
 
-        const timestampMs = normalizeTimestampMs(timestamp);
-        const nowMs = Date.now();
-        const ageMs = nowMs - timestampMs;
+        const onchainEventId = normalizeOnchainEventId(onchainEventIdRaw);
+        const resolvedEvent = await queryOne<{ id: string }>(
+          pool,
+          `SELECT id FROM events WHERE onchain_event_id = $1::numeric`,
+          [onchainEventId]
+        );
 
-        if (ageMs > config.maxQrAgeSec * 1000 || ageMs < -config.maxClockSkewSec * 1000) {
+        if (!resolvedEvent) {
+          return sendJson(res, 200, {
+            success: true,
+            data: {
+              valid: false,
+              reason: "EVENT_NOT_FOUND",
+              message: "No local event mapping exists for this onchain event"
+            }
+          });
+        }
+
+        const eventId = resolvedEvent.id;
+
+        const verification = await verifySignedCheckInPayload(
+          {
+            chainId: config.chainId,
+            ticketLedgerAddress: (config.ticketLedgerAddress ??
+              "0x0000000000000000000000000000000000000000") as `0x${string}`,
+            maxClockSkewSec: config.maxClockSkewSec
+          },
+          qrData as SignedCheckInPayload
+        );
+
+        if (!verification.valid && verification.reason === "QR_EXPIRED") {
           void pool.query(
             `INSERT INTO scan_rejections (event_id, gate_id, reason) VALUES ($1, $2, 'QR_EXPIRED')`,
             [eventId, gateId || null]
@@ -320,14 +396,7 @@ export async function createCheckinServer(config: CheckinConfig) {
           });
         }
 
-        const expectedSignature = computeSignature(config, {
-          tokenId,
-          eventId,
-          timestamp,
-          nonce,
-          walletAddress
-        });
-        if (normalizeSignature(signature) !== normalizeSignature(expectedSignature)) {
+        if (!verification.valid) {
           void pool.query(
             `INSERT INTO scan_rejections (event_id, gate_id, reason) VALUES ($1, $2, 'SIGNATURE_INVALID')`,
             [eventId, gateId || null]
@@ -381,11 +450,15 @@ export async function createCheckinServer(config: CheckinConfig) {
         try {
           await client.query("BEGIN");
 
-          const insertResult = await client.query(
+          const insertResult = await client.query<{
+            id: string;
+            scanned_at: string;
+          }>(
             `
               INSERT INTO check_ins (token_id, event_id, gate_id, qr_nonce)
               VALUES ($1, $2, $3, $4)
               ON CONFLICT DO NOTHING
+              RETURNING id, scanned_at
             `,
             [tokenId, eventId, gateId || null, nonce]
           );
@@ -431,21 +504,32 @@ export async function createCheckinServer(config: CheckinConfig) {
             });
           }
 
+          const insertedCheckIn = insertResult.rows[0];
+          const markAsUsedJobId = await enqueueMarkAsUsed(
+            client,
+            insertedCheckIn.id,
+            tokenId,
+            eventId
+          );
+
           await client.query("COMMIT");
+          return sendJson(res, 200, {
+            success: true,
+            data: {
+              valid: true,
+              ticketId: tokenId,
+              eventId,
+              gateId,
+              checkedInAt: insertedCheckIn.scanned_at,
+              markAsUsedJobId
+            }
+          });
         } catch (err) {
           await client.query("ROLLBACK");
           throw err;
         } finally {
           client.release();
         }
-
-        const checkedInAt = new Date().toISOString();
-        const markAsUsedJobId = enqueueMarkAsUsed(tokenId, eventId);
-
-        return sendJson(res, 200, {
-          success: true,
-          data: { valid: true, ticketId: tokenId, eventId, gateId, checkedInAt, markAsUsedJobId }
-        });
       }
 
       const statsMatch = /^\/checkin\/events\/([^/]+)\/stats$/.exec(url.pathname);
@@ -500,21 +584,28 @@ export async function createCheckinServer(config: CheckinConfig) {
       }
 
       if (method === "GET" && url.pathname === "/checkin/mark-as-used/jobs") {
-        const jobs = Array.from(markAsUsedQueue.values())
-          .sort((left, right) => right.requestedAt.localeCompare(left.requestedAt))
-          .map((job) => ({
-            jobId: job.id,
-            tokenId: job.tokenId,
-            eventId: job.eventId,
-            status: job.status,
-            attempt: job.attempt,
-            nextAttemptAt: toIso(job.nextAttemptAtMs),
-            requestedAt: job.requestedAt,
-            completedAt: job.completedAt,
-            lastError: job.lastError
-          }));
+        const jobs = await queryMany<MarkAsUsedJobRow>(
+          pool,
+          `
+            SELECT
+              id,
+              check_in_id,
+              token_id,
+              event_id,
+              status,
+              attempt_count,
+              next_attempt_at::text,
+              created_at::text,
+              updated_at::text,
+              completed_at::text,
+              last_error,
+              tx_hash
+            FROM mark_as_used_jobs
+            ORDER BY created_at DESC
+          `
+        );
 
-        return sendJson(res, 200, { success: true, data: jobs });
+        return sendJson(res, 200, { success: true, data: jobs.map(formatMarkAsUsedJobRow) });
       }
 
       return sendJson(res, 404, {

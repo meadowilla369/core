@@ -43,6 +43,21 @@ const EXPECTED_RESERVATION_COLUMNS = [
   "expires_at"
 ];
 
+const EXPECTED_MARK_AS_USED_JOB_COLUMNS = [
+  "id",
+  "check_in_id",
+  "token_id",
+  "event_id",
+  "status",
+  "attempt_count",
+  "next_attempt_at",
+  "last_error",
+  "tx_hash",
+  "created_at",
+  "updated_at",
+  "completed_at"
+];
+
 const SKIPPED_SERVICE_TABLES = [
   "kyc_records",
   "kyc_provider_status",
@@ -277,6 +292,48 @@ test(
         .filter(Boolean);
 
       assert.deepEqual(skippedTables, []);
+    } finally {
+      psql(`DROP DATABASE IF EXISTS ${testDatabase};`, "postgres");
+    }
+  }
+);
+
+test(
+  "canonical schema defines mark_as_used_jobs for persisted checkin reconciliation",
+  { skip: !requireDockerComposePostgres() },
+  () => {
+    const schemaSql = readFileSync(new URL("../../infra/db/schema.sql", import.meta.url), "utf8");
+    const testDatabase = "ticket_platform_schema_contract";
+
+    psql(`DROP DATABASE IF EXISTS ${testDatabase};`, "postgres");
+    psql(`CREATE DATABASE ${testDatabase};`, "postgres");
+
+    try {
+      dockerCompose(
+        [
+          "exec",
+          "-T",
+          "postgres",
+          "psql",
+          "-v",
+          "ON_ERROR_STOP=1",
+          "-U",
+          "ticket_platform",
+          "-d",
+          testDatabase
+        ],
+        { input: schemaSql }
+      );
+
+      const columns = psql(
+        `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'mark_as_used_jobs' ORDER BY ordinal_position;`,
+        testDatabase
+      )
+        .trim()
+        .split("\n")
+        .filter(Boolean);
+
+      assert.deepEqual(columns, EXPECTED_MARK_AS_USED_JOB_COLUMNS);
     } finally {
       psql(`DROP DATABASE IF EXISTS ${testDatabase};`, "postgres");
     }

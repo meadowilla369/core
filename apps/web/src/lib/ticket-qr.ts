@@ -1,55 +1,31 @@
-import type { TicketQrData } from "@ticket-platform/sdk-client";
+import type { CheckInChallengePayload } from "@ticket-platform/sdk-client";
 
-export type TicketQrSource = "backend" | "local";
-
-export interface TicketQrPayload extends TicketQrData {
-  source: TicketQrSource;
+export interface SignedTicketQrPayload extends CheckInChallengePayload {
+  signature: `0x${string}`;
 }
 
-export function serializeTicketQrPayload(payload: TicketQrPayload): string {
+export function serializeTicketQrPayload(payload: SignedTicketQrPayload): string {
   return JSON.stringify({
     type: "entr.ticket.qr.v1",
-    tokenId: payload.tokenId,
-    eventId: payload.eventId,
-    timestamp: payload.timestamp,
-    nonce: payload.nonce,
-    walletAddress: payload.walletAddress,
-    signature: payload.signature,
-    source: payload.source
+    domain: payload.domain,
+    types: payload.types,
+    primaryType: payload.primaryType,
+    message: payload.message,
+    signature: payload.signature
   });
 }
 
-export function buildLocalTicketQrPayload(input: {
-  tokenId: string;
-  eventId: string;
-  walletAddress: string;
-  nowMs?: number;
-}): TicketQrPayload {
-  const timestamp = input.nowMs ?? Date.now();
-  const nonce = `local:${input.tokenId}:${timestamp}`;
-  return {
-    tokenId: input.tokenId,
-    eventId: input.eventId,
-    timestamp,
-    nonce,
-    walletAddress: input.walletAddress,
-    signature: `local:${input.walletAddress}:${nonce}`,
-    source: "local"
-  };
-}
-
 export function getTicketQrAgeMs(
-  payload: Pick<TicketQrPayload, "timestamp">,
+  payload: Pick<SignedTicketQrPayload, "message">,
   nowMs = Date.now()
 ): number {
-  return Math.max(0, nowMs - payload.timestamp);
+  return Math.max(0, nowMs - payload.message.issuedAt * 1000);
 }
 
 export function getTicketQrRefreshDelayMs(
-  payload: Pick<TicketQrPayload, "timestamp">,
-  nowMs = Date.now(),
-  ttlMs = 30_000
+  payload: Pick<SignedTicketQrPayload, "message">,
+  nowMs = Date.now()
 ): number {
-  const refreshAt = payload.timestamp + ttlMs - 5_000;
-  return Math.max(0, refreshAt - nowMs);
+  const refreshAtMs = payload.message.expiresAt * 1000 - 5_000;
+  return Math.max(0, refreshAtMs - nowMs);
 }

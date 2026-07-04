@@ -7,6 +7,7 @@ export interface QrTicketingTicket {
 export interface QrSyncedToken {
   tokenId: string;
   eventId?: string | null;
+  onchainEventId?: string | null;
   ownerWalletAddress: string | null;
   ownerUserId: string | null;
   isRefunded: boolean;
@@ -14,7 +15,7 @@ export interface QrSyncedToken {
 
 export interface ResolvedQrTicket {
   tokenId: string;
-  eventId: string;
+  onchainEventId: string;
   walletAddress: string;
 }
 
@@ -43,7 +44,7 @@ export function resolveQrTicket(input: {
 
   return {
     tokenId: input.syncedToken.tokenId,
-    eventId: input.ticketingTicket?.eventId ?? input.syncedToken.eventId,
+    onchainEventId: input.syncedToken.onchainEventId ?? "",
     walletAddress: input.syncedToken.ownerWalletAddress
   };
 }

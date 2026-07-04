@@ -199,6 +199,27 @@ CREATE TABLE scan_rejections (
 
 CREATE INDEX idx_scan_rejections_event ON scan_rejections(event_id, rejected_at DESC);
 
+CREATE TABLE mark_as_used_jobs (
+  id TEXT PRIMARY KEY,
+  check_in_id TEXT NOT NULL REFERENCES check_ins(id) ON DELETE CASCADE,
+  token_id TEXT NOT NULL,
+  event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'retrying', 'processed', 'failed')),
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at TIMESTAMPTZ NOT NULL,
+  last_error TEXT,
+  tx_hash TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at TIMESTAMPTZ
+);
+
+CREATE INDEX idx_mark_as_used_jobs_status_next_attempt
+  ON mark_as_used_jobs(status, next_attempt_at ASC);
+
+CREATE INDEX idx_mark_as_used_jobs_check_in_id
+  ON mark_as_used_jobs(check_in_id);
+
 CREATE TABLE orders (
   id TEXT PRIMARY KEY,
   reservation_id TEXT NOT NULL UNIQUE REFERENCES reservations(id),

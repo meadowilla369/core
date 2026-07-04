@@ -5,7 +5,8 @@ export interface TicketingConfig {
   reservationTtlSec: number;
   internalApiKey: string;
   contractSyncServiceBaseUrl: string;
-  qrSignatureSecret: string;
+  checkinChainId: number;
+  ticketLedgerAddress: `0x${string}` | string;
 }
 
 function parseNumber(value: string | undefined, fallback: number): number {
@@ -26,6 +27,8 @@ export function loadConfig(): TicketingConfig {
     internalApiKey: process.env.INTERNAL_API_KEY ?? "internal-dev-key",
     contractSyncServiceBaseUrl:
       process.env.CONTRACT_SYNC_SERVICE_BASE_URL ?? "http://127.0.0.1:3014",
-    qrSignatureSecret: process.env.QR_SIGNATURE_SECRET ?? "checkin_dev_secret"
+    checkinChainId: parseNumber(process.env.CHAIN_ID, 31337),
+    ticketLedgerAddress:
+      process.env.TICKET_LEDGER_ADDRESS ?? "0x0000000000000000000000000000000000000000"
   };
 }

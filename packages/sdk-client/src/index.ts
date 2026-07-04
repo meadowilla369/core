@@ -1,4 +1,7 @@
+import type { CheckInChallengePayload } from "./checkin-typed-data.js";
+
 export * from "./tx-builder/index.js";
+export * from "./checkin-typed-data.js";
 
 export interface ApiClientConfig {
   baseUrl: string;
@@ -227,14 +230,7 @@ export interface PaymentHashData {
   } | null;
 }
 
-export interface TicketQrData {
-  tokenId: string;
-  eventId: string;
-  timestamp: number;
-  nonce: string;
-  walletAddress: string;
-  signature: string;
-}
+export type TicketQrData = CheckInChallengePayload;
 
 export interface MarketplaceListing {
   id: string;
@@ -305,6 +301,7 @@ export interface ContractSyncedTokenData {
   tokenId: string;
   ticketTypeId?: string | null;
   eventId?: string | null;
+  onchainEventId?: string | null;
   sourceListingId?: string | null;
   ownerWalletAddress: string | null;
   ownerUserId: string | null;

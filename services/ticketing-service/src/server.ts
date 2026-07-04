@@ -1,4 +1,4 @@
-import { createHmac, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 
 import {
@@ -12,6 +12,7 @@ import type { Pool, PoolClient } from "pg";
 import type { RedisClientType } from "redis";
 
 import type { TicketingConfig } from "./config.js";
+import { createCheckInChallenge } from "./checkin-challenge.js";
 import { log } from "./logger.js";
 import { resolveQrTicket } from "./qr-ownership.js";
 
@@ -65,6 +66,7 @@ interface ReservationRecord {
 interface SyncedTokenRecord {
   tokenId: string;
   eventId?: string | null;
+  onchainEventId?: string | null;
   ownerWalletAddress: string | null;
   ownerUserId: string | null;
   isRefunded: boolean;
@@ -727,23 +729,19 @@ export async function createTicketingServer(config: TicketingConfig) {
           });
         }
 
-        const qrTimestamp = Date.now();
-        const qrNonce = randomUUID();
-        const qrPayload = `${qrTicket.tokenId}.${qrTicket.eventId}.${qrTimestamp}.${qrNonce}.${qrTicket.walletAddress}`;
-        const qrSignature = createHmac("sha256", config.qrSignatureSecret)
-          .update(qrPayload, "utf8")
-          .digest("hex");
-
         const response = {
           success: true,
-          data: {
-            tokenId: qrTicket.tokenId,
-            eventId: qrTicket.eventId,
-            timestamp: qrTimestamp,
-            nonce: qrNonce,
-            walletAddress: qrTicket.walletAddress,
-            signature: qrSignature
-          }
+          data: createCheckInChallenge(
+            {
+              checkinChainId: config.checkinChainId,
+              ticketLedgerAddress: config.ticketLedgerAddress as `0x${string}`
+            },
+            {
+              tokenId: qrTicket.tokenId,
+              onchainEventId: qrTicket.onchainEventId,
+              walletAddress: qrTicket.walletAddress as `0x${string}`
+            }
+          )
         };
 
         await setCachedResponse(redis, idempotencyScope, response);

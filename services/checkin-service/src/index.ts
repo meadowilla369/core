@@ -10,11 +10,16 @@ createCheckinServer(config)
       log(config.serviceName, "info", "Check-in service listening", {
         host: config.host,
         port: config.port,
-        maxQrAgeSec: config.maxQrAgeSec,
+        chainId: config.chainId,
+        ticketLedgerAddress: config.ticketLedgerAddress,
         maxClockSkewSec: config.maxClockSkewSec,
         markAsUsedPollMs: config.markAsUsedPollMs,
         markAsUsedMaxRetries: config.markAsUsedMaxRetries,
-        chainConfigured: !!(config.rpcUrl && config.ticketNftAddress && config.operatorPrivateKey)
+        chainConfigured: !!(
+          config.rpcUrl &&
+          config.ticketLedgerOperatorAddress &&
+          config.operatorPrivateKey
+        )
       });
     });
 

@@ -76,6 +76,8 @@ const TicketDetailPage = () => {
     ["Token ID", ticket.tokenId],
     ["Event ID", ticket.eventId],
     ["Owner wallet", ticket.ownerWalletAddress ?? "Chưa có"],
+    ["QR error code", qr.errorDetails?.code ?? "—"],
+    ["QR error raw", qr.rawErrorMessage ?? "—"],
     ["Reservation", ticket.reservationId],
     ["Tx hash", ticket.transactionHash ?? "Chưa có"],
     ["Nguồn dữ liệu", ticket.source],
@@ -120,10 +122,11 @@ const TicketDetailPage = () => {
       />
 
       <section className="px-4 pb-6">
-        {qr.isBackendError && qr.source === "local" && (
+        {qr.isBackendError && (
           <div className="mb-4 border border-yellow-500/30 bg-yellow-500/10 p-3">
             <p className="font-mono text-[10px] text-yellow-200">
-              Backend QR chưa tạo được. Local QR chỉ dùng cho dev/fallback.
+              {qr.errorDetails?.userMessage ??
+                "Không tạo được owner-signed QR. Hãy thử làm mới hoặc kiểm tra lại session wallet."}
             </p>
           </div>
         )}

@@ -2,49 +2,78 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  buildLocalTicketQrPayload,
   getTicketQrAgeMs,
   getTicketQrRefreshDelayMs,
   serializeTicketQrPayload
 } from "./ticket-qr.ts";
 
-test("serializeTicketQrPayload includes all scanner fields", () => {
+const challengeMessage = {
+  tokenId: "42",
+  eventId: "1001",
+  ownerWallet: "0x00000000000000000000000000000000000000bb" as `0x${string}`,
+  gateScope: "event",
+  nonce: ("0x" + "11".repeat(32)) as `0x${string}`,
+  issuedAt: 1782910000,
+  expiresAt: 1782910030
+};
+
+test("serializeTicketQrPayload includes the owner-signed typed challenge payload", () => {
   const value = serializeTicketQrPayload({
-    tokenId: "42",
-    eventId: "evt_1",
-    timestamp: 1000,
-    nonce: "nonce_1",
-    walletAddress: "0xabc",
-    signature: "sig",
-    source: "backend"
+    domain: {
+      name: "EntrCheckIn",
+      version: "1",
+      chainId: 31337,
+      verifyingContract: "0x00000000000000000000000000000000000000aa"
+    },
+    types: {
+      CheckInChallenge: [
+        { name: "tokenId", type: "uint256" },
+        { name: "eventId", type: "uint256" },
+        { name: "ownerWallet", type: "address" },
+        { name: "gateScope", type: "string" },
+        { name: "nonce", type: "bytes32" },
+        { name: "issuedAt", type: "uint256" },
+        { name: "expiresAt", type: "uint256" }
+      ]
+    },
+    primaryType: "CheckInChallenge",
+    message: {
+      ...challengeMessage
+    },
+    signature: ("0x" + "22".repeat(65)) as `0x${string}`
   });
 
   assert.deepEqual(JSON.parse(value), {
     type: "entr.ticket.qr.v1",
-    tokenId: "42",
-    eventId: "evt_1",
-    timestamp: 1000,
-    nonce: "nonce_1",
-    walletAddress: "0xabc",
-    signature: "sig",
-    source: "backend"
+    domain: {
+      name: "EntrCheckIn",
+      version: "1",
+      chainId: 31337,
+      verifyingContract: "0x00000000000000000000000000000000000000aa"
+    },
+    types: {
+      CheckInChallenge: [
+        { name: "tokenId", type: "uint256" },
+        { name: "eventId", type: "uint256" },
+        { name: "ownerWallet", type: "address" },
+        { name: "gateScope", type: "string" },
+        { name: "nonce", type: "bytes32" },
+        { name: "issuedAt", type: "uint256" },
+        { name: "expiresAt", type: "uint256" }
+      ]
+    },
+    primaryType: "CheckInChallenge",
+    message: {
+      ...challengeMessage
+    },
+    signature: ("0x" + "22".repeat(65)) as `0x${string}`
   });
-});
-
-test("buildLocalTicketQrPayload marks local QR clearly", () => {
-  const payload = buildLocalTicketQrPayload({
-    tokenId: "42",
-    eventId: "evt_1",
-    walletAddress: "0xabc",
-    nowMs: 1000
-  });
-
-  assert.equal(payload.source, "local");
-  assert.equal(payload.nonce, "local:42:1000");
-  assert.equal(payload.signature.startsWith("local:"), true);
 });
 
 test("getTicketQrRefreshDelayMs refreshes before expiry", () => {
-  assert.equal(getTicketQrAgeMs({ timestamp: 1000 }, 4000), 3000);
-  assert.equal(getTicketQrRefreshDelayMs({ timestamp: 1000 }, 4000, 30000), 22000);
+  assert.equal(getTicketQrAgeMs({ message: challengeMessage }, 1782910004_000), 4000);
+  assert.equal(
+    getTicketQrRefreshDelayMs({ message: challengeMessage }, 1782910004_000),
+    21000
+  );
 });
