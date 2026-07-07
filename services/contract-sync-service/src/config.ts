@@ -22,6 +22,22 @@ function parseNumber(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function parseBoolean(value: string | undefined, fallback: boolean): boolean {
+  if (!value) {
+    return fallback;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+
+  return fallback;
+}
+
 export function loadConfig(): ContractSyncConfig {
   return {
     serviceName: process.env.SERVICE_NAME ?? "contract-sync-service",
@@ -36,7 +52,12 @@ export function loadConfig(): ContractSyncConfig {
  * Callers should check for null and skip starting the RPC listener.
  */
 export function loadRpcConfig(): RpcConfig | null {
-  const rpcUrl = process.env.RPC_URL?.trim();
+  const listenerEnabled = parseBoolean(process.env.CONTRACT_SYNC_RPC_LISTENER_ENABLED, true);
+  if (!listenerEnabled) {
+    return null;
+  }
+
+  const rpcUrl = process.env.CONTRACT_SYNC_RPC_URL?.trim() || process.env.RPC_URL?.trim();
   const ticketContract =
     process.env.TICKET_LEDGER_ADDRESS?.trim() ?? process.env.TICKET_NFT_ADDRESS?.trim();
   const marketplace = process.env.MARKETPLACE_ADDRESS?.trim();

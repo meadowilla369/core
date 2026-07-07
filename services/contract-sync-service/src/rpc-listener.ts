@@ -2,9 +2,6 @@
  * rpc-listener.ts
  *
  * Live RPC log subscription using viem's watchContractEvent.
- *
- * This listener supports both the legacy TicketNFT/Marketplace event set and
- * the current TicketLedger/MarketplaceV2 event set used by local-chain flows.
  */
 
 import { createPublicClient, http, webSocket, type Abi, type PublicClient } from "viem";
@@ -12,40 +9,16 @@ import { createPublicClient, http, webSocket, type Abi, type PublicClient } from
 import type { EventProcessingResult } from "./server.js";
 import type { ContractEventInput, RawLogMeta } from "./event-mapper.js";
 import {
-  mapListed,
   mapListingCancelled,
   mapMarketplaceListingCancelled,
-  mapSaleCompleted,
   mapTicketCancelled,
   mapTicketListed,
   mapTicketPurchased,
-  mapTicketRefunded,
   mapTicketSold,
   mapTicketTransferred,
-  mapTicketUsed,
-  mapTransfer
+  mapTicketUsed
 } from "./event-mapper.js";
 import type { LogFn } from "./logger.js";
-
-const LEGACY_TICKET_EVENTS = [
-  {
-    type: "event",
-    name: "Transfer",
-    inputs: [
-      { name: "from", type: "address", indexed: true },
-      { name: "to", type: "address", indexed: true },
-      { name: "tokenId", type: "uint256", indexed: true }
-    ]
-  },
-  {
-    type: "event",
-    name: "TicketRefunded",
-    inputs: [
-      { name: "tokenId", type: "uint256", indexed: true },
-      { name: "amount", type: "uint256", indexed: false }
-    ]
-  }
-] as const satisfies Abi;
 
 const CURRENT_TICKET_LEDGER_EVENTS = [
   {
@@ -85,38 +58,6 @@ const CURRENT_TICKET_LEDGER_EVENTS = [
     inputs: [
       { name: "ticketId", type: "uint256", indexed: true },
       { name: "refundAmount", type: "uint256", indexed: false }
-    ]
-  }
-] as const satisfies Abi;
-
-const LEGACY_MARKETPLACE_EVENTS = [
-  {
-    type: "event",
-    name: "Listed",
-    inputs: [
-      { name: "tokenId", type: "uint256", indexed: true },
-      { name: "seller", type: "address", indexed: true },
-      { name: "price", type: "uint256", indexed: false },
-      { name: "expiresAt", type: "uint64", indexed: false }
-    ]
-  },
-  {
-    type: "event",
-    name: "ListingCancelled",
-    inputs: [
-      { name: "tokenId", type: "uint256", indexed: true },
-      { name: "seller", type: "address", indexed: true },
-      { name: "reason", type: "string", indexed: false }
-    ]
-  },
-  {
-    type: "event",
-    name: "SaleCompleted",
-    inputs: [
-      { name: "tokenId", type: "uint256", indexed: true },
-      { name: "seller", type: "address", indexed: true },
-      { name: "buyer", type: "address", indexed: true },
-      { name: "price", type: "uint256", indexed: false }
     ]
   }
 ] as const satisfies Abi;
@@ -227,9 +168,7 @@ export class RpcListener {
       marketplaceAddress
     });
 
-    this.watchLegacyTicketContract(ticketContractAddress, chainId);
     this.watchCurrentTicketLedger(ticketContractAddress, chainId);
-    this.watchLegacyMarketplace(marketplaceAddress, chainId);
     this.watchCurrentMarketplaceV2(marketplaceAddress, chainId);
   }
 
@@ -273,52 +212,6 @@ export class RpcListener {
       rejected: rejected.length,
       rejectedReasons: rejected.map((result) => result.reason).filter(Boolean)
     });
-  }
-
-  private watchLegacyTicketContract(address: `0x${string}`, chainId: number): void {
-    const client = this.client!;
-
-    const unwatchTransfer = client.watchContractEvent({
-      address,
-      abi: LEGACY_TICKET_EVENTS,
-      eventName: "Transfer",
-      onLogs: (logs) => {
-        const events: ContractEventInput[] = [];
-        for (const log of logs) {
-          if (!log.args) continue;
-          const args = log.args as { from: `0x${string}`; to: `0x${string}`; tokenId: bigint };
-          events.push(mapTransfer(args, this.buildMeta(log, chainId)));
-        }
-        void this.ingestAndLog("RPC legacy Transfer events received", events);
-      },
-      onError: (error) => {
-        this.log(this.config.serviceName, "error", "RPC legacy Transfer watch error", {
-          error: String(error)
-        });
-      }
-    });
-
-    const unwatchRefunded = client.watchContractEvent({
-      address,
-      abi: LEGACY_TICKET_EVENTS,
-      eventName: "TicketRefunded",
-      onLogs: (logs) => {
-        const events: ContractEventInput[] = [];
-        for (const log of logs) {
-          if (!log.args) continue;
-          const args = log.args as { tokenId: bigint; amount: bigint };
-          events.push(mapTicketRefunded(args, this.buildMeta(log, chainId)));
-        }
-        void this.ingestAndLog("RPC legacy TicketRefunded events received", events);
-      },
-      onError: (error) => {
-        this.log(this.config.serviceName, "error", "RPC legacy TicketRefunded watch error", {
-          error: String(error)
-        });
-      }
-    });
-
-    this.unwatchers.push(unwatchTransfer, unwatchRefunded);
   }
 
   private watchCurrentTicketLedger(address: `0x${string}`, chainId: number): void {
@@ -426,62 +319,6 @@ export class RpcListener {
     });
 
     this.unwatchers.push(unwatchPurchased, unwatchTransferred, unwatchUsed, unwatchCancelled);
-  }
-
-  private watchLegacyMarketplace(address: `0x${string}`, chainId: number): void {
-    const client = this.client!;
-
-    const unwatchListed = client.watchContractEvent({
-      address,
-      abi: LEGACY_MARKETPLACE_EVENTS,
-      eventName: "Listed",
-      onLogs: (logs) => {
-        const events: ContractEventInput[] = [];
-        for (const log of logs) {
-          if (!log.args) continue;
-          const args = log.args as {
-            tokenId: bigint;
-            seller: `0x${string}`;
-            price: bigint;
-            expiresAt: bigint;
-          };
-          events.push(mapListed(args, this.buildMeta(log, chainId)));
-        }
-        void this.ingestAndLog("RPC legacy Listed events received", events);
-      },
-      onError: (error) => {
-        this.log(this.config.serviceName, "error", "RPC legacy Listed watch error", {
-          error: String(error)
-        });
-      }
-    });
-
-    const unwatchSale = client.watchContractEvent({
-      address,
-      abi: LEGACY_MARKETPLACE_EVENTS,
-      eventName: "SaleCompleted",
-      onLogs: (logs) => {
-        const events: ContractEventInput[] = [];
-        for (const log of logs) {
-          if (!log.args) continue;
-          const args = log.args as {
-            tokenId: bigint;
-            seller: `0x${string}`;
-            buyer: `0x${string}`;
-            price: bigint;
-          };
-          events.push(mapSaleCompleted(args, this.buildMeta(log, chainId)));
-        }
-        void this.ingestAndLog("RPC legacy SaleCompleted events received", events);
-      },
-      onError: (error) => {
-        this.log(this.config.serviceName, "error", "RPC legacy SaleCompleted watch error", {
-          error: String(error)
-        });
-      }
-    });
-
-    this.unwatchers.push(unwatchListed, unwatchSale);
   }
 
   private watchCurrentMarketplaceV2(address: `0x${string}`, chainId: number): void {
