@@ -146,6 +146,55 @@ This uses values from `.env.localchain`, including:
 - `VITE_RPC_URL=http://127.0.0.1:8545`
 - deployed `VITE_HANDLER_ADDRESS`
 
+### Deploy Contracts To Base Sepolia
+
+Use this when you want the platform contracts deployed on Base Sepolia instead of the local Anvil chain.
+
+Minimum wallets:
+
+- `PRIVATE_KEY` and `DEPLOY_ADMIN` can be the same wallet for a simple demo.
+
+Recommended wallets for smoother end-to-end testing:
+
+- `deploy/admin` wallet
+- `backend operator` wallet
+- `seller/user` wallet
+
+Setup:
+
+1. Copy `contracts/deploy-config/base-sepolia.env.example` to `contracts/deploy-config/base-sepolia.env`
+2. Fill in `PRIVATE_KEY`, `DEPLOY_ADMIN`, and optional paymaster settings
+3. Fund the deploy wallet with Base Sepolia ETH
+4. If you want the app/backend to target Base Sepolia, deploy once and let the helper generate `config/environments/base-sepolia.env`
+5. If you prefer to prepare it manually, copy `config/environments/base-sepolia.env.example` first and then overwrite the generated contract addresses
+
+Deploy:
+
+```bash
+npm run contracts:deploy:base-sepolia
+```
+
+Then start the app/backend stack against Base Sepolia:
+
+```bash
+npm run stack:base-sepolia:up
+```
+
+To build or run the Capacitor iPhone app against the same Base Sepolia backend:
+
+```bash
+npm run stack:base-sepolia:ios:build
+npm run stack:base-sepolia:ios:sync
+npm run stack:base-sepolia:ios:live
+```
+
+Output:
+
+- Deployed addresses are written to `contracts/deployments/base-sepolia-addresses.json`
+- Canonical registry is updated at `contracts/deployments/address-registry.json`
+- A runnable runtime env is generated at `config/environments/base-sepolia.env`
+- The deployed chain id is expected to be Base Sepolia `84532`
+
 ### Normal Local Stack Without Local Chain
 
 Use this when you only want the backend stack and browser simulator, without live local RPC sync.

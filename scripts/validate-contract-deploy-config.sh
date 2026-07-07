@@ -16,17 +16,11 @@ required_vars=(
   RPC_URL
   PRIVATE_KEY
   DEPLOY_ADMIN
-  ENTRYPOINT_ADDRESS
-  SESSION_SIGNER
-  GUARDIAN_ADDRESS
-  GUARDIAN_OWNER
-  ESCROW_HOOK
-  GUARDIAN_RECOVERY_DELAY
 )
 
 missing=0
 for var in "${required_vars[@]}"; do
-  if ! rg -q "^${var}=" "$ENV_FILE"; then
+  if ! grep -q "^${var}=" "$ENV_FILE"; then
     echo "Missing required var: ${var}"
     missing=1
   fi

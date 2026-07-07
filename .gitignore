@@ -15,9 +15,15 @@ package-lock.json
 
 # Environment and local overrides
 .env
+.env.base-sepolia
+base-sepolia.env
+.env.base-mainnet
+config/environments/base-sepolia.env
 .env.*.local
 contracts/deployments/localchain-addresses.json
 contracts/deployments/localchain-smoke.json
+contracts/deployments/base-sepolia-addresses.json
+contracts/deployments/base-mainnet-addresses.json
 contracts/broadcast/
 .env.localchain
 

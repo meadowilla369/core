@@ -6,9 +6,53 @@ STATE_DIR="$ROOT_DIR/.tmp/dev-stack"
 LOG_DIR="$STATE_DIR/logs"
 PID_DIR="$STATE_DIR/pids"
 STACK_ENV_FILE_REL="${STACK_ENV_FILE:-.env}"
-ENV_FILE="$ROOT_DIR/$STACK_ENV_FILE_REL"
+SOURCE_ENV_FILE="$ROOT_DIR/$STACK_ENV_FILE_REL"
+BASE_ENV_FILE="$ROOT_DIR/.env.example"
+RUNTIME_ENV_FILE="$STATE_DIR/base-sepolia.stack.env"
+ENV_FILE="$SOURCE_ENV_FILE"
 
 mkdir -p "$LOG_DIR" "$PID_DIR"
+
+ensure_env() {
+  if [[ "$STACK_ENV_FILE_REL" == "config/environments/base-sepolia.env" ]]; then
+    if [[ ! -f "$SOURCE_ENV_FILE" || ! -s "$SOURCE_ENV_FILE" ]]; then
+      local example_file="$SOURCE_ENV_FILE.example"
+      if [[ -f "$example_file" ]]; then
+        cp "$example_file" "$SOURCE_ENV_FILE"
+        echo "Created $STACK_ENV_FILE_REL from ${STACK_ENV_FILE_REL}.example"
+      else
+        cp "$ROOT_DIR/config/environments/base-sepolia.env.example" "$SOURCE_ENV_FILE"
+        echo "Created $STACK_ENV_FILE_REL from config/environments/base-sepolia.env.example"
+      fi
+    fi
+    node "$ROOT_DIR/scripts/build-base-sepolia-stack-env.mjs" \
+      --base "$BASE_ENV_FILE" \
+      --override "$SOURCE_ENV_FILE" \
+      --output "$RUNTIME_ENV_FILE" >/dev/null
+    ENV_FILE="$RUNTIME_ENV_FILE"
+    return 0
+  fi
+
+  if [[ ! -f "$SOURCE_ENV_FILE" || ! -s "$SOURCE_ENV_FILE" ]]; then
+    local example_file="$SOURCE_ENV_FILE.example"
+    if [[ -f "$example_file" ]]; then
+      cp "$example_file" "$SOURCE_ENV_FILE"
+      echo "Created $STACK_ENV_FILE_REL from ${STACK_ENV_FILE_REL}.example"
+    else
+      cp "$ROOT_DIR/.env.example" "$SOURCE_ENV_FILE"
+      echo "Created $STACK_ENV_FILE_REL from .env.example"
+    fi
+  fi
+  ENV_FILE="$SOURCE_ENV_FILE"
+}
+
+load_env() {
+  set -a
+  source "$ENV_FILE"
+  set +a
+}
+
+ensure_env
 
 SERVICES=(
   "auth-service|http://127.0.0.1:3001/healthz|PORT=3001 node --env-file=\"$ENV_FILE\" services/auth-service/dist/index.js"
@@ -30,19 +74,6 @@ SERVICES=(
   # "notification-service|http://127.0.0.1:3013/healthz|PORT=3013 node --env-file=\"$ENV_FILE\" services/notification-service/dist/index.js"
   # "ui-simulator|http://127.0.0.1:4310|UI_PORT=4310 node --env-file=\"$ENV_FILE\" apps/ui-simulator/server.mjs"
 )
-
-ensure_env() {
-  if [[ ! -f "$ENV_FILE" || ! -s "$ENV_FILE" ]]; then
-    cp "$ROOT_DIR/.env.example" "$ENV_FILE"
-    echo "Created $STACK_ENV_FILE_REL from .env.example"
-  fi
-}
-
-load_env() {
-  set -a
-  source "$ENV_FILE"
-  set +a
-}
 
 can_use_docker() {
   command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1

@@ -1,23 +1,23 @@
 {
   "version": 1,
-  "updatedAt": "2026-02-26T00:00:00Z",
+  "updatedAt": "2026-07-06T08:29:47.235Z",
   "networks": {
     "base-sepolia": {
       "chainId": 84532,
       "contracts": {
-        "TicketNFT": "0x0000000000000000000000000000000000000000",
-        "Marketplace": "0x0000000000000000000000000000000000000000",
-        "TicketPaymaster": "0x0000000000000000000000000000000000000000",
-        "GuardianAccount": "0x0000000000000000000000000000000000000000"
+        "TicketLedger": "0x8ebDF16722056aa5e83cd82B9109b2e91326029d",
+        "MarketplaceV2": "0x39CdD3433b6BeEE9a925A4564a06198A65b78d41",
+        "TicketPaymaster": "0x61C6312fB927B048e1517066c63fD21510d96C5d",
+        "Handler": "0x56bBCD72903CCFfE128af727EB1765Ea3ed8093A"
       }
     },
     "base-mainnet": {
       "chainId": 8453,
       "contracts": {
-        "TicketNFT": "0x0000000000000000000000000000000000000000",
-        "Marketplace": "0x0000000000000000000000000000000000000000",
+        "TicketLedger": "0x0000000000000000000000000000000000000000",
+        "MarketplaceV2": "0x0000000000000000000000000000000000000000",
         "TicketPaymaster": "0x0000000000000000000000000000000000000000",
-        "GuardianAccount": "0x0000000000000000000000000000000000000000"
+        "Handler": "0x0000000000000000000000000000000000000000"
       }
     }
   }
