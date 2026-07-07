@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Capacitor } from "@capacitor/core";
+import { toast } from "@ticket-platform/shared-ui";
 
 import {
+  clearPersistedSessionSnapshot,
   clearAuthTokens,
   clearOnboardingDraft,
   loadPersistedSessionSnapshot
 } from "@/features/onboarding/storage";
+import { clearSecureWallet } from "@/lib/secureStorage";
 import { clearPurchasedTicketMetadata } from "@/lib/synced-tickets";
 import { useApiClient } from "@/providers/AppProviders";
 
@@ -40,5 +43,25 @@ export function useLogout() {
     }
   };
 
-  return { logout, isLoggingOut };
+  const resetDeviceWallet = async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+
+    try {
+      await clearSecureWallet();
+      clearPersistedSessionSnapshot();
+      clearAuthTokens();
+      clearOnboardingDraft();
+      clearPurchasedTicketMetadata();
+      toast({
+        title: "Đã xóa ví local",
+        description: "App đã trở về trang onboarding để bạn test lại như người dùng mới."
+      });
+      navigate("/onboarding", { replace: true });
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
+
+  return { logout, resetDeviceWallet, isLoggingOut };
 }

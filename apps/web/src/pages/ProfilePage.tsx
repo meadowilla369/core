@@ -1,4 +1,14 @@
-import { ChevronRight, LogOut, CreditCard, Bell, HelpCircle, Shield, Moon } from "lucide-react";
+import {
+  ChevronRight,
+  LogOut,
+  CreditCard,
+  Bell,
+  HelpCircle,
+  Shield,
+  Moon,
+  RotateCcw
+} from "lucide-react";
+import { Capacitor } from "@capacitor/core";
 import { Link } from "react-router-dom";
 import MobileLayout from "@/components/mobile/MobileLayout";
 import ProfileAvatar from "@/components/mobile/ProfileAvatar";
@@ -17,7 +27,7 @@ const menuItems = [
 const ProfilePage = () => {
   const { data, isError } = useProfileSummary();
   const { customization } = useProfileCustomization();
-  const { logout, isLoggingOut } = useLogout();
+  const { logout, resetDeviceWallet, isLoggingOut } = useLogout();
   const profile = data ?? profileFallback;
   const displayName = customization.displayName ?? profile.displayName;
   const avatarInitials = customization.displayName
@@ -104,6 +114,17 @@ const ProfilePage = () => {
 
       {/* Logout */}
       <section className="p-4 mt-6">
+        {Capacitor.isNativePlatform() && (
+          <button
+            type="button"
+            onClick={() => void resetDeviceWallet()}
+            disabled={isLoggingOut}
+            className="mb-3 w-full flex items-center justify-center gap-2 py-4 border border-amber-400/40 text-amber-200 font-mono text-sm hover:bg-amber-400/10 transition-colors disabled:opacity-50"
+          >
+            <RotateCcw className="w-4 h-4" />
+            {isLoggingOut ? "ĐANG RESET..." : "XÓA VÍ LOCAL TRÊN THIẾT BỊ"}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => void logout()}

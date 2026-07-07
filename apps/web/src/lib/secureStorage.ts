@@ -42,3 +42,8 @@ export async function secureRemove(key: string): Promise<void> {
 
 export const SECURE_KEY_PRIVATE_KEY = "wallet.privateKey";
 export const SECURE_KEY_WALLET_ADDRESS = "wallet.address";
+
+export async function clearSecureWallet(): Promise<void> {
+  await secureRemove(SECURE_KEY_PRIVATE_KEY);
+  await secureRemove(SECURE_KEY_WALLET_ADDRESS);
+}
